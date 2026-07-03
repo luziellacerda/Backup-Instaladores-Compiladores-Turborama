@@ -1,0 +1,5 @@
+Coloque aqui a imagem com este nome exato:
+
+turborama_sidebar_logo.png
+
+Também funciona .jpg ou .jpeg com o mesmo nome base.

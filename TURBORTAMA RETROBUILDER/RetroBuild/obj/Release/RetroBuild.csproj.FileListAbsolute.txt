@@ -1,0 +1,6 @@
+C:\Users\LZ\Documents\TURBORTAMA RETROBUILDER\RetroBuild\bin\Release\RetroBuild.exe
+C:\Users\LZ\Documents\TURBORTAMA RETROBUILDER\RetroBuild\bin\Release\RetroBuild.pdb
+C:\Users\LZ\Documents\TURBORTAMA RETROBUILDER\RetroBuild\obj\Release\RetroBuild.csproj.AssemblyReference.cache
+C:\Users\LZ\Documents\TURBORTAMA RETROBUILDER\RetroBuild\obj\Release\RetroBuild.csproj.CoreCompileInputs.cache
+C:\Users\LZ\Documents\TURBORTAMA RETROBUILDER\RetroBuild\obj\Release\RetroBuild.exe
+C:\Users\LZ\Documents\TURBORTAMA RETROBUILDER\RetroBuild\obj\Release\RetroBuild.pdb

@@ -1,0 +1,197 @@
+name: Build turborama_binaries.7z
+
+"on":
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    defaults:
+      run:
+        shell: powershell
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Pull Git LFS files
+        run: |
+          git lfs pull
+
+      - name: Prepare folders
+        run: |
+          Remove-Item work -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item output -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path work | Out-Null
+          New-Item -ItemType Directory -Force -Path output | Out-Null
+
+      - name: Validate TurboRama.7z
+        run: |
+          if (!(Test-Path "TurboRama.7z")) {
+            Write-Host "ERRO: TurboRama.7z nao encontrado na raiz do repositorio."
+            Write-Host "Coloque o arquivo TurboRama.7z na raiz do repo TurboramaBinarios."
+            exit 1
+          }
+
+          Write-Host "TurboRama.7z encontrado:"
+          Get-Item "TurboRama.7z"
+
+      - name: Download original RetroBat base package
+        run: |
+          $url = "http://www.retrobat.org/repo/win64/stable/retrobat_binaries.7z"
+          $file = "work\retrobat_binaries.7z"
+
+          Write-Host "Baixando pacote base original:"
+          Write-Host $url
+
+          Invoke-WebRequest -Uri $url -OutFile $file
+
+          if (!(Test-Path $file)) {
+            Write-Host "ERRO: Falha ao baixar retrobat_binaries.7z"
+            exit 1
+          }
+
+          Get-Item $file
+
+      - name: Extract base package and TurboRama launcher
+        run: |
+          $sevenZip = "C:\Program Files\7-Zip\7z.exe"
+
+          if (!(Test-Path $sevenZip)) {
+            Write-Host "ERRO: 7z.exe nao encontrado em $sevenZip"
+            exit 1
+          }
+
+          New-Item -ItemType Directory -Force -Path "work\base" | Out-Null
+          New-Item -ItemType Directory -Force -Path "work\launcher" | Out-Null
+
+          & $sevenZip x "work\retrobat_binaries.7z" "-owork\base" -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          & $sevenZip x "TurboRama.7z" "-owork\launcher" -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Replace launcher
+        run: |
+          $base = "work\base"
+
+          $launcher = Get-ChildItem -LiteralPath "work\launcher" -Recurse -File -Filter "TurboRama.exe" | Select-Object -First 1
+
+          if ($launcher -eq $null) {
+            Write-Host "ERRO: TurboRama.exe nao encontrado dentro de TurboRama.7z"
+            Write-Host "O arquivo TurboRama.7z precisa conter o TurboRama.exe compilado."
+            Get-ChildItem "work\launcher" -Recurse -Force
+            exit 1
+          }
+
+          Write-Host "TurboRama.exe encontrado:"
+          Write-Host $launcher.FullName
+
+          Remove-Item (Join-Path $base "RetroBat.exe") -Force -ErrorAction SilentlyContinue
+          Remove-Item (Join-Path $base "retrobat.exe") -Force -ErrorAction SilentlyContinue
+          Remove-Item (Join-Path $base "Turborama.exe") -Force -ErrorAction SilentlyContinue
+          Remove-Item (Join-Path $base "TurboRama.exe") -Force -ErrorAction SilentlyContinue
+
+          Copy-Item -LiteralPath $launcher.FullName -Destination (Join-Path $base "TurboRama.exe") -Force
+
+          if (!(Test-Path (Join-Path $base "TurboRama.exe"))) {
+            Write-Host "ERRO: TurboRama.exe nao foi copiado para o pacote base."
+            exit 1
+          }
+
+          if (Test-Path (Join-Path $base "RetroBat.exe")) {
+            Write-Host "ERRO: RetroBat.exe ainda existe no pacote final."
+            exit 1
+          }
+
+          Write-Host "Launcher substituido com sucesso."
+
+      - name: Patch text references
+        run: |
+          $base = "work\base"
+          $extensions = @(".bat", ".cmd", ".ini", ".cfg", ".txt", ".xml", ".json", ".yml", ".yaml", ".ps1", ".md")
+          $changed = 0
+
+          Get-ChildItem -LiteralPath $base -Recurse -File | ForEach-Object {
+            if ($extensions -contains $_.Extension.ToLowerInvariant()) {
+              try {
+                $content = Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 -ErrorAction Stop
+                $new = $content `
+                  -replace "RetroBat\.exe", "TurboRama.exe" `
+                  -replace "retrobat\.exe", "TurboRama.exe" `
+                  -replace "RetroBat", "TurboRama" `
+                  -replace "retrobat", "turborama"
+
+                if ($new -ne $content) {
+                  Set-Content -LiteralPath $_.FullName -Value $new -Encoding UTF8
+                  $changed++
+                }
+              } catch {
+              }
+            }
+          }
+
+          Write-Host "Arquivos texto corrigidos: $changed"
+
+      - name: Validate final package
+        run: |
+          if (!(Test-Path "work\base\TurboRama.exe")) {
+            Write-Host "ERRO: work\base\TurboRama.exe nao encontrado."
+            exit 1
+          }
+
+          if (Test-Path "work\base\RetroBat.exe") {
+            Write-Host "ERRO: RetroBat.exe ainda existe."
+            exit 1
+          }
+
+          Write-Host "Arquivos da raiz do pacote final:"
+          Get-ChildItem "work\base" -Force
+
+      - name: Create turborama_binaries.7z
+        run: |
+          $sevenZip = "C:\Program Files\7-Zip\7z.exe"
+
+          Push-Location "work\base"
+          & $sevenZip a "..\..\output\turborama_binaries.7z" "*" -mx=9
+          $code = $LASTEXITCODE
+          Pop-Location
+
+          if ($code -ne 0) {
+            exit $code
+          }
+
+          if (!(Test-Path "output\turborama_binaries.7z")) {
+            Write-Host "ERRO: output\turborama_binaries.7z nao foi criado."
+            exit 1
+          }
+
+          Write-Host "Arquivo final criado:"
+          Get-Item "output\turborama_binaries.7z"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: turborama_binaries
+          path: output/turborama_binaries.7z
+
+      - name: Publish release asset continuous-master
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: continuous-master
+          name: continuous-master
+          files: output/turborama_binaries.7z
+          overwrite_files: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

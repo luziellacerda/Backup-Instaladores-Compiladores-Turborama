@@ -1,0 +1,132 @@
+using System;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+
+namespace RetroBat
+{
+	// Token: 0x02000008 RID: 8
+	public abstract class RawInputForm : Form
+	{
+		// Token: 0x06000073 RID: 115 RVA: 0x00004AB0 File Offset: 0x00002CB0
+		protected override void OnLoad(EventArgs e)
+		{
+			base.OnLoad(e);
+			SimpleLogger.Instance.Info("RawInputForm started, registering raw input devices...");
+			RawInputForm.RAWINPUTDEVICE[] array = new RawInputForm.RAWINPUTDEVICE[1];
+			array[0].usUsagePage = 1;
+			array[0].usUsage = 5;
+			array[0].dwFlags = 256U;
+			array[0].hwndTarget = base.Handle;
+			if (!RawInputForm.RegisterRawInputDevices(array, (uint)array.Length, (uint)Marshal.SizeOf(typeof(RawInputForm.RAWINPUTDEVICE))))
+			{
+				SimpleLogger.Instance.Warning("Failed to register raw input device(s).");
+				return;
+			}
+			SimpleLogger.Instance.Info("Registered raw input device(s) successfully.");
+		}
+
+		// Token: 0x1700001F RID: 31
+		// (get) Token: 0x06000074 RID: 116 RVA: 0x00004B4E File Offset: 0x00002D4E
+		// (set) Token: 0x06000075 RID: 117 RVA: 0x00004B56 File Offset: 0x00002D56
+		protected bool RawInputDetected { get; private set; }
+
+		// Token: 0x06000076 RID: 118 RVA: 0x00004B60 File Offset: 0x00002D60
+		protected override void WndProc(ref Message m)
+		{
+			if (m.Msg == 255)
+			{
+				uint num = 0U;
+				RawInputForm.GetRawInputData(m.LParam, 268435459U, IntPtr.Zero, ref num, (uint)Marshal.SizeOf(typeof(RawInputForm.RAWINPUTHEADER)));
+				if (num > 0U)
+				{
+					IntPtr intPtr = Marshal.AllocHGlobal((int)num);
+					try
+					{
+						if (RawInputForm.GetRawInputData(m.LParam, 268435459U, intPtr, ref num, (uint)Marshal.SizeOf(typeof(RawInputForm.RAWINPUTHEADER))) == num && ((RawInputForm.RAWINPUTHEADER)Marshal.PtrToStructure(intPtr, typeof(RawInputForm.RAWINPUTHEADER))).dwType == 2U)
+						{
+							IntPtr intPtr2 = IntPtr.Add(intPtr, Marshal.SizeOf(typeof(RawInputForm.RAWINPUTHEADER)));
+							RawInputForm.RAWHID rawhid = (RawInputForm.RAWHID)Marshal.PtrToStructure(intPtr2, typeof(RawInputForm.RAWHID));
+							IntPtr intPtr3 = IntPtr.Add(intPtr2, Marshal.SizeOf(typeof(RawInputForm.RAWHID)));
+							int num2 = (int)(rawhid.dwSizeHid * rawhid.dwCount);
+							byte[] array = new byte[num2];
+							Marshal.Copy(intPtr3, array, 0, num2);
+							if (array.Any<byte>((byte r) => r >= 1 && r <= 64))
+							{
+								this.RawInputDetected = true;
+							}
+						}
+					}
+					finally
+					{
+						Marshal.FreeHGlobal(intPtr);
+					}
+				}
+				return;
+			}
+			base.WndProc(ref m);
+		}
+
+		// Token: 0x06000077 RID: 119
+		[DllImport("User32.dll")]
+		private static extern bool RegisterRawInputDevices(RawInputForm.RAWINPUTDEVICE[] pRawInputDevices, uint uiNumDevices, uint cbSize);
+
+		// Token: 0x06000078 RID: 120
+		[DllImport("User32.dll")]
+		private static extern uint GetRawInputData(IntPtr hRawInput, uint uiCommand, IntPtr pData, ref uint pcbSize, uint cbSizeHeader);
+
+		// Token: 0x04000036 RID: 54
+		private const int WM_INPUT = 255;
+
+		// Token: 0x04000037 RID: 55
+		private const uint RID_INPUT = 268435459U;
+
+		// Token: 0x04000038 RID: 56
+		private const uint RIM_TYPEHID = 2U;
+
+		// Token: 0x04000039 RID: 57
+		private const uint RIDEV_INPUTSINK = 256U;
+
+		// Token: 0x02000019 RID: 25
+		private struct RAWINPUTDEVICE
+		{
+			// Token: 0x0400007C RID: 124
+			public ushort usUsagePage;
+
+			// Token: 0x0400007D RID: 125
+			public ushort usUsage;
+
+			// Token: 0x0400007E RID: 126
+			public uint dwFlags;
+
+			// Token: 0x0400007F RID: 127
+			public IntPtr hwndTarget;
+		}
+
+		// Token: 0x0200001A RID: 26
+		private struct RAWINPUTHEADER
+		{
+			// Token: 0x04000080 RID: 128
+			public uint dwType;
+
+			// Token: 0x04000081 RID: 129
+			public uint dwSize;
+
+			// Token: 0x04000082 RID: 130
+			public IntPtr hDevice;
+
+			// Token: 0x04000083 RID: 131
+			public IntPtr wParam;
+		}
+
+		// Token: 0x0200001B RID: 27
+		private struct RAWHID
+		{
+			// Token: 0x04000084 RID: 132
+			public uint dwSizeHid;
+
+			// Token: 0x04000085 RID: 133
+			public uint dwCount;
+		}
+	}
+}

@@ -1,0 +1,7 @@
+C:\Users\LZ\Documents\TURBORAMA BINARIOS EXE\RetroBat\bin\Release\TurboRama.exe.config
+C:\Users\LZ\Documents\TURBORAMA BINARIOS EXE\RetroBat\bin\Release\TurboRama.exe
+C:\Users\LZ\Documents\TURBORAMA BINARIOS EXE\RetroBat\bin\Release\TurboRama.pdb
+C:\Users\LZ\Documents\TURBORAMA BINARIOS EXE\RetroBat\obj\Release\RetroBat.csproj.AssemblyReference.cache
+C:\Users\LZ\Documents\TURBORAMA BINARIOS EXE\RetroBat\obj\Release\RetroBat.csproj.CoreCompileInputs.cache
+C:\Users\LZ\Documents\TURBORAMA BINARIOS EXE\RetroBat\obj\Release\TurboRama.exe
+C:\Users\LZ\Documents\TURBORAMA BINARIOS EXE\RetroBat\obj\Release\TurboRama.pdb

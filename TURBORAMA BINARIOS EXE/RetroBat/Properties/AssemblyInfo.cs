@@ -1,0 +1,19 @@
+﻿using System;
+using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
+
+[assembly: AssemblyVersion("8.2.0.0")]
+[assembly: AssemblyTitle("Turborama")]
+[assembly: AssemblyDescription("Your ultimate RetroGaming Frontend")]
+[assembly: AssemblyConfiguration("")]
+[assembly: AssemblyCompany("The Turborama Team")]
+[assembly: AssemblyProduct("Truborama")]
+[assembly: AssemblyCopyright("Copyright ©  2026")]
+[assembly: AssemblyTrademark("")]
+[assembly: ComVisible(false)]
+[assembly: Guid("91b9692a-a528-4342-946f-c39e6227b18d")]
+[assembly: AssemblyFileVersion("8.2.0.0")]
+

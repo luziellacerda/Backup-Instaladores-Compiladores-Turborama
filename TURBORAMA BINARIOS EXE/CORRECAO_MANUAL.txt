@@ -1,0 +1,36 @@
+CORRECAO MANUAL - CS0012 DependencyObject / WindowsBase
+
+O erro CS0012 em VideoPlayerForm.cs acontece porque o projeto usa WPF:
+
+System.Windows.Controls.MediaElement
+System.Windows.Forms.Integration.ElementHost
+
+Para isso, o .csproj precisa ter estas referencias:
+
+<Reference Include="WindowsBase" />
+<Reference Include="PresentationCore" />
+<Reference Include="PresentationFramework" />
+<Reference Include="WindowsFormsIntegration" />
+<Reference Include="System.Xaml" />
+
+Abra RetroBat.csproj como texto e confira se existe um ItemGroup assim:
+
+<ItemGroup>
+  <Reference Include="System" />
+  <Reference Include="System.Core" />
+  <Reference Include="System.Drawing" />
+  <Reference Include="System.Windows.Forms" />
+  <Reference Include="System.Xaml" />
+  <Reference Include="WindowsBase" />
+  <Reference Include="PresentationCore" />
+  <Reference Include="PresentationFramework" />
+  <Reference Include="WindowsFormsIntegration" />
+</ItemGroup>
+
+Nao precisa converter para SDK Style.
+Nao precisa adicionar UseWPF em projeto legacy do Visual Studio 2010.
+
+Se ainda falhar:
+- Visual Studio Installer
+- instalar ".NET desktop development"
+- instalar ".NET Framework 4.8 Developer Pack / Targeting Pack"

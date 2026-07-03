@@ -1,0 +1,18 @@
+V42 ESTAVEL
+
+Base usada: V4.1 hotfix que abre corretamente.
+
+Alterações feitas apenas na tela 1:
+- banner lateral maior, ocupando o espaço preto vazio;
+- removido contador/lista de etapas abaixo do banner na tela 1;
+- removidos detalhes vermelhos exagerados;
+- mantém visual limpo e estável.
+
+Tela 2 não recebe banner horizontal.
+Tela 3 continua com banner horizontal de requisitos.
+
+Aplicação:
+1. Feche qualquer InstallerHost.exe aberto.
+2. Substitua TurboramaPremiumUi.cs.
+3. Limpar Solução.
+4. Recompilar Solução.

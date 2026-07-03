@@ -1,0 +1,85 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{FDF18A99-DE99-4617-978E-C9E263FE77D5}|RetroBat\\RetroBat.csproj|c:\\users\\lz\\documents\\turborama binarios exe\\retrobat\\videoplayerform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{FDF18A99-DE99-4617-978E-C9E263FE77D5}|RetroBat\\RetroBat.csproj|solutionrelative:retrobat\\videoplayerform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{FDF18A99-DE99-4617-978E-C9E263FE77D5}|RetroBat\\RetroBat.csproj|C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\retrobat\\rawinputform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{FDF18A99-DE99-4617-978E-C9E263FE77D5}|RetroBat\\RetroBat.csproj|solutionrelative:retrobat\\rawinputform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{FDF18A99-DE99-4617-978E-C9E263FE77D5}|RetroBat\\RetroBat.csproj|C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\retrobat\\splashvideo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{FDF18A99-DE99-4617-978E-C9E263FE77D5}|RetroBat\\RetroBat.csproj|solutionrelative:retrobat\\splashvideo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{FDF18A99-DE99-4617-978E-C9E263FE77D5}|RetroBat\\RetroBat.csproj|C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\retrobat\\inifile.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{FDF18A99-DE99-4617-978E-C9E263FE77D5}|RetroBat\\RetroBat.csproj|solutionrelative:retrobat\\inifile.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "VideoPlayerForm.cs",
+              "DocumentMoniker": "C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\RetroBat\\VideoPlayerForm.cs",
+              "RelativeDocumentMoniker": "RetroBat\\VideoPlayerForm.cs",
+              "ToolTip": "C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\RetroBat\\VideoPlayerForm.cs",
+              "RelativeToolTip": "RetroBat\\VideoPlayerForm.cs",
+              "ViewState": "AgIAAFQAAAAAAAAAAAAAAGEAAAAYAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-02T21:26:47.165Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "RawInputForm.cs",
+              "DocumentMoniker": "C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\RetroBat\\RawInputForm.cs",
+              "RelativeDocumentMoniker": "RetroBat\\RawInputForm.cs",
+              "ToolTip": "C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\RetroBat\\RawInputForm.cs",
+              "RelativeToolTip": "RetroBat\\RawInputForm.cs",
+              "ViewState": "AgIAAGAAAAAAAAAAAAAqwG0AAAAPAAAAAAAAAA==",
+              "Icon": "00000000-0000-0000-0000-000000000000.000000|iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKkSURBVDhPzZTNTxNBFMDf7my3202xxRZJT2CUgz2UYEE4QIInuHjiZowXNSGYKP4BpngmJh4MURN6IuFMPAiJIQ0IJJWY0AMxcileGqVr\u002BXLZdmd2fbMM2yAl0Ru/ZPJ239e\u002BeTNv4cIjCQlbW1uDm5ubg9lsFlBCrVYTlsYoigLt7e0wNjYGqVQq19HRkfP0nhUpFAqD5XI5E41Gq4SQZUmSLGFqCCbUYrFY/87OjsYLQE4nnJqaAnSoptPpr11dXffGx8d/CFNDJicnrziOs7C2tnZjd3dXaAFkIaFYLMLGxsZyMBgcWllZKQv1ueTzeQN9h1EuiQo9/B62tbVNoBjFlfcU/84tXG\u002B2t7d5fL1CwR6uL/\u002B5eIyP30MOHsQ33Lr3pUY8Gc72mHtWK6MMIpd1q2LJn3LFiZvC7HEqISeTyciHq9fi\u002B4ZJTNMEXdfhUkxn36Oa4fzaf44ut8GVapS61XCAdR9H1fl7y8CTUcmep4StSwF5nRK6bku1hYSxxz8CNct\u002Ba1PnGX8\u002BMo5EVJ0zCXll\u002BxWr1WXONPZglDF3\u002BgDfDysW0SNBUFTljqLIj/WICqFQSETVOZOQb9O2bKDU\u002BTxTePqeUpa3qwxMtCkBZZbI8qwkuR/UYOClHoeD46g6Z3rIe2YTCg5ze\u002B6mXrkKkXuIIoNKXXj98cGscPPB6yaejvErVFUVNKQ1bccjzaEyIdJDGaR3mOxRU1T7GW7WmHD14IfHp4XH8Lk\u002BwU\u002BYTCahr6\u002Bvv\u002Bm6OdN09fd9ibrdlMjdXAJzh0qxyKnpCYfDcRy9\u002Bc7OzgH\u002BkzjBn5S5ubmJUqmUWVxcrOIILlmIMDUEW6P19vYOYBFaS0vLi5GREe/\u002B\u002BrVihTlKKRiGgQdChfZ8uE\u002BlUllNJBJerFBfeAD\u002BALn3G6EK\u002BL2BAAAAAElFTkSuQmCC",
+              "WhenOpened": "2026-07-02T21:26:47.165Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "SplashVideo.cs",
+              "DocumentMoniker": "C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\RetroBat\\SplashVideo.cs",
+              "RelativeDocumentMoniker": "RetroBat\\SplashVideo.cs",
+              "ToolTip": "C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\RetroBat\\SplashVideo.cs",
+              "RelativeToolTip": "RetroBat\\SplashVideo.cs",
+              "ViewState": "AgIAAI0AAAAAAAAAAAAAAJgAAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-02T21:26:47.165Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "IniFile.cs",
+              "DocumentMoniker": "C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\RetroBat\\IniFile.cs",
+              "RelativeDocumentMoniker": "RetroBat\\IniFile.cs",
+              "ToolTip": "C:\\Users\\LZ\\Documents\\TURBORAMA BINARIOS EXE\\RetroBat\\IniFile.cs",
+              "RelativeToolTip": "RetroBat\\IniFile.cs",
+              "ViewState": "AgIAAM8AAAAAAAAAAAAvwNEAAAACAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-02T21:26:47.165Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

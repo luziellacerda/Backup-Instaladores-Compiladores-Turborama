@@ -1,0 +1,225 @@
+using System;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Windows.Forms;
+
+namespace RetroBat
+{
+	// Token: 0x0200000B RID: 11
+	internal class SplashVideo
+	{
+		// Token: 0x06000086 RID: 134 RVA: 0x000050F0 File Offset: 0x000032F0
+		public static bool CanRunIntroVideo(RetroBatConfig config, string esPath)
+		{
+			bool flag;
+			try
+			{
+				if (!config.EnableIntro)
+				{
+					flag = false;
+				}
+				else
+				{
+					string text = Path.Combine(esPath, ".emulationstation", "video");
+					if (!string.IsNullOrEmpty(config.FilePath) && config.FilePath != "default")
+					{
+						text = config.FilePath;
+					}
+					if (!Directory.Exists(text))
+					{
+						flag = false;
+					}
+					else
+					{
+						flag = Directory.EnumerateFiles(text, "*.mp4", SearchOption.AllDirectories).Any<string>();
+					}
+				}
+			}
+			catch
+			{
+				flag = false;
+			}
+			return flag;
+		}
+
+		// Token: 0x06000087 RID: 135 RVA: 0x00005178 File Offset: 0x00003378
+		public static ManualResetEvent RunIntroVideo(RetroBatConfig config, string esPath, Screen targetScreen = null, bool externalLauncher = false)
+		{
+			SplashVideo.CanRunIntroVideo(config, esPath);
+			if (!config.EnableIntro)
+			{
+				return SplashVideo.CreateCompletedEvent();
+			}
+			SimpleLogger.Instance.Info("Trying to run Intro Video.");
+			string videoDirectory = Path.Combine(esPath, ".emulationstation", "video");
+			if (config.FilePath != "default")
+			{
+				string filePath = config.FilePath;
+				if (!Directory.Exists(filePath))
+				{
+					SimpleLogger.Instance.Warning("Custom video path does not exist: " + filePath);
+				}
+				else
+				{
+					videoDirectory = filePath;
+				}
+			}
+			if (!Directory.Exists(videoDirectory))
+			{
+				SimpleLogger.Instance.Warning("Video directory does not exist: " + videoDirectory);
+				return SplashVideo.CreateCompletedEvent();
+			}
+			string[] files = Directory.GetFiles(videoDirectory, "*.mp4", SearchOption.AllDirectories);
+			if (files.Length == 0)
+			{
+				SimpleLogger.Instance.Warning("No video files found in: " + videoDirectory);
+				return SplashVideo.CreateCompletedEvent();
+			}
+			string videoFile = Path.Combine(videoDirectory, config.FileName);
+			if (config.RandomVideo)
+			{
+				SimpleLogger.Instance.Info("Getting random video file from: " + videoDirectory);
+				int index = new Random().Next(files.Length);
+				videoFile = files[index];
+			}
+			if (!File.Exists(videoFile))
+			{
+				SimpleLogger.Instance.Warning("Video file does not exist: " + videoFile);
+				return SplashVideo.CreateCompletedEvent();
+			}
+			SimpleLogger.Instance.Info("Video file to play: " + videoFile);
+			ManualResetEvent videoDone = new ManualResetEvent(false);
+			Thread thread = new Thread(delegate()
+			{
+				Application.EnableVisualStyles();
+				Application.SetCompatibleTextRenderingDefault(false);
+				using (VideoPlayerForm videoPlayerForm = new VideoPlayerForm(videoFile, esPath, config.GamepadVideoKill, config.KillVideoWhenESReady, targetScreen, externalLauncher))
+				{
+					videoPlayerForm.FormClosed += delegate(object s, FormClosedEventArgs e)
+					{
+						videoDone.Set();
+					};
+					Application.Run(videoPlayerForm);
+				}
+			});
+			thread.SetApartmentState(ApartmentState.STA);
+			thread.Start();
+			return videoDone;
+		}
+
+		// Token: 0x06000088 RID: 136 RVA: 0x0000534C File Offset: 0x0000354C
+		private static ManualResetEvent CreateCompletedEvent()
+		{
+			return new ManualResetEvent(true);
+		}
+
+		// Token: 0x06000089 RID: 137 RVA: 0x00005354 File Offset: 0x00003554
+		public static void ShowBlackSplash(Screen targetScreen = null)
+		{
+			if (SplashVideo._blackSplashForm != null)
+			{
+				return;
+			}
+			ManualResetEvent splashDone = new ManualResetEvent(false);
+			EventHandler <>9__2;
+			Thread thread = new Thread(delegate
+			{
+				Application.EnableVisualStyles();
+				Application.SetCompatibleTextRenderingDefault(false);
+				Screen screen = targetScreen ?? Screen.PrimaryScreen;
+				SplashVideo._blackSplashForm = new Form
+				{
+					BackColor = Color.Black,
+					FormBorderStyle = FormBorderStyle.None,
+					StartPosition = FormStartPosition.Manual,
+					Bounds = screen.Bounds,
+					TopMost = true,
+					ShowInTaskbar = false
+				};
+				SplashVideo._blackSplashForm.Load += delegate(object s, EventArgs e)
+				{
+					try
+					{
+						SplashVideo._blackSplashForm.Focus();
+						SplashVideo._blackSplashForm.Activate();
+					}
+					catch
+					{
+					}
+				};
+				Form blackSplashForm = SplashVideo._blackSplashForm;
+				EventHandler eventHandler;
+				if ((eventHandler = <>9__2) == null)
+				{
+					eventHandler = (<>9__2 = delegate(object s, EventArgs e)
+					{
+						splashDone.Set();
+					});
+				}
+				blackSplashForm.Shown += eventHandler;
+				global::System.Windows.Forms.Timer watchdog = new global::System.Windows.Forms.Timer();
+				watchdog.Interval = 15000;
+				watchdog.Tick += delegate(object s, EventArgs e)
+				{
+					try
+					{
+						watchdog.Stop();
+						Form blackSplashForm2 = SplashVideo._blackSplashForm;
+						if (blackSplashForm2 != null)
+						{
+							blackSplashForm2.Close();
+						}
+					}
+					catch
+					{
+					}
+				};
+				watchdog.Start();
+				Application.Run(SplashVideo._blackSplashForm);
+			});
+			thread.SetApartmentState(ApartmentState.STA);
+			thread.Start();
+			splashDone.WaitOne();
+		}
+
+		// Token: 0x0600008A RID: 138 RVA: 0x000053AC File Offset: 0x000035AC
+		public static void CloseBlackSplash()
+		{
+			try
+			{
+				Form form = SplashVideo._blackSplashForm;
+				if (form != null && !form.IsDisposed)
+				{
+					if (form.InvokeRequired)
+					{
+						form.Invoke(new Action(delegate
+						{
+							form.FormClosed += delegate(object s, FormClosedEventArgs e)
+							{
+								SplashVideo._blackSplashForm = null;
+							};
+							form.Close();
+						}));
+					}
+					else
+					{
+						form.FormClosed += delegate(object s, FormClosedEventArgs e)
+						{
+							SplashVideo._blackSplashForm = null;
+						};
+						form.Close();
+					}
+				}
+			}
+			catch
+			{
+				SplashVideo._blackSplashForm = null;
+			}
+		}
+
+		// Token: 0x0400003E RID: 62
+		private static Form _blackSplashForm;
+	}
+}

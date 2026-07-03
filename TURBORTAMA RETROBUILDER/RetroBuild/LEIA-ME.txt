@@ -1,0 +1,31 @@
+TURBORAMA - FIX RETROBUILD SHARPZIPLIB
+
+Esse pacote corrige erro de SharpZipLib no RetroBuild.
+
+Causa:
+O Program.cs usa:
+
+using ICSharpCode.SharpZipLib.Zip;
+
+Então o projeto precisa referenciar a DLL na compilacao.
+
+Ao mesmo tempo, o RetroBuild embute a DLL no EXE e carrega em runtime por:
+
+RetroBuild.resources.ICSharpCode.SharpZipLib.dll
+
+Por isso o csproj precisa ter:
+1. Reference com HintPath
+2. EmbeddedResource com LogicalName correto
+
+Como usar:
+1. Extraia dentro da pasta da solution do RetroBuild.
+2. Feche Visual Studio.
+3. Rode:
+   Fix_RetroBuild_SharpZipLib.bat
+4. Abra a solution.
+5. Compile:
+   Release | Any CPU
+
+Importante:
+O arquivo precisa existir:
+resources\ICSharpCode\SharpZipLib.dll

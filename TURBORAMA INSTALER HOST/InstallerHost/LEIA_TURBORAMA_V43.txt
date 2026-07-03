@@ -1,0 +1,7 @@
+V43
+- Tela 1: banner lateral ampliado para ocupar praticamente todo o espaço preto abaixo do slogan.
+- Adicionados detalhes sutis em vermelho apenas no painel do banner e no separador superior.
+- Mantida base estável do V42.
+- Tela 2 sem banner horizontal; tela 3 com banner horizontal.
+
+Substitua TurboramaPremiumUi.cs, limpe e recompile.

@@ -1,0 +1,49 @@
+﻿using System;
+using Microsoft.Win32;
+
+namespace RetroBat
+{
+	// Token: 0x02000009 RID: 9
+	internal class RegistryTools
+	{
+		// Token: 0x0600007A RID: 122 RVA: 0x00004CB4 File Offset: 0x00002EB4
+		public static void SetRegistryKey(string appFolder)
+		{
+			SimpleLogger.Instance.Info("Writing values to registry.");
+			string text = "SOFTWARE\\TurboRama";
+			string text2 = "InstallRootUrl";
+			string text3 = "InstallRootUrlNew";
+			string text4 = "LatestKnownInstallPath";
+			string text5 = "http://www.retrobat.ovh/repo/win64";
+			string text6 = "http://www.retrobat.org/repo/win64";
+			using (RegistryKey registryKey = Registry.CurrentUser.CreateSubKey(text))
+			{
+				if (registryKey.GetValue(text2) == null)
+				{
+					registryKey.SetValue(text2, text5);
+				}
+				else if (registryKey.GetValue(text2).ToString() != text5)
+				{
+					registryKey.SetValue(text2, text5);
+				}
+				if (registryKey.GetValue(text3) == null)
+				{
+					registryKey.SetValue(text3, text6);
+				}
+				else if (registryKey.GetValue(text3).ToString() != text6)
+				{
+					registryKey.SetValue(text3, text6);
+				}
+				if (registryKey.GetValue(text4) == null)
+				{
+					registryKey.SetValue(text4, appFolder);
+				}
+				else if (registryKey.GetValue(text4).ToString() != appFolder)
+				{
+					registryKey.SetValue(text4, appFolder);
+				}
+			}
+		}
+	}
+}
+

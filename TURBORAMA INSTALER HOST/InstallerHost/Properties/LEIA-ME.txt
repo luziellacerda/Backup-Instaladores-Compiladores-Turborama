@@ -1,0 +1,35 @@
+﻿ALTERAÇÕES TURBORAMA
+
+Arquivos alterados:
+
+1. AssemblyInfo.cs
+   - Corrigido erro de digitação: Truborama -> Turborama
+   - Corrigido Company: The truborama team -> The Turborama team
+   - Ajustado copyright para Copyright © Turborama 2026
+
+2. Resources.resx
+   - Renomeado recurso interno:
+     retrobat_wizard -> turborama_wizard
+   - A imagem em si foi preservada. Para trocar a imagem, substitua o bitmap deste recurso no Visual Studio/Resource Editor.
+
+3. Resources.Designer.cs
+   - Atualizado o accessor do recurso:
+     retrobat_wizard -> turborama_wizard
+   - Atualizado GetObject:
+     "retrobat_wizard" -> "turborama_wizard"
+
+4. WelcomeControl.Designer.cs
+   - Atualizada a referência da imagem lateral:
+     Properties.Resources.retrobat_wizard -> Properties.Resources.turborama_wizard
+
+Arquivos NÃO alterados:
+
+5. Settings.Designer.cs
+6. Settings.settings
+   - Não possuem nome RetroBat, nem configuração funcional para trocar.
+   - O namespace InstallerHost deve permanecer assim, para não quebrar o projeto.
+
+IMPORTANTE:
+- Se você usar somente Resources.resx editado no Visual Studio, o Resources.Designer.cs pode ser regenerado automaticamente.
+- Se você editar pelo dnSpy, aplique os 3 pontos juntos:
+  Resources.resx + Resources.Designer.cs + WelcomeControl.Designer.cs.

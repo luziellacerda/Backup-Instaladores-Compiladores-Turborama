@@ -1,0 +1,47 @@
+TURBORAMA - PATCH DO LAUNCHER
+
+Este pacote corrige o source exportado do RetroBat.exe para gerar TurboRama.exe.
+
+Ele corrige:
+- Program.cs
+- IniFile.cs
+- strings seguras em .cs
+- AssemblyName no RetroBat.csproj
+- AssemblyInfo.cs se existir
+
+O que muda:
+RetroBat.exe -> TurboRama.exe
+RetroBat.log -> TurboRama.log
+retrobat.ini -> turborama.ini
+[RetroBat] -> [TurboRama]
+RETROBAT -> TURBORAMA
+retrobat-neon.mp4 -> turborama-neon.mp4
+registro/startup RetroBat -> TurboRama
+
+O que NAO muda:
+namespace RetroBat
+emulationstation.exe
+emulatorlauncher.exe
+batocera-store.exe
+batocera-systems.exe
+es-update.exe
+es-checkversion.exe
+system
+templates
+.emulationstation
+
+Como usar:
+1. Extraia dentro da pasta onde esta RetroBat.sln.
+2. Feche o Visual Studio.
+3. Rode como administrador:
+   Aplicar_PATCH_Launcher_TurboRama.bat
+4. Abra RetroBat.sln.
+5. Compile:
+   Release | Any CPU
+
+Saida esperada:
+bin\Release\TurboRama.exe
+
+Observacao:
+Nao alterei namespace RetroBat para evitar quebrar todos os arquivos do projeto.
+Namespace interno nao aparece para o usuario.
