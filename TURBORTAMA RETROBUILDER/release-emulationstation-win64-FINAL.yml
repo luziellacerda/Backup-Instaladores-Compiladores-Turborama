@@ -1,0 +1,78 @@
+name: release-emulationstation-win64
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  release-win64:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create EmulationStation-Win64.zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $zipName = "EmulationStation-Win64.zip"
+
+          if (Test-Path $zipName) {
+            Write-Host "Arquivo ja existe na raiz: $zipName"
+            exit 0
+          }
+
+          $possibleFolders = @(
+            "emulationstation",
+            "build\\emulationstation",
+            "dist\\emulationstation",
+            "release\\emulationstation"
+          )
+
+          $sourceDir = $null
+
+          foreach ($folder in $possibleFolders) {
+            if (Test-Path $folder) {
+              $sourceDir = $folder
+              break
+            }
+          }
+
+          if ($null -eq $sourceDir) {
+            throw "Nao encontrei EmulationStation-Win64.zip nem uma pasta emulationstation para compactar. Este workflow deve ficar no repositorio TurboramaEmulationStation."
+          }
+
+          Compress-Archive -Path (Join-Path $sourceDir "*") -DestinationPath $zipName -Force
+
+          if (!(Test-Path $zipName)) {
+            throw "Falha ao criar $zipName"
+          }
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "continuous-master"
+          $zipName = "EmulationStation-Win64.zip"
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git tag -f $tag
+          git push origin $tag --force
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title $tag --notes "Release automatica do EmulationStation Win64"
+          }
+
+          gh release upload $tag $zipName --clobber

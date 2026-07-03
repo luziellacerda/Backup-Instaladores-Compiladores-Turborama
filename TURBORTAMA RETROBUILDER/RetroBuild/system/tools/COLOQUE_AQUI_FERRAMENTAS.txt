@@ -1,0 +1,1 @@
+Coloque aqui: 7za.exe, wget.exe, curl.exe, SDL3_x64.dll, SDL3_x86.dll

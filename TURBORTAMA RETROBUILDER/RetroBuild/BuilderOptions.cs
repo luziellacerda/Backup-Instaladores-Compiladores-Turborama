@@ -187,7 +187,11 @@ namespace RetroBuild
 			builderOptions.BiosGitUrl = iniParser.Get(text, "bios_git_url", "https://github.com/RetroBat-Official/retrobat-bios");
 			builderOptions.ThemePath = iniParser.Get(text, "theme_path", "https://github.com/luziellacerda/PC-RETRO-LZ-THEME-PC-NEW");
 			builderOptions.DecorationsPath = iniParser.Get(text, "decorations_path", "https://github.com/RetroBat-Official/retrobat-bezels");
-			builderOptions.SystemPath = iniParser.Get(text, "retrobat_system_path", "https://github.com/RetroBat-Official/retrobat-setup/tree/master/system");
+			builderOptions.SystemPath = iniParser.Get(text, "retrobat_system_path", "");
+			if (string.IsNullOrWhiteSpace(builderOptions.SystemPath))
+			{
+				builderOptions.SystemPath = iniParser.Get(text, "system_path", "https://github.com/RetroBat-Official/retrobat-setup/tree/master/system");
+			}
 			builderOptions.RetroArchURL = iniParser.Get(text, "retroarch_url", "https://buildbot.libretro.com");
 			builderOptions.WiimoteGunURL = iniParser.Get(text, "wiimotegun_url", "https://github.com/fabricecaruso/WiimoteGun/releases/download/v1.1/WiimoteGun.zip");
 			builderOptions.BatGUIURL = iniParser.Get(text, "batgui_url", "https://reppa.internet-box.ch/BatGui/NewBatGui/lastest.zip");

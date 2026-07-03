@@ -1,20 +1,23 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 
 namespace RetroBuild
 {
-	// Token: 0x02000002 RID: 2
 	internal class Installer
 	{
-		// Token: 0x06000001 RID: 1 RVA: 0x00002050 File Offset: 0x00000250
+		// Cada parte fica com aproximadamente 1900 MB.
+		// Pode mudar para 1024 MB, 2000 MB etc., se quiser partes menores/maiores.
+		private const long SplitPartSizeBytes = 1900L * 1024L * 1024L;
+
 		public static void CreateInstaller(BuilderOptions options)
 		{
 			string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
-			string text = baseDirectory;
-			string text2 = string.Concat(new string[] { "turborama-v", options.RetrobatVersion, "-", options.Branch, "-", options.Architecture, ".zip" });
-			string text3 = Path.Combine(baseDirectory, text2);
-			if (!File.Exists(text3))
+			string zipFileName = string.Concat(new string[] { "turborama-v", options.RetrobatVersion, "-", options.Branch, "-", options.Architecture, ".zip" });
+			string zipPath = Path.Combine(baseDirectory, zipFileName);
+
+			if (!File.Exists(zipPath))
 			{
 				Logger.Log("[INFO] zip not found, creating zip first.");
 				try
@@ -26,57 +29,251 @@ namespace RetroBuild
 					Logger.Log("[ERROR] Exception creating ZIP: " + ex.Message);
 				}
 			}
-			if (!File.Exists(text3))
+
+			if (!File.Exists(zipPath))
 			{
-				Logger.Log("[ERROR] No .zip file found at: " + text3);
+				Logger.Log("[ERROR] No .zip file found at: " + zipPath);
 				return;
 			}
-			Logger.LogInfo("Found zip file: " + text3);
-			string text4 = Path.Combine(baseDirectory, "InstallerHost.exe");
-			if (!File.Exists(text4))
+
+			Logger.LogInfo("Found zip file: " + zipPath);
+
+			string installerHostPath = Path.Combine(baseDirectory, "InstallerHost.exe");
+			if (!File.Exists(installerHostPath))
 			{
-				Logger.Log("[ERROR] InstallerHost.exe not found at: " + text4);
+				Logger.Log("[ERROR] InstallerHost.exe not found at: " + installerHostPath);
 				return;
 			}
-			Logger.LogInfo("Found InstallerHost.exe at: " + text4);
+
+			Logger.LogInfo("Found InstallerHost.exe at: " + installerHostPath);
+
 			try
 			{
-				string text5 = string.Concat(new string[] { "TurboRama-v", options.RetrobatVersion, "-", options.Branch, "-", options.Architecture, "-setup.exe" });
-				string text6 = Path.Combine(text, text5);
-				using (FileStream fileStream = new FileStream(text6, FileMode.Create, FileAccess.Write))
+				string setupFileName = string.Concat(new string[] { "TurboRama-v", options.RetrobatVersion, "-", options.Branch, "-", options.Architecture, "-setup.exe" });
+				string setupPath = Path.Combine(baseDirectory, setupFileName);
+
+				DeleteOldSplitParts(setupPath);
+
+				if (File.Exists(setupPath))
 				{
-					using (FileStream fileStream2 = new FileStream(text4, FileMode.Open, FileAccess.Read))
-					{
-						fileStream2.CopyTo(fileStream);
-					}
-					using (FileStream fileStream3 = new FileStream(text3, FileMode.Open, FileAccess.Read))
-					{
-						fileStream3.CopyTo(fileStream);
-					}
-					byte[] bytes = BitConverter.GetBytes(new FileInfo(text3).Length);
-					fileStream.Write(bytes, 0, bytes.Length);
+					File.Delete(setupPath);
 				}
-				string text7 = "";
-				string text8 = text6 + ".sha256.txt";
-				if (File.Exists(text6))
+
+				// SPLIT: o setup fica pequeno. O ZIP NÃO é anexado dentro do EXE.
+				File.Copy(installerHostPath, setupPath, true);
+				Logger.LogInfo("Created small installer executable: " + setupPath);
+
+				List<string> parts = SplitFile(zipPath, setupPath + ".pkg", SplitPartSizeBytes);
+				WriteSha256List(setupPath, zipPath, parts);
+
+				Logger.LogInfo("Created split installer package:");
+				Logger.LogInfo(" - " + setupPath);
+				foreach (string part in parts)
 				{
-					using (FileStream fileStream4 = File.OpenRead(text6))
+					Logger.LogInfo(" - " + part);
+				}
+				Logger.LogInfo("Keep the .exe and all .pkg.### files together in the same folder.");
+			}
+			catch (Exception ex)
+			{
+				Logger.Log("[ERROR] Exception creating split installer: " + ex.Message);
+			}
+		}
+
+		private static string FormatBytes(long bytes)
+		{
+			string[] units = new string[] { "B", "KB", "MB", "GB", "TB" };
+			double value = bytes;
+			int unit = 0;
+			while (value >= 1024.0 && unit < units.Length - 1)
+			{
+				value /= 1024.0;
+				unit++;
+			}
+			return string.Format("{0:0.00} {1}", value, units[unit]);
+		}
+
+		private static string ShortConsolePath(string path, int maxLength)
+		{
+			if (string.IsNullOrEmpty(path) || path.Length <= maxLength)
+			{
+				return path;
+			}
+			if (maxLength <= 3)
+			{
+				return path.Substring(0, maxLength);
+			}
+			return "..." + path.Substring(path.Length - (maxLength - 3));
+		}
+
+		private static string FormatRemainingTime(TimeSpan time)
+		{
+			int totalHours = (int)Math.Floor(time.TotalHours);
+			return string.Format("{0:D2}:{1:D2}:{2:D2}", totalHours, time.Minutes, time.Seconds);
+		}
+
+		private static int GetSafeConsoleWidth()
+		{
+			try
+			{
+				int width = Console.WindowWidth;
+				if (width < 70)
+				{
+					return 70;
+				}
+				return width;
+			}
+			catch
+			{
+				return 100;
+			}
+		}
+
+		private static string BuildPercentBar(int percent, int barWidth)
+		{
+			percent = Math.Max(0, Math.Min(100, percent));
+			barWidth = Math.Max(10, barWidth);
+			int filled = percent * barWidth / 100;
+			return "[" + new string('#', filled) + new string('-', barWidth - filled) + "]";
+		}
+
+		private static void WriteFixedProgressLine(string line)
+		{
+			int width = GetSafeConsoleWidth() - 1;
+			if (width < 50)
+			{
+				width = 50;
+			}
+			if (line.Length > width)
+			{
+				line = line.Substring(0, width);
+			}
+			Console.Write("\r" + line.PadRight(width));
+		}
+
+		private static void PrintSplitProgress(long processedBytes, long totalBytes, DateTime startTime, int partNumber, string currentPart)
+		{
+			int percent = totalBytes > 0L ? (int)(processedBytes * 100L / totalBytes) : 100;
+			TimeSpan elapsed = DateTime.Now - startTime;
+			double speed = elapsed.TotalSeconds > 0.0 ? processedBytes / elapsed.TotalSeconds : 0.0;
+			long remainingBytes = Math.Max(0L, totalBytes - processedBytes);
+			TimeSpan remaining = speed > 0.0 ? TimeSpan.FromSeconds(remainingBytes / speed) : TimeSpan.Zero;
+			int barWidth = Math.Max(10, Math.Min(34, GetSafeConsoleWidth() - 95));
+
+			string line = string.Format(
+				"{0,3}% {1} {2} / {3} | Vel {4}/s | ETA {5} | Parte {6:000}",
+				percent,
+				BuildPercentBar(percent, barWidth),
+				FormatBytes(processedBytes),
+				FormatBytes(totalBytes),
+				FormatBytes((long)speed),
+				FormatRemainingTime(remaining),
+				partNumber
+			);
+
+			WriteFixedProgressLine(line);
+		}
+
+		private static List<string> SplitFile(string sourceFilePath, string outputBasePath, long partSizeBytes)
+		{
+			List<string> parts = new List<string>();
+
+			byte[] buffer = new byte[1024 * 1024];
+			int partNumber = 1;
+			long processedBytes = 0L;
+			DateTime startTime = DateTime.Now;
+
+			using (FileStream input = new FileStream(sourceFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+			{
+				long totalBytes = input.Length;
+				Console.WriteLine("Gerando partes split do pacote...");
+				Console.WriteLine("Tamanho do ZIP: " + FormatBytes(totalBytes));
+				Console.WriteLine("Tamanho maximo por parte: " + FormatBytes(partSizeBytes));
+				Console.WriteLine("Barra de progresso fixa: a mesma linha sera atualizada ate terminar.");
+
+				while (input.Position < input.Length)
+				{
+					string partPath = outputBasePath + "." + partNumber.ToString("000");
+					long bytesRemainingInPart = partSizeBytes;
+
+					using (FileStream output = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None))
 					{
-						using (SHA256 sha = SHA256.Create())
+						while (bytesRemainingInPart > 0 && input.Position < input.Length)
 						{
-							text7 = BitConverter.ToString(sha.ComputeHash(fileStream4)).Replace("-", "").ToLowerInvariant();
+							int bytesToRead = (int)Math.Min(buffer.Length, bytesRemainingInPart);
+							int bytesRead = input.Read(buffer, 0, bytesToRead);
+							if (bytesRead <= 0)
+							{
+								break;
+							}
+
+							output.Write(buffer, 0, bytesRead);
+							bytesRemainingInPart -= bytesRead;
+							processedBytes += bytesRead;
+							PrintSplitProgress(processedBytes, totalBytes, startTime, partNumber, partPath);
 						}
 					}
-					if (!string.IsNullOrEmpty(text7))
-					{
-						File.WriteAllText(text8, text7);
-					}
+
+					Console.WriteLine();
+					parts.Add(partPath);
+					Logger.LogInfo("Created package part: " + partPath);
+					Console.WriteLine("Parte criada: " + partPath);
+					partNumber++;
 				}
-				Logger.LogInfo("Created final installer executable: " + text6);
 			}
-			catch (Exception ex2)
+
+			return parts;
+		}
+
+		private static void DeleteOldSplitParts(string setupPath)
+		{
+			string folder = Path.GetDirectoryName(setupPath);
+			string fileName = Path.GetFileName(setupPath);
+
+			if (string.IsNullOrEmpty(folder) || string.IsNullOrEmpty(fileName) || !Directory.Exists(folder))
 			{
-				Logger.Log("[ERROR] Exception creating installer: " + ex2.Message);
+				return;
+			}
+
+			foreach (string oldPart in Directory.GetFiles(folder, fileName + ".pkg.*"))
+			{
+				try
+				{
+					File.Delete(oldPart);
+					Logger.LogInfo("Deleted old package part: " + oldPart);
+				}
+				catch (Exception ex)
+				{
+					Logger.Log("[WARNING] Could not delete old package part " + oldPart + ": " + ex.Message);
+				}
+			}
+		}
+
+		private static void WriteSha256List(string setupPath, string zipPath, List<string> parts)
+		{
+			string shaFile = setupPath + ".sha256.txt";
+
+			using (StreamWriter writer = new StreamWriter(shaFile, false))
+			{
+				writer.WriteLine(ComputeSha256(setupPath) + "  " + Path.GetFileName(setupPath));
+				foreach (string part in parts)
+				{
+					writer.WriteLine(ComputeSha256(part) + "  " + Path.GetFileName(part));
+				}
+
+				// Hash do ZIP original, útil para conferir o pacote antes do split.
+				writer.WriteLine(ComputeSha256(zipPath) + "  " + Path.GetFileName(zipPath));
+			}
+		}
+
+		private static string ComputeSha256(string filePath)
+		{
+			using (FileStream stream = File.OpenRead(filePath))
+			{
+				using (SHA256 sha = SHA256.Create())
+				{
+					return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+				}
 			}
 		}
 	}

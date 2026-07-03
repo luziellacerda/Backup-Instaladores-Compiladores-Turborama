@@ -1,0 +1,84 @@
+ARQUIVOS CORRIGIDOS - TURBORAMA
+
+Objetivo:
+- Evitar erro no instalador grande de 7 GB ou mais.
+- Forcar criacao do ZIP em Zip64.
+- Garantir que o RetroBuild gere o instalador no formato que o InstallerHost espera:
+  [InstallerHost.exe][ZIP embutido][8 bytes finais com tamanho do ZIP em Int64]
+- Corrigir o RetroBuild.csproj para Release x64 e Prefer32Bit=false.
+- Corrigir build.ini / BuilderOptions para aceitar retrobat_system_path e system_path.
+
+COMO COLOCAR NA PASTA
+
+1) RetroBuild
+Copie os arquivos da pasta:
+  Turborama_Arquivos_Corrigidos\RetroBuild\
+
+Para a pasta do projeto RetroBuild, substituindo os arquivos existentes:
+  BuilderOptions.cs
+  IniParser.cs
+  Installer.cs
+  Logger.cs
+  Methods.cs
+  Program.cs
+  RetroBuild.csproj
+  build.ini
+  app.manifest
+  RetroBuild.ico
+
+Observacao:
+Se seu projeto usa a pasta Properties, coloque AssemblyInfo.cs em:
+  RetroBuild\Properties\AssemblyInfo.cs
+
+2) InstallerHost
+Copie os arquivos da pasta:
+  Turborama_Arquivos_Corrigidos\InstallerHost\
+
+Para a pasta do projeto InstallerHost, substituindo:
+  InstallControl.cs
+  InstallControl.Designer.cs
+
+3) Visual Studio
+Abra a solucao e selecione:
+  Release | x64
+
+Nos dois projetos, RetroBuild e InstallerHost, confirme:
+  Platform target: x64
+  Prefer 32-bit: desmarcado
+
+4) Limpeza antes de gerar
+Antes de gerar novamente, apague da pasta G:\TURBOPCINSTALL:
+  *.zip
+  *setup.exe
+  *.sha256.txt
+
+Use PowerShell:
+  del "G:\TURBOPCINSTALL\*.zip"
+  del "G:\TURBOPCINSTALL\*setup.exe"
+  del "G:\TURBOPCINSTALL\*.sha256.txt"
+
+5) Rebuild
+No Visual Studio:
+  Build > Rebuild Solution
+
+Copie os EXEs novos para G:\TURBOPCINSTALL:
+  RetroBuild.exe
+  InstallerHost.exe
+
+6) Gerar pacote
+Rode RetroBuild.exe e use:
+  1 - Download and configure
+  2 - Create archive
+  3 - Create installer
+
+7) Subir para GitHub
+Na pasta do projeto:
+  git status
+  git add .
+  git commit -m "Corrige Zip64 e x64 para instalador grande"
+  git push
+
+IMPORTANTE
+- Nao coloque o ZIP nem o setup.exe dentro da pasta build.
+- O RetroBuild deve compactar somente a pasta build.
+- O setup final pode ter 7 GB ou mais, mas o ZIP precisa ser criado com Zip64.

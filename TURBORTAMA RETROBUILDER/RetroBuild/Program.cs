@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -13,46 +14,112 @@ namespace RetroBuild
 	// Token: 0x02000007 RID: 7
 	internal class Program
 	{
-		private static readonly string[] BlockedBuildFiles = new string[]
+		private static void KillProcessByNameSafe(string processName)
 		{
-			"license.txt",
-			"notice.pdf",
-			"notice_french.pdf",
-			"GDrive.exe",
-			"TurboRama.log"
-		};
-
-		private static bool IsBlockedBuildFile(string path)
-		{
-			string fileName = Path.GetFileName(path);
-			return Program.BlockedBuildFiles.Any((string blocked) => blocked.Equals(fileName, StringComparison.OrdinalIgnoreCase));
+			try
+			{
+				foreach (Process process in Process.GetProcessesByName(processName))
+				{
+					try
+					{
+						if (process.Id == Process.GetCurrentProcess().Id)
+						{
+							continue;
+						}
+						Logger.LogInfo("Fechando processo que pode estar travando arquivo: " + processName + ".exe");
+						process.Kill();
+						process.WaitForExit(3000);
+					}
+					catch (Exception ex)
+					{
+						Logger.Log("[WARNING] Nao foi possivel fechar " + processName + ".exe: " + ex.Message);
+					}
+					finally
+					{
+						process.Dispose();
+					}
+				}
+			}
+			catch (Exception ex2)
+			{
+				Logger.Log("[WARNING] Falha ao verificar processo " + processName + ": " + ex2.Message);
+			}
 		}
 
-		private static void RemoveBlockedBuildFiles(string buildPath)
+		private static void NormalizeAttributesForDelete(string path)
 		{
-			if (!Directory.Exists(buildPath))
+			if (File.Exists(path))
+			{
+				File.SetAttributes(path, FileAttributes.Normal);
+				return;
+			}
+
+			if (!Directory.Exists(path))
 			{
 				return;
 			}
 
-			foreach (string file in Directory.GetFiles(buildPath, "*", SearchOption.AllDirectories))
+			foreach (string file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
 			{
-				if (!Program.IsBlockedBuildFile(file))
-				{
-					continue;
-				}
-
 				try
 				{
 					File.SetAttributes(file, FileAttributes.Normal);
-					File.Delete(file);
-					Logger.LogInfo("Arquivo bloqueado removido da build: " + file);
 				}
 				catch (Exception ex)
 				{
-					Logger.Log("[WARNING] Nao foi possivel remover arquivo bloqueado " + file + ": " + ex.Message);
+					Logger.Log("[WARNING] Nao foi possivel normalizar arquivo " + file + ": " + ex.Message);
 				}
 			}
+
+			foreach (string directory in Directory.GetDirectories(path, "*", SearchOption.AllDirectories))
+			{
+				try
+				{
+					File.SetAttributes(directory, FileAttributes.Normal);
+				}
+				catch (Exception ex2)
+				{
+					Logger.Log("[WARNING] Nao foi possivel normalizar pasta " + directory + ": " + ex2.Message);
+				}
+			}
+
+			try
+			{
+				File.SetAttributes(path, FileAttributes.Normal);
+			}
+			catch
+			{
+			}
+		}
+
+		private static bool SafeDeleteDirectory(string path)
+		{
+			if (!Directory.Exists(path))
+			{
+				return true;
+			}
+
+			// BatGui.exe costuma ficar aberto e trava a limpeza da pasta build.
+			KillProcessByNameSafe("BatGui");
+
+			for (int i = 1; i <= 6; i++)
+			{
+				try
+				{
+					NormalizeAttributesForDelete(path);
+					Directory.Delete(path, true);
+					Logger.LogInfo("Build antiga removida normalmente.");
+					return true;
+				}
+				catch (Exception ex)
+				{
+					Logger.Log("[WARNING] Tentativa " + i + " falhou ao limpar build: " + ex.Message);
+					KillProcessByNameSafe("BatGui");
+					Thread.Sleep(1000);
+				}
+			}
+
+			return false;
 		}
 
 		// Token: 0x06000059 RID: 89 RVA: 0x000036F0 File Offset: 0x000018F0
@@ -198,13 +265,9 @@ namespace RetroBuild
 					goto IL_00C8;
 				}
 				Logger.Log("[WARNING] Build path was not empty, deleting content.");
-				try
+				if (!Program.SafeDeleteDirectory(text))
 				{
-					Directory.Delete(text, true);
-				}
-				catch (Exception ex)
-				{
-					Logger.Log("[ERROR] Failed to delete content of build path: " + ex.Message);
+					Logger.Log("[ERROR] Failed to delete content of build path. Feche qualquer programa aberto dentro da pasta build e tente novamente.");
 					Console.ReadKey();
 					return;
 				}
@@ -242,12 +305,6 @@ namespace RetroBuild
 			{
 				foreach (string text3 in Directory.GetFiles(baseDirectory, "*.txt"))
 				{
-					if (Program.IsBlockedBuildFile(text3))
-					{
-						Logger.LogInfo("Arquivo TXT bloqueado, nao sera copiado para a build: " + text3);
-						continue;
-					}
-
 					string text4 = Path.Combine(text, Path.GetFileName(text3));
 					File.Copy(text3, text4, true);
 				}
@@ -258,20 +315,54 @@ namespace RetroBuild
 			if (options.GetEmulationstation)
 			{
 				string text6 = options.EmulationstationUrl;
-				if (!text6.EndsWith("/") && !text6.EndsWith(".zip"))
+
+				// CORRECAO TURBORAMA DEFINITIVA:
+				// Qualquer build.ini antigo apontando para EmulationStationRetroBat2026
+				// ou EmulationStationsRetroBat2026 e corrigido para o repositorio atual.
+				// Tambem corrige URL /releases/tag/ para /releases/download/.
+				if (string.IsNullOrWhiteSpace(text6) ||
+					text6.IndexOf("EmulationStationRetroBat2026", StringComparison.OrdinalIgnoreCase) >= 0 ||
+					text6.IndexOf("EmulationStationsRetroBat2026", StringComparison.OrdinalIgnoreCase) >= 0 ||
+					text6.IndexOf("RetroBat2026", StringComparison.OrdinalIgnoreCase) >= 0)
+				{
+					Logger.Log("[WARNING] URL antiga do EmulationStation detectada no build.ini. Corrigindo automaticamente para TurboramaEmulationStation.");
+					text6 = "https://github.com/luziellacerda/TurboramaEmulationStation/releases/download/continuous-master/";
+				}
+
+				text6 = text6.Replace("/releases/tag/", "/releases/download/");
+
+				if (!text6.EndsWith("/", StringComparison.OrdinalIgnoreCase) && !text6.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
 				{
 					text6 += "/";
 				}
-				if (options.Architecture == "win32")
+
+				// Se a URL ja for o ZIP direto, nao anexa outro nome no final.
+				if (!text6.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
 				{
-					text6 += "EmulationStation-Win32.zip";
+					if (options.Architecture == "win32")
+					{
+						text6 += "EmulationStation-Win32.zip";
+					}
+					else
+					{
+						text6 += "EmulationStation-Win64.zip";
+					}
 				}
-				else
-				{
-					text6 += "EmulationStation-Win64.zip";
-				}
+
+				Logger.LogInfo("EmulationStation URL final: " + text6);
 				string text7 = Path.Combine(text, "emulationstation");
-				Methods.DownloadAndExtractArchive_Wget(text6, text7, options);
+				bool emulationstationOk = Methods.DownloadAndExtractArchive_Wget(text6, text7, options);
+				if (!emulationstationOk)
+				{
+					Logger.Log("[WARNING] Wget falhou para EmulationStation, tentando WebClient: " + text6);
+					emulationstationOk = Methods.DownloadAndExtractArchive_WebClient(text6, text7, options);
+				}
+				if (!emulationstationOk)
+				{
+					Logger.Log("[ERROR] Falha ao baixar/extrair EmulationStation. URL usada: " + text6);
+					Console.ReadKey();
+					return;
+				}
 				Logger.LogInfo("Emulationstation copied to " + text7);
 			}
 			if (options.GetBatoceraPorts)
@@ -302,10 +393,35 @@ namespace RetroBuild
 			}
 			if (options.GetDefaultTheme)
 			{
-				string text11 = Path.Combine(new string[] { text, "emulationstation", ".emulationstation", "themes", "es-theme-carbon" });
-				Methods.CloneOrUpdateGitRepo(options.ThemePath, text11);
-				Path.Combine(text11, ".git");
-				Methods.DeleteGitFiles(text11);
+				string themesPath = Path.Combine(text, "emulationstation", ".emulationstation", "themes");
+				string oldCarbonThemePath = Path.Combine(themesPath, "es-theme-carbon");
+				string turboramaThemePath = Path.Combine(themesPath, "PC-RETRO-LZ-THEME-PC-NEW");
+				string turboramaThemeUrl = "https://github.com/luziellacerda/PC-RETRO-LZ-THEME-PC-NEW";
+
+				if (Directory.Exists(oldCarbonThemePath))
+				{
+					try
+					{
+						Directory.Delete(oldCarbonThemePath, true);
+						Logger.LogInfo("Tema antigo es-theme-carbon removido: " + oldCarbonThemePath);
+					}
+					catch (Exception ex)
+					{
+						Logger.Log("[WARNING] Nao foi possivel remover es-theme-carbon: " + ex.Message);
+					}
+				}
+
+				if (string.IsNullOrWhiteSpace(options.ThemePath) ||
+					options.ThemePath.IndexOf("es-theme-carbon", StringComparison.OrdinalIgnoreCase) >= 0 ||
+					options.ThemePath.IndexOf("RetroBat-Official", StringComparison.OrdinalIgnoreCase) >= 0)
+				{
+					Logger.LogInfo("theme_path antigo/errado detectado, forçando tema Turborama.");
+					options.ThemePath = turboramaThemeUrl;
+				}
+
+				Logger.LogInfo("Baixando tema Turborama: " + options.ThemePath);
+				Methods.CloneOrUpdateGitRepo(options.ThemePath, turboramaThemePath);
+				Methods.DeleteGitFiles(turboramaThemePath);
 			}
 			if (options.GetDecorations)
 			{
@@ -611,7 +727,23 @@ namespace RetroBuild
 				}
 			}
 			string text7 = Path.Combine(text, "system", "resources", "emulationstation");
-			Logger.LogInfo("notice.pdf esta bloqueado e nao sera copiado para a pasta .emulationstation.");
+			foreach (string noticeName in new string[] { "notice.pdf", "notice_french.pdf", "license.txt" })
+			{
+				string noticeSource = Path.Combine(text7, noticeName);
+				string noticeTarget = Path.Combine(text3, noticeName);
+				if (File.Exists(noticeSource))
+				{
+					try
+					{
+						File.Copy(noticeSource, noticeTarget, true);
+						Logger.LogInfo("Copied " + noticeName + " to " + text3);
+					}
+					catch (Exception ex3)
+					{
+						Logger.LogInfo("Failed to copy " + noticeName + ": " + ex3.Message);
+					}
+				}
+			}
 			string text10 = Path.Combine(text7, "music");
 			string text11 = Path.Combine(text7, "video");
 			string text12 = Path.Combine(text3, "music");
@@ -642,33 +774,47 @@ namespace RetroBuild
 					return;
 				}
 			}
-			foreach (string text14 in Directory.GetFiles(text10, "*.*"))
+			if (Directory.Exists(text10))
 			{
-				string text15 = text14.Replace(text10, text12);
-				try
+				foreach (string text14 in Directory.GetFiles(text10, "*.*"))
 				{
-					File.Copy(text14, text15, true);
-					Logger.LogInfo("Copid music file: " + text15);
-				}
-				catch (Exception ex6)
-				{
-					Logger.LogInfo(string.Concat(new string[] { "Failed to copy music file ", text14, " to ", text15, ": ", ex6.Message }));
-					return;
+					string text15 = text14.Replace(text10, text12);
+					try
+					{
+						File.Copy(text14, text15, true);
+						Logger.LogInfo("Copied music file: " + text15);
+					}
+					catch (Exception ex6)
+					{
+						Logger.LogInfo(string.Concat(new string[] { "Failed to copy music file ", text14, " to ", text15, ": ", ex6.Message }));
+						return;
+					}
 				}
 			}
-			foreach (string text16 in Directory.GetFiles(text11, "*.*"))
+			else
 			{
-				string text17 = text16.Replace(text11, text13);
-				try
+				Logger.LogInfo("Music source folder not found, skipping: " + text10);
+			}
+			if (Directory.Exists(text11))
+			{
+				foreach (string text16 in Directory.GetFiles(text11, "*.*"))
 				{
-					File.Copy(text16, text17, true);
-					Logger.LogInfo("Copid video file: " + text17);
+					string text17 = text16.Replace(text11, text13);
+					try
+					{
+						File.Copy(text16, text17, true);
+						Logger.LogInfo("Copied video file: " + text17);
+					}
+					catch (Exception ex7)
+					{
+						Logger.LogInfo(string.Concat(new string[] { "Failed to copy video file ", text16, " to ", text17, ": ", ex7.Message }));
+						return;
+					}
 				}
-				catch (Exception ex7)
-				{
-					Logger.LogInfo(string.Concat(new string[] { "Failed to copy video file ", text16, " to ", text17, ": ", ex7.Message }));
-					return;
-				}
+			}
+			else
+			{
+				Logger.LogInfo("Video source folder not found, skipping: " + text11);
 			}
 			string text18 = Path.Combine(text2, "es_features.locale");
 			string text19 = Path.Combine(text, "emulationstation", "es_features.locale");
@@ -685,21 +831,28 @@ namespace RetroBuild
 					return;
 				}
 			}
-			string[] array = Directory.GetDirectories(text18, "*", SearchOption.AllDirectories);
-			for (int i = 0; i < array.Length; i++)
+			if (Directory.Exists(text18))
 			{
-				string text20 = array[i].Replace(text18, text19);
-				if (!Directory.Exists(text20))
+				string[] array = Directory.GetDirectories(text18, "*", SearchOption.AllDirectories);
+				for (int i = 0; i < array.Length; i++)
 				{
-					Directory.CreateDirectory(text20);
+					string text20 = array[i].Replace(text18, text19);
+					if (!Directory.Exists(text20))
+					{
+						Directory.CreateDirectory(text20);
+					}
 				}
+				foreach (string text21 in Directory.GetFiles(text18, "*.*", SearchOption.AllDirectories))
+				{
+					string text22 = text21.Replace(text18, text19);
+					File.Copy(text21, text22, true);
+				}
+				Logger.LogInfo("Create locale folder: " + text19);
 			}
-			foreach (string text21 in Directory.GetFiles(text18, "*.*", SearchOption.AllDirectories))
+			else
 			{
-				string text22 = text21.Replace(text18, text19);
-				File.Copy(text21, text22, true);
+				Logger.LogInfo("Locale source folder not found, skipping: " + text18);
 			}
-			Logger.LogInfo("Create locale folder: " + text19);
 		}
 
 		// Token: 0x0600005F RID: 95 RVA: 0x00004A98 File Offset: 0x00002C98
@@ -900,6 +1053,99 @@ namespace RetroBuild
 			}
 		}
 
+		private static string FormatBytes(long bytes)
+		{
+			string[] units = new string[] { "B", "KB", "MB", "GB", "TB" };
+			double value = bytes;
+			int unit = 0;
+			while (value >= 1024.0 && unit < units.Length - 1)
+			{
+				value /= 1024.0;
+				unit++;
+			}
+			return string.Format("{0:0.00} {1}", value, units[unit]);
+		}
+
+		private static string ShortConsolePath(string path, int maxLength)
+		{
+			if (string.IsNullOrEmpty(path) || path.Length <= maxLength)
+			{
+				return path;
+			}
+			if (maxLength <= 3)
+			{
+				return path.Substring(0, maxLength);
+			}
+			return "..." + path.Substring(path.Length - (maxLength - 3));
+		}
+
+		private static string FormatRemainingTime(TimeSpan time)
+		{
+			int totalHours = (int)Math.Floor(time.TotalHours);
+			return string.Format("{0:D2}:{1:D2}:{2:D2}", totalHours, time.Minutes, time.Seconds);
+		}
+
+		private static int GetSafeConsoleWidth()
+		{
+			try
+			{
+				int width = Console.WindowWidth;
+				if (width < 70)
+				{
+					return 70;
+				}
+				return width;
+			}
+			catch
+			{
+				return 100;
+			}
+		}
+
+		private static string BuildPercentBar(int percent, int barWidth)
+		{
+			percent = Math.Max(0, Math.Min(100, percent));
+			barWidth = Math.Max(10, barWidth);
+			int filled = percent * barWidth / 100;
+			return "[" + new string('#', filled) + new string('-', barWidth - filled) + "]";
+		}
+
+		private static void WriteFixedProgressLine(string line)
+		{
+			int width = GetSafeConsoleWidth() - 1;
+			if (width < 50)
+			{
+				width = 50;
+			}
+			if (line.Length > width)
+			{
+				line = line.Substring(0, width);
+			}
+			Console.Write("\r" + line.PadRight(width));
+		}
+
+		private static void PrintZipProgress(long processedBytes, long totalBytes, DateTime startTime, string currentFile)
+		{
+			int percent = totalBytes > 0L ? (int)(processedBytes * 100L / totalBytes) : 100;
+			TimeSpan elapsed = DateTime.Now - startTime;
+			double speed = elapsed.TotalSeconds > 0.0 ? processedBytes / elapsed.TotalSeconds : 0.0;
+			long remainingBytes = Math.Max(0L, totalBytes - processedBytes);
+			TimeSpan remaining = speed > 0.0 ? TimeSpan.FromSeconds(remainingBytes / speed) : TimeSpan.Zero;
+			int barWidth = Math.Max(10, Math.Min(34, GetSafeConsoleWidth() - 82));
+
+			string line = string.Format(
+				"{0,3}% {1} {2} / {3} | Vel {4}/s | ETA {5}",
+				percent,
+				BuildPercentBar(percent, barWidth),
+				FormatBytes(processedBytes),
+				FormatBytes(totalBytes),
+				FormatBytes((long)speed),
+				FormatRemainingTime(remaining)
+			);
+
+			WriteFixedProgressLine(line);
+		}
+
 		// Token: 0x06000063 RID: 99 RVA: 0x00005170 File Offset: 0x00003370
 		public static void CreateZipFolderSharpZip(BuilderOptions options)
 		{
@@ -914,7 +1160,23 @@ namespace RetroBuild
 				Logger.LogInfo("[ERROR] Source folder does not exist.");
 				return;
 			}
-			Program.RemoveBlockedBuildFiles(text2);
+
+			string[] files = Directory.GetFiles(text2, "*", SearchOption.AllDirectories);
+			long totalBytes = 0L;
+			foreach (string file in files)
+			{
+				if (!Path.GetFullPath(file).Equals(Path.GetFullPath(text3), StringComparison.OrdinalIgnoreCase))
+				{
+					totalBytes += new FileInfo(file).Length;
+				}
+			}
+
+			Logger.LogInfo("Total files to archive: " + files.Length);
+			Logger.LogInfo("Total input size: " + FormatBytes(totalBytes));
+			Console.WriteLine("Arquivos para compactar: " + files.Length);
+			Console.WriteLine("Tamanho total de entrada: " + FormatBytes(totalBytes));
+			Console.WriteLine("Barra de progresso fixa: a mesma linha sera atualizada ate terminar.");
+
 			if (File.Exists(text3))
 			{
 				try
@@ -926,39 +1188,58 @@ namespace RetroBuild
 					Logger.LogInfo("[WARNING] Could not delete existing zip file: " + ex.Message);
 				}
 			}
+
+			long processedBytes = 0L;
+			DateTime startTime = DateTime.Now;
+			byte[] buffer = new byte[1024 * 1024];
+
 			using (FileStream fileStream = new FileStream(text3, FileMode.Create, FileAccess.Write, FileShare.None))
 			{
 				using (ZipOutputStream zipOutputStream = new ZipOutputStream(fileStream))
 				{
 					zipOutputStream.SetLevel(9);
+					// TURBORAMA SPLIT/ZIP64: obrigatório para arquivos/pacotes acima de 4 GB.
+					zipOutputStream.UseZip64 = ICSharpCode.SharpZipLib.Zip.UseZip64.On;
 					zipOutputStream.IsStreamOwner = true;
-					foreach (string text4 in Directory.GetFiles(text2, "*", SearchOption.AllDirectories))
+
+					foreach (string text4 in files)
 					{
-						if (Program.IsBlockedBuildFile(text4))
+						if (Path.GetFullPath(text4).Equals(Path.GetFullPath(text3), StringComparison.OrdinalIgnoreCase))
 						{
-							Logger.LogInfo("Arquivo bloqueado, nao sera empacotado: " + text4);
 							continue;
 						}
 
-						if (!(Path.GetFullPath(text4) == Path.GetFullPath(text3)))
+						string relativePath = Program.GetRelativePath(text2, text4).Replace("\\", "/");
+						FileInfo fileInfo = new FileInfo(text4);
+						ZipEntry zipEntry = new ZipEntry(relativePath)
 						{
-							ZipEntry zipEntry = new ZipEntry(Program.GetRelativePath(text2, text4).Replace("\\", "/"))
+							IsUnicodeText = true,
+							Size = fileInfo.Length,
+							DateTime = fileInfo.LastWriteTime
+						};
+
+						zipOutputStream.PutNextEntry(zipEntry);
+						using (FileStream fileStream2 = File.OpenRead(text4))
+						{
+							int bytesRead;
+							while ((bytesRead = fileStream2.Read(buffer, 0, buffer.Length)) > 0)
 							{
-								IsUnicodeText = true
-							};
-							zipOutputStream.PutNextEntry(zipEntry);
-							using (FileStream fileStream2 = File.OpenRead(text4))
-							{
-								fileStream2.CopyTo(zipOutputStream);
+								zipOutputStream.Write(buffer, 0, bytesRead);
+								processedBytes += bytesRead;
+								PrintZipProgress(processedBytes, totalBytes, startTime, relativePath);
 							}
-							zipOutputStream.CloseEntry();
 						}
+						zipOutputStream.CloseEntry();
 					}
+
 					foreach (string text5 in Directory.GetDirectories(text2, "*", SearchOption.AllDirectories))
 					{
 						if (Directory.GetFiles(text5).Length == 0 && Directory.GetDirectories(text5).Length == 0)
 						{
-							ZipEntry zipEntry2 = new ZipEntry(Program.GetRelativePath(text2, text5).Replace("\\", "/") + "/");
+							ZipEntry zipEntry2 = new ZipEntry(Program.GetRelativePath(text2, text5).Replace("\\", "/") + "/")
+							{
+								IsUnicodeText = true
+							};
 							zipOutputStream.PutNextEntry(zipEntry2);
 							zipOutputStream.CloseEntry();
 						}
@@ -966,7 +1247,10 @@ namespace RetroBuild
 					zipOutputStream.Finish();
 				}
 			}
+
+			Console.WriteLine();
 			string text6 = text3 + ".sha256.txt";
+			Console.WriteLine("Gerando SHA256 do ZIP...");
 			using (FileStream fileStream3 = File.OpenRead(text3))
 			{
 				using (SHA256 sha = SHA256.Create())
@@ -976,6 +1260,7 @@ namespace RetroBuild
 				}
 			}
 			Logger.LogInfo("ZIP created at: " + text3);
+			Console.WriteLine("ZIP concluido: " + text3);
 		}
 
 		// Token: 0x06000064 RID: 100 RVA: 0x00005488 File Offset: 0x00003688

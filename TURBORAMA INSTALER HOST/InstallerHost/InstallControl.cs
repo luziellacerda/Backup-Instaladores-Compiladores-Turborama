@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 using System.IO;
@@ -101,9 +102,9 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 				try
 				{
 					string text2 = this.txtFolder.Text;
-					using (Stream embeddedZipStream = this.GetEmbeddedZipStream())
+					using (Stream installerZipStream = this.GetInstallerZipStream())
 					{
-						this.ExtractZipStreamToFolder(embeddedZipStream, text2);
+						this.ExtractZipStreamToFolder(installerZipStream, text2);
 					}
 					this.EnsureTurboRamaExecutable(text2);
 				}
@@ -153,6 +154,56 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 		}
 
 		// Token: 0x0600001F RID: 31 RVA: 0x000038B0 File Offset: 0x00001AB0
+		private Stream GetInstallerZipStream()
+		{
+			Stream splitStream = this.TryGetSplitPackageStream();
+			if (splitStream != null)
+			{
+				return splitStream;
+			}
+
+			// Compatibilidade: se não existir pacote split, tenta o modo antigo embutido.
+			return this.GetEmbeddedZipStream();
+		}
+
+		private Stream TryGetSplitPackageStream()
+		{
+			string exePath = Application.ExecutablePath;
+			string folder = Path.GetDirectoryName(exePath);
+			string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(exePath);
+
+			string[] packageBases = new string[]
+			{
+				exePath,
+				Path.Combine(folder, fileNameWithoutExtension)
+			};
+
+			foreach (string packageBase in packageBases)
+			{
+				List<string> parts = new List<string>();
+
+				for (int i = 1; i <= 999; i++)
+				{
+					string partPath = packageBase + ".pkg." + i.ToString("000");
+
+					if (!File.Exists(partPath))
+					{
+						break;
+					}
+
+					parts.Add(partPath);
+				}
+
+				if (parts.Count > 0)
+				{
+					Logger.Log("Using split installer package with " + parts.Count + " part(s). Base: " + packageBase);
+					return new InstallControl.MultiPartFileStream(parts);
+				}
+			}
+
+			return null;
+		}
+
 		private Stream GetEmbeddedZipStream()
 		{
 			FileStream fileStream = new FileStream(Application.ExecutablePath, FileMode.Open, FileAccess.Read);
@@ -184,7 +235,7 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 				zipFile.IsStreamOwner = true;
 				zipFile.UseZip64 = ICSharpCode.SharpZipLib.Zip.UseZip64.On;
 				long num = (from ZipEntry e in zipFile
-					where e.IsFile
+					where e.IsFile && e.Size > 0L
 					select e).Sum<ZipEntry>((ZipEntry e) => e.Size);
 				long num2 = 0L;
 				int num3 = -1;
@@ -295,6 +346,219 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			if (!File.Exists(turboRamaExe))
 			{
 				throw new FileNotFoundException("TurboRama.exe was not created. The installer archive does not contain RetroBat.exe, retrobat.exe, Turborama.exe or TurboRama.exe.", turboRamaExe);
+			}
+		}
+
+		private class MultiPartFileStream : Stream
+		{
+			private readonly List<string> _partPaths;
+			private readonly long[] _partLengths;
+			private readonly long _length;
+			private long _position;
+			private int _currentPartIndex = -1;
+			private FileStream _currentStream;
+
+			public MultiPartFileStream(List<string> partPaths)
+			{
+				if (partPaths == null || partPaths.Count == 0)
+				{
+					throw new ArgumentException("No split package parts found.", "partPaths");
+				}
+
+				this._partPaths = new List<string>(partPaths);
+				this._partLengths = new long[this._partPaths.Count];
+
+				long total = 0L;
+				for (int i = 0; i < this._partPaths.Count; i++)
+				{
+					FileInfo fileInfo = new FileInfo(this._partPaths[i]);
+					if (!fileInfo.Exists)
+					{
+						throw new FileNotFoundException("Split package part not found.", this._partPaths[i]);
+					}
+
+					this._partLengths[i] = fileInfo.Length;
+					total += fileInfo.Length;
+				}
+
+				this._length = total;
+				this._position = 0L;
+			}
+
+			public override bool CanRead
+			{
+				get { return true; }
+			}
+
+			public override bool CanSeek
+			{
+				get { return true; }
+			}
+
+			public override bool CanWrite
+			{
+				get { return false; }
+			}
+
+			public override long Length
+			{
+				get { return this._length; }
+			}
+
+			public override long Position
+			{
+				get { return this._position; }
+				set { this.Seek(value, SeekOrigin.Begin); }
+			}
+
+			public override int Read(byte[] buffer, int offset, int count)
+			{
+				if (buffer == null)
+				{
+					throw new ArgumentNullException("buffer");
+				}
+				if (offset < 0 || count < 0 || offset + count > buffer.Length)
+				{
+					throw new ArgumentOutOfRangeException("offset");
+				}
+
+				if (count == 0 || this._position >= this._length)
+				{
+					return 0;
+				}
+
+				int totalRead = 0;
+
+				while (count > 0 && this._position < this._length)
+				{
+					long partStart;
+					int partIndex = this.GetPartIndexForPosition(this._position, out partStart);
+					if (partIndex < 0)
+					{
+						break;
+					}
+
+					this.OpenPart(partIndex);
+
+					long positionInsidePart = this._position - partStart;
+					long remainingInPart = this._partLengths[partIndex] - positionInsidePart;
+					if (remainingInPart <= 0L)
+					{
+						this._position = partStart + this._partLengths[partIndex];
+						continue;
+					}
+
+					this._currentStream.Position = positionInsidePart;
+					int bytesToRead = (int)Math.Min((long)count, remainingInPart);
+					int bytesRead = this._currentStream.Read(buffer, offset, bytesToRead);
+
+					if (bytesRead <= 0)
+					{
+						break;
+					}
+
+					this._position += bytesRead;
+					offset += bytesRead;
+					count -= bytesRead;
+					totalRead += bytesRead;
+				}
+
+				return totalRead;
+			}
+
+			public override long Seek(long offset, SeekOrigin origin)
+			{
+				long newPosition;
+
+				if (origin == SeekOrigin.Begin)
+				{
+					newPosition = offset;
+				}
+				else if (origin == SeekOrigin.Current)
+				{
+					newPosition = this._position + offset;
+				}
+				else if (origin == SeekOrigin.End)
+				{
+					newPosition = this._length + offset;
+				}
+				else
+				{
+					throw new ArgumentOutOfRangeException("origin");
+				}
+
+				if (newPosition < 0L || newPosition > this._length)
+				{
+					throw new IOException("Seek outside split package stream.");
+				}
+
+				this._position = newPosition;
+				return this._position;
+			}
+
+			public override void Flush()
+			{
+			}
+
+			public override void SetLength(long value)
+			{
+				throw new NotSupportedException();
+			}
+
+			public override void Write(byte[] buffer, int offset, int count)
+			{
+				throw new NotSupportedException();
+			}
+
+			protected override void Dispose(bool disposing)
+			{
+				if (disposing)
+				{
+					this.CloseCurrentStream();
+				}
+
+				base.Dispose(disposing);
+			}
+
+			private int GetPartIndexForPosition(long position, out long partStart)
+			{
+				partStart = 0L;
+
+				for (int i = 0; i < this._partLengths.Length; i++)
+				{
+					long partEnd = partStart + this._partLengths[i];
+					if (position < partEnd)
+					{
+						return i;
+					}
+
+					partStart = partEnd;
+				}
+
+				return -1;
+			}
+
+			private void OpenPart(int partIndex)
+			{
+				if (this._currentPartIndex == partIndex && this._currentStream != null)
+				{
+					return;
+				}
+
+				this.CloseCurrentStream();
+				this._currentStream = new FileStream(this._partPaths[partIndex], FileMode.Open, FileAccess.Read, FileShare.Read);
+				this._currentPartIndex = partIndex;
+			}
+
+			private void CloseCurrentStream()
+			{
+				if (this._currentStream != null)
+				{
+					this._currentStream.Dispose();
+					this._currentStream = null;
+				}
+
+				this._currentPartIndex = -1;
 			}
 		}
 

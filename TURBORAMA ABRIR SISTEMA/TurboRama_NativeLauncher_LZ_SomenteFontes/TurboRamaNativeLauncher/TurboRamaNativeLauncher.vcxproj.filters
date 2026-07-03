@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Codigo Fonte">
+      <UniqueIdentifier>{4D67D9FA-2FD9-41CB-B77D-6C3227B3B6C0}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx</Extensions>
+    </Filter>
+    <Filter Include="Recursos">
+      <UniqueIdentifier>{1B0F4E36-2CEB-40C1-B8E5-59F550EC9E22}</UniqueIdentifier>
+      <Extensions>rc;ico;png</Extensions>
+    </Filter>
+    <Filter Include="Cabecalhos">
+      <UniqueIdentifier>{369D8E1B-2B13-4C88-9B66-E656DE4C4A7A}</UniqueIdentifier>
+      <Extensions>h;hpp</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Codigo Fonte</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="TurboRama.rc">
+      <Filter>Recursos</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="resource.h">
+      <Filter>Cabecalhos</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="app.manifest">
+      <Filter>Recursos</Filter>
+    </None>
+    <Image Include="res\TurboRama.ico">
+      <Filter>Recursos</Filter>
+    </Image>
+    <Image Include="res\TurboRama_LZ_Icon.png">
+      <Filter>Recursos</Filter>
+    </Image>
+  </ItemGroup>
+</Project>

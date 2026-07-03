@@ -574,14 +574,21 @@ namespace InstallerHost
             line.Height = 2;
             sidebar.Controls.Add(line);
 
+            Panel lineAccent = new Panel();
+            lineAccent.BackColor = AccentRed;
+            lineAccent.Left = 198;
+            lineAccent.Top = 82;
+            lineAccent.Width = 18;
+            lineAccent.Height = 4;
+            sidebar.Controls.Add(lineAccent);
+
             Label product = MakeLabel("SISTEMA TURBORAMA", 24, 104, 220, 24, Text, 11f, true);
             sidebar.Controls.Add(product);
-            Label slogan = MakeLabel("Prazer e diversão\r\ncom os melhores jogos", 24, 132, 220, 42, GreenSoft, 8.8f, false);
+            Label slogan = MakeLabel("Prazer e diversão\\r\\ncom os melhores jogos", 24, 132, 220, 42, GreenSoft, 8.8f, false);
             sidebar.Controls.Add(slogan);
 
             Image sidebarLogo = LoadSidebarLogoImage();
             Image artworkImage = sidebarLogo;
-
             if (artworkImage == null && banner != null && banner.Image != null)
             {
                 artworkImage = CloneImageSafe(banner.Image);
@@ -589,8 +596,6 @@ namespace InstallerHost
 
             if (banner != null)
             {
-                // IMPORTANTE: o PictureBox original do Designer vem com DockStyle.Left.
-                // Se ele for reaproveitado sem limpar o Dock, a imagem sai do esquadro.
                 banner.Visible = false;
                 banner.Dock = DockStyle.None;
                 banner.Anchor = AnchorStyles.None;
@@ -598,14 +603,12 @@ namespace InstallerHost
 
             PremiumPanel artworkBox = MakeCard("__sidebarArtwork", 24, 186, 220, 160, Color.FromArgb(3, 8, 5), Color.FromArgb(38, 72, 42), 0);
             sidebar.Controls.Add(artworkBox);
-
             if (artworkImage != null)
             {
                 PictureBox artworkPicture = new PictureBox();
                 artworkPicture.Name = "__turboramaSidebarArtworkImage";
                 artworkPicture.Image = artworkImage;
-                artworkPicture.Location = new Point(0, 0);
-                artworkPicture.Size = new Size(220, 160);
+                artworkPicture.Dock = DockStyle.Fill;
                 artworkPicture.SizeMode = PictureBoxSizeMode.Zoom;
                 artworkPicture.BackColor = Color.Black;
                 artworkPicture.BorderStyle = BorderStyle.None;
@@ -613,7 +616,6 @@ namespace InstallerHost
                 artworkPicture.Padding = new Padding(0);
                 artworkPicture.TabStop = false;
                 artworkBox.Controls.Add(artworkPicture);
-                artworkPicture.BringToFront();
             }
             else
             {
@@ -626,6 +628,14 @@ namespace InstallerHost
             Label statusLabel = MakeLabel(status, 24, 384, 220, 20, Green, 8.5f, true);
             sidebar.Controls.Add(statusLabel);
 
+            Panel stageAccent = new Panel();
+            stageAccent.BackColor = AccentRedSoft;
+            stageAccent.Left = 24;
+            stageAccent.Top = 409;
+            stageAccent.Width = 54;
+            stageAccent.Height = 2;
+            sidebar.Controls.Add(stageAccent);
+
             int stepTop = 416;
             AddStep(sidebar, 0, stepTop + 0, "01", "Boas-vindas", activeIndex);
             AddStep(sidebar, 1, stepTop + 23, "02", "Licença", activeIndex);
@@ -637,7 +647,6 @@ namespace InstallerHost
             sidebar.BringToFront();
             return sidebar;
         }
-
         private static Panel CreateWelcomeSidebar(UserControl root, PictureBox banner)
         {
             PremiumPanel sidebar = new PremiumPanel(Color.FromArgb(4, 13, 8), Color.FromArgb(32, 68, 38), 0, false);
@@ -669,20 +678,18 @@ namespace InstallerHost
 
             Panel lineAccent = new Panel();
             lineAccent.BackColor = AccentRed;
-            lineAccent.Left = 206;
+            lineAccent.Left = 198;
             lineAccent.Top = 82;
-            lineAccent.Width = 12;
+            lineAccent.Width = 18;
             lineAccent.Height = 4;
             sidebar.Controls.Add(lineAccent);
 
             Label product = MakeLabel("SISTEMA TURBORAMA", 24, 104, 220, 24, Text, 11f, true);
             sidebar.Controls.Add(product);
-            Label slogan = MakeLabel("Prazer e diversão\r\ncom os melhores jogos", 24, 132, 220, 42, GreenSoft, 8.8f, false);
+            Label slogan = MakeLabel("Prazer e diversão\\r\\ncom os melhores jogos", 24, 132, 220, 42, GreenSoft, 8.8f, false);
             sidebar.Controls.Add(slogan);
 
-            Image sidebarLogo = LoadSidebarLogoImage();
-            Image artworkImage = sidebarLogo;
-
+            Image artworkImage = LoadSidebarLogoImage();
             if (artworkImage == null && banner != null && banner.Image != null)
             {
                 artworkImage = CloneImageSafe(banner.Image);
@@ -696,53 +703,16 @@ namespace InstallerHost
             }
 
             int artworkTop = 184;
-            int artworkHeight = Math.Max(300, sidebar.Height - artworkTop - 18);
-            PremiumPanel artworkBox = MakeCard("__welcomeSidebarArtwork", 24, artworkTop, 220, artworkHeight, Color.Black, Color.FromArgb(38, 72, 42), 0);
-            artworkBox.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom;
-            sidebar.Controls.Add(artworkBox);
-
-            Panel accentTopLeft = new Panel();
-            accentTopLeft.BackColor = AccentRed;
-            accentTopLeft.Left = 0;
-            accentTopLeft.Top = 0;
-            accentTopLeft.Width = 38;
-            accentTopLeft.Height = 2;
-            artworkBox.Controls.Add(accentTopLeft);
-
-            Panel accentLeft = new Panel();
-            accentLeft.BackColor = AccentRed;
-            accentLeft.Left = 0;
-            accentLeft.Top = 0;
-            accentLeft.Width = 2;
-            accentLeft.Height = 22;
-            artworkBox.Controls.Add(accentLeft);
-
-            Panel accentTopRight = new Panel();
-            accentTopRight.BackColor = AccentRed;
-            accentTopRight.Left = artworkBox.Width - 38;
-            accentTopRight.Top = 0;
-            accentTopRight.Width = 38;
-            accentTopRight.Height = 2;
-            accentTopRight.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            artworkBox.Controls.Add(accentTopRight);
-
-            Panel accentRight = new Panel();
-            accentRight.BackColor = AccentRed;
-            accentRight.Left = artworkBox.Width - 2;
-            accentRight.Top = 0;
-            accentRight.Width = 2;
-            accentRight.Height = 22;
-            accentRight.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            artworkBox.Controls.Add(accentRight);
-
-            Panel accentBottom = new Panel();
-            accentBottom.BackColor = AccentRedSoft;
-            accentBottom.Left = 0;
-            accentBottom.Top = artworkBox.Height - 2;
-            accentBottom.Width = 54;
-            accentBottom.Height = 2;
-            accentBottom.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
-            artworkBox.Controls.Add(accentBottom);
+            int artworkHeight = Math.Max(320, sidebar.Height - artworkTop - 16);
+            Panel artworkHost = new Panel();
+            artworkHost.Name = "__welcomeSidebarArtworkHost";
+            artworkHost.Left = 18;
+            artworkHost.Top = artworkTop;
+            artworkHost.Width = sidebar.Width - 36;
+            artworkHost.Height = artworkHeight;
+            artworkHost.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
+            artworkHost.BackColor = Color.Black;
+            sidebar.Controls.Add(artworkHost);
 
             if (artworkImage != null)
             {
@@ -756,19 +726,17 @@ namespace InstallerHost
                 artworkPicture.Margin = new Padding(0);
                 artworkPicture.Padding = new Padding(0);
                 artworkPicture.TabStop = false;
-                artworkBox.Controls.Add(artworkPicture);
-                artworkPicture.SendToBack();
+                artworkHost.Controls.Add(artworkPicture);
             }
             else
             {
-                artworkBox.Controls.Add(MakeLabel("TURBORAMA", 24, Math.Max(96, (artworkHeight / 2) - 24), 170, 28, Green, 15f, true));
-                artworkBox.Controls.Add(MakeLabel("Premium Games System", 26, Math.Max(128, (artworkHeight / 2) + 8), 170, 22, Muted, 8.5f, false));
+                artworkHost.Controls.Add(MakeLabel("TURBORAMA", 24, Math.Max(96, (artworkHeight / 2) - 24), 180, 28, Green, 15f, true));
+                artworkHost.Controls.Add(MakeLabel("Premium Games System", 26, Math.Max(128, (artworkHeight / 2) + 8), 180, 22, Muted, 8.5f, false));
             }
 
             sidebar.BringToFront();
             return sidebar;
         }
-
         private static Image CloneImageSafe(Image source)
         {
             if (source == null)
@@ -904,13 +872,18 @@ namespace InstallerHost
             underline.Size = new Size(122, 2);
             content.Controls.Add(underline);
 
+            Panel underlineAccent = new Panel();
+            underlineAccent.BackColor = AccentRed;
+            underlineAccent.Location = new Point(158, 92);
+            underlineAccent.Size = new Size(12, 4);
+            content.Controls.Add(underlineAccent);
+
             Label desc = MakeLabel(description, 190, 62, content.Width - 230, 42, Muted, 8.8f, false);
             desc.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             content.Controls.Add(desc);
 
             return content;
         }
-
         private static void AddFooter(UserControl root, Button back, Button primary, Button cancel)
         {
             PremiumPanel footer = new PremiumPanel(Color.FromArgb(6, 12, 9), Color.FromArgb(28, 52, 32), 0, false);
@@ -922,8 +895,6 @@ namespace InstallerHost
             footer.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
             root.Controls.Add(footer);
 
-            // Importante: o banner de imagem NÃO deve aparecer nas telas 01 e 02.
-            // Esse rodapé dos layouts V3 fica limpo e discreto.
             Label line = new Label();
             line.BackColor = BorderSoft;
             line.Left = 0;
@@ -932,6 +903,14 @@ namespace InstallerHost
             line.Height = 1;
             line.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
             footer.Controls.Add(line);
+
+            Panel footerAccent = new Panel();
+            footerAccent.BackColor = AccentRedSoft;
+            footerAccent.Left = 24;
+            footerAccent.Top = 0;
+            footerAccent.Width = 52;
+            footerAccent.Height = 2;
+            footer.Controls.Add(footerAccent);
 
             Label footerText = MakeLabel("LZ Games e Informática  •  Sistema Turborama", 24, 21, 360, 24, Dim, 8.4f, false);
             footer.Controls.Add(footerText);
@@ -971,7 +950,6 @@ namespace InstallerHost
 
             footer.BringToFront();
         }
-
         private static bool IsPrerequisiteScreen(Control root)
         {
             if (root == null)
@@ -1135,20 +1113,35 @@ namespace InstallerHost
         {
             bool active = index == activeIndex;
             bool done = index < activeIndex;
-            Label num = MakeLabel(done ? "✓" : number, 24, top, 34, 20, active || done ? Green : Dim, 8f, true);
+
+            Panel marker = new Panel();
+            marker.Left = 24;
+            marker.Top = top + 6;
+            marker.Width = 4;
+            marker.Height = 10;
+            marker.BackColor = active ? AccentRed : (done ? Green : Color.FromArgb(36, 54, 40));
+            sidebar.Controls.Add(marker);
+
+            Label num = MakeLabel(done ? "✓" : number, 34, top, 24, 20, active || done ? Green : Dim, 8f, true);
             sidebar.Controls.Add(num);
             Label label = MakeLabel(text, 64, top, 160, 20, active ? Text : (done ? Color.FromArgb(194, 214, 194) : Dim), 8.5f, active);
             sidebar.Controls.Add(label);
         }
-
         private static void AddFeatureCard(Control parent, int left, int top, int width, int height, string title, string description)
         {
             PremiumPanel card = MakeCard("__feature", left, top, width, height, PanelMid, BorderSoft, 12);
             parent.Controls.Add(card);
+            Panel accent = new Panel();
+            accent.BackColor = AccentRedSoft;
+            accent.Left = width - 44;
+            accent.Top = 0;
+            accent.Width = 28;
+            accent.Height = 2;
+            accent.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            card.Controls.Add(accent);
             card.Controls.Add(MakeLabel(title, 16, 14, width - 28, 18, Green, 7.9f, true));
             card.Controls.Add(MakeLabel(description, 16, 40, width - 30, height - 44, Muted, 7.8f, false));
         }
-
         private static PremiumPanel MakeCard(string name, int left, int top, int width, int height, Color fill, Color border, int radius)
         {
             PremiumPanel panel = new PremiumPanel(fill, border, radius, true);

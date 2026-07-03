@@ -1,4 +1,0 @@
-V44
-- Corrige erro de compilação CS1010/CS1003 na linha do slogan da tela 1.
-- Mantém V43: banner lateral grande ocupando espaço preto e detalhes vermelhos discretos.
-- Substitua TurboramaPremiumUi.cs, limpe e recompile.
