@@ -155,6 +155,20 @@ namespace RetroBuild
 		// (set) Token: 0x06000041 RID: 65 RVA: 0x00002707 File Offset: 0x00000907
 		public string BatGUIURL { get; set; }
 
+		public int ZipCompressionLevel { get; set; }
+
+		public bool Use7ZipForArchive { get; set; }
+
+		public bool SkipZipSha256 { get; set; }
+
+		public bool SkipRecreateZipIfExists { get; set; }
+
+		public string ArchiveOutputPath { get; set; }
+
+		public bool AskArchiveOutputDrive { get; set; }
+
+		public string ArchiveOutputDirectory { get; set; }
+
 		// Token: 0x06000042 RID: 66 RVA: 0x00002710 File Offset: 0x00000910
 		public static BuilderOptions LoadBuilderOptions(string iniFile)
 		{
@@ -195,7 +209,34 @@ namespace RetroBuild
 			builderOptions.RetroArchURL = iniParser.Get(text, "retroarch_url", "https://buildbot.libretro.com");
 			builderOptions.WiimoteGunURL = iniParser.Get(text, "wiimotegun_url", "https://github.com/fabricecaruso/WiimoteGun/releases/download/v1.1/WiimoteGun.zip");
 			builderOptions.BatGUIURL = iniParser.Get(text, "batgui_url", "https://reppa.internet-box.ch/BatGui/NewBatGui/lastest.zip");
+			builderOptions.ZipCompressionLevel = ParseZipCompressionLevel(iniParser.Get(text, "zip_compression_level", "1"));
+			builderOptions.Use7ZipForArchive = iniParser.Get(text, "use_7zip_for_archive", "1") == "1";
+			builderOptions.SkipZipSha256 = iniParser.Get(text, "skip_zip_sha256", "1") == "1";
+			builderOptions.SkipRecreateZipIfExists = iniParser.Get(text, "skip_recreate_zip_if_exists", "1") == "1";
+			builderOptions.ArchiveOutputPath = iniParser.Get(text, "archive_output_path", "");
+			builderOptions.AskArchiveOutputDrive = iniParser.Get(text, "ask_archive_output_drive", "1") == "1";
 			return builderOptions;
+		}
+
+		private static int ParseZipCompressionLevel(string value)
+		{
+			int level;
+			if (!int.TryParse(value, out level))
+			{
+				return 1;
+			}
+
+			if (level < 0)
+			{
+				return 0;
+			}
+
+			if (level > 9)
+			{
+				return 9;
+			}
+
+			return level;
 		}
 
 		// Token: 0x06000043 RID: 67 RVA: 0x00002A68 File Offset: 0x00000C68

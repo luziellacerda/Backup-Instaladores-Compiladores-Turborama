@@ -4,6 +4,8 @@ using System.ComponentModel;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.Windows.Forms;
 using Allegoria.Controls;
 using ICSharpCode.SharpZipLib.Zip;
@@ -106,7 +108,9 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 					{
 						this.ExtractZipStreamToFolder(installerZipStream, text2);
 					}
+					this.ValidateExtractedInstallation(text2);
 					this.EnsureTurboRamaExecutable(text2);
+					this.CreateTurboRamaShortcuts(text2);
 				}
 				catch (Exception ex2)
 				{
@@ -162,8 +166,26 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 				return splitStream;
 			}
 
-			// Compatibilidade: se não existir pacote split, tenta o modo antigo embutido.
-			return this.GetEmbeddedZipStream();
+			try
+			{
+				return this.GetEmbeddedZipStream();
+			}
+			catch (Exception ex)
+			{
+				string setupExe = Application.ExecutablePath;
+				string setupFolder = Path.GetDirectoryName(setupExe);
+				string setupName = Path.GetFileName(setupExe);
+				throw new Exception(
+					"Pacote de instalação não encontrado." + Environment.NewLine + Environment.NewLine +
+					"O instalador TurboRama precisa de TODOS estes arquivos na mesma pasta:" + Environment.NewLine +
+					"  " + setupName + Environment.NewLine +
+					"  " + setupName + ".pkg.001" + Environment.NewLine +
+					"  " + setupName + ".pkg.002 (se existir)" + Environment.NewLine +
+					"  ..." + Environment.NewLine + Environment.NewLine +
+					"Pasta atual: " + setupFolder + Environment.NewLine + Environment.NewLine +
+					"Detalhe técnico: " + ex.Message,
+					ex);
+			}
 		}
 
 		private Stream TryGetSplitPackageStream()
@@ -230,6 +252,12 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 		// Token: 0x06000020 RID: 32 RVA: 0x00003940 File Offset: 0x00001B40
 		private void ExtractZipStreamToFolder(Stream fs, string destinationFolder)
 		{
+			string destinationRoot = Path.GetFullPath(destinationFolder);
+			if (!destinationRoot.EndsWith(Path.DirectorySeparatorChar.ToString()))
+			{
+				destinationRoot += Path.DirectorySeparatorChar;
+			}
+
 			using (ZipFile zipFile = new ZipFile(fs))
 			{
 				zipFile.IsStreamOwner = true;
@@ -242,8 +270,13 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 				foreach (object obj in zipFile)
 				{
 					ZipEntry zipEntry = (ZipEntry)obj;
-					string name = zipEntry.Name;
-					string text = Path.Combine(destinationFolder, name);
+					string safeName = zipEntry.Name.Replace('/', Path.DirectorySeparatorChar);
+					string text = Path.GetFullPath(Path.Combine(destinationRoot, safeName));
+					if (!text.StartsWith(destinationRoot, StringComparison.OrdinalIgnoreCase))
+					{
+						throw new IOException("Unsafe ZIP entry path: " + zipEntry.Name);
+					}
+
 					if (zipEntry.IsDirectory)
 					{
 						Directory.CreateDirectory(text);
@@ -294,6 +327,55 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 
 		// Token: 0x02000012 RID: 18
 		
+		private void ValidateExtractedInstallation(string destinationFolder)
+		{
+			List<string> missing = new List<string>();
+
+			string esExe = Path.Combine(destinationFolder, "emulationstation", "emulationstation.exe");
+			string esLauncher = Path.Combine(destinationFolder, "emulationstation", "emulatorlauncher.exe");
+			string esDll = Path.Combine(destinationFolder, "emulationstation", "emulatorlauncher.common.dll");
+			string sdl3 = Path.Combine(destinationFolder, "emulationstation", "SDL3.dll");
+
+			if (!File.Exists(esExe))
+			{
+				missing.Add("emulationstation\\emulationstation.exe");
+			}
+			if (!File.Exists(esLauncher))
+			{
+				missing.Add("emulationstation\\emulatorlauncher.exe");
+			}
+			if (!File.Exists(esDll))
+			{
+				missing.Add("emulationstation\\emulatorlauncher.common.dll");
+			}
+			if (!File.Exists(sdl3))
+			{
+				missing.Add("emulationstation\\SDL3.dll");
+			}
+
+			bool hasLauncherAtRoot =
+				File.Exists(Path.Combine(destinationFolder, "TurboRama.exe")) ||
+				File.Exists(Path.Combine(destinationFolder, "Turborama.exe")) ||
+				File.Exists(Path.Combine(destinationFolder, "RetroBat.exe")) ||
+				File.Exists(Path.Combine(destinationFolder, "retrobat.exe"));
+
+			if (!hasLauncherAtRoot)
+			{
+				missing.Add("TurboRama.exe (launcher .NET na raiz - NÃO renomeie emulationstation.exe)");
+			}
+
+			if (missing.Count > 0)
+			{
+				throw new Exception(
+					"O pacote extraído está incompleto. Arquivos ausentes:" + Environment.NewLine +
+					string.Join(Environment.NewLine, missing.Select(item => "  - " + item)) + Environment.NewLine + Environment.NewLine +
+					"IMPORTANTE: TurboRama.exe na raiz é o LAUNCHER (.NET). " +
+					"O emulationstation.exe deve ficar dentro da pasta emulationstation\\ e NÃO deve ser renomeado.");
+			}
+
+			Logger.Log("Installation package validation passed.");
+		}
+
 		private void EnsureTurboRamaExecutable(string destinationFolder)
 		{
 			string turboRamaExe = Path.Combine(destinationFolder, "TurboRama.exe");
@@ -347,6 +429,88 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			{
 				throw new FileNotFoundException("TurboRama.exe was not created. The installer archive does not contain RetroBat.exe, retrobat.exe, Turborama.exe or TurboRama.exe.", turboRamaExe);
 			}
+		}
+
+
+		private void CreateTurboRamaShortcuts(string destinationFolder)
+		{
+			string turboRamaExe = Path.Combine(destinationFolder, "TurboRama.exe");
+
+			if (!File.Exists(turboRamaExe))
+			{
+				throw new FileNotFoundException("Cannot create shortcuts because TurboRama.exe was not found.", turboRamaExe);
+			}
+
+			try
+			{
+				string desktopFolder = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+				if (!string.IsNullOrWhiteSpace(desktopFolder))
+				{
+					string desktopShortcut = Path.Combine(desktopFolder, "TurboRama.lnk");
+					this.CreateShortcut(desktopShortcut, turboRamaExe, destinationFolder, "Abrir TurboRama", turboRamaExe);
+					Logger.Log("Desktop shortcut created: " + desktopShortcut);
+				}
+
+				string programsFolder = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
+				if (!string.IsNullOrWhiteSpace(programsFolder))
+				{
+					string startMenuFolder = Path.Combine(programsFolder, "TurboRama");
+					Directory.CreateDirectory(startMenuFolder);
+					string startMenuShortcut = Path.Combine(startMenuFolder, "TurboRama.lnk");
+					this.CreateShortcut(startMenuShortcut, turboRamaExe, destinationFolder, "Abrir TurboRama", turboRamaExe);
+					Logger.Log("Start Menu shortcut created: " + startMenuShortcut);
+				}
+			}
+			catch (Exception ex)
+			{
+				Logger.Log("Failed to create TurboRama shortcuts: " + ex.ToString());
+				throw new Exception("Falha ao criar atalhos do TurboRama: " + ex.Message, ex);
+			}
+		}
+
+		private void CreateShortcut(string shortcutPath, string targetPath, string workingDirectory, string description, string iconPath)
+		{
+			IShellLinkW link = (IShellLinkW)new ShellLink();
+			link.SetPath(targetPath);
+			link.SetWorkingDirectory(workingDirectory);
+			link.SetDescription(description);
+			link.SetIconLocation(iconPath, 0);
+
+			IPersistFile file = (IPersistFile)link;
+			file.Save(shortcutPath, true);
+
+			Marshal.ReleaseComObject(file);
+		}
+
+		[ComImport]
+		[Guid("00021401-0000-0000-C000-000000000046")]
+		private class ShellLink
+		{
+		}
+
+		[ComImport]
+		[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+		[Guid("000214F9-0000-0000-C000-000000000046")]
+		private interface IShellLinkW
+		{
+			void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] string pszFile, int cchMaxPath, IntPtr pfd, uint fFlags);
+			void GetIDList(out IntPtr ppidl);
+			void SetIDList(IntPtr pidl);
+			void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] string pszName, int cchMaxName);
+			void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+			void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] string pszDir, int cchMaxPath);
+			void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+			void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] string pszArgs, int cchMaxPath);
+			void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+			void GetHotkey(out short pwHotkey);
+			void SetHotkey(short wHotkey);
+			void GetShowCmd(out int piShowCmd);
+			void SetShowCmd(int iShowCmd);
+			void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int cchIconPath, out int piIcon);
+			void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+			void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, uint dwReserved);
+			void Resolve(IntPtr hwnd, uint fFlags);
+			void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
 		}
 
 		private class MultiPartFileStream : Stream

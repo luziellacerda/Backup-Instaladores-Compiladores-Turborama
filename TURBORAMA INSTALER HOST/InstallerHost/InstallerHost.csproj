@@ -96,7 +96,10 @@
     <Compile Include="PrerequisiteControl.Designer.cs">
       <DependentUpon>PrerequisiteControl.cs</DependentUpon>
     </Compile>
+    <Compile Include="GamingRuntimeManifest.cs" />
+    <Compile Include="PrerequisiteBundle.cs" />
     <Compile Include="PrerequisiteDetector.cs" />
+    <Compile Include="RuntimeInstallerHelper.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="NvidiaAppInstallerHelper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -151,6 +154,7 @@
     <EmbeddedResource Include="resources\ICSharpCode\SharpZipLib.dll" />
     <EmbeddedResource Include="resources\retrobat_wizard.jpg" />
     <EmbeddedResource Include="resources\wget.exe" />
+    <EmbeddedResource Include="resources\prerequisites\*.*" />
     <EmbeddedResource Include="WelcomeControl.resx">
       <DependentUpon>WelcomeControl.cs</DependentUpon>
     </EmbeddedResource>

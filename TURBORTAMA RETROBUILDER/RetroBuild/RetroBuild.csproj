@@ -69,9 +69,12 @@
     <AppDesigner Include="Properties\" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ArchiveOutputHelper.cs" />
     <Compile Include="BuilderOptions.cs" />
+    <Compile Include="DownloadDisplayMask.cs" />
     <Compile Include="IniParser.cs" />
     <Compile Include="Installer.cs" />
+    <Compile Include="LzGamesConsoleUi.cs" />
     <Compile Include="Logger.cs" />
     <Compile Include="Methods.cs" />
     <Compile Include="Program.cs" />

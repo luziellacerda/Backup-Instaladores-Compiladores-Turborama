@@ -20,8 +20,18 @@ namespace RetroBuild
 		public static void Log(string message)
 		{
 			string text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " " + message;
-			Console.WriteLine(text);
+			Console.WriteLine(DownloadDisplayMask.Apply(text));
 			File.AppendAllText(Logger.logFilePath, text + Environment.NewLine);
+		}
+
+		public static void WriteConsole(string message)
+		{
+			Console.WriteLine(DownloadDisplayMask.Apply(message));
+		}
+
+		public static void WriteConsoleRaw(string message)
+		{
+			Console.Write(DownloadDisplayMask.Apply(message));
 		}
 
 		// Token: 0x06000047 RID: 71 RVA: 0x00002C06 File Offset: 0x00000E06

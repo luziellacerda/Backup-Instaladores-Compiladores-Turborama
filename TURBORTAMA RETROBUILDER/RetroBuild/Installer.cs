@@ -14,10 +14,11 @@ namespace RetroBuild
 		public static void CreateInstaller(BuilderOptions options)
 		{
 			string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
-			string zipFileName = string.Concat(new string[] { "turborama-v", options.RetrobatVersion, "-", options.Branch, "-", options.Architecture, ".zip" });
-			string zipPath = Path.Combine(baseDirectory, zipFileName);
+			string buildFolder = Path.Combine(baseDirectory, "build");
+			string outputDirectory = ArchiveOutputHelper.ResolveOutputDirectory(options, baseDirectory, buildFolder);
+			string zipPath = ArchiveOutputHelper.FindZipArchivePath(options, baseDirectory);
 
-			if (!File.Exists(zipPath))
+			if (string.IsNullOrEmpty(zipPath))
 			{
 				Logger.Log("[INFO] zip not found, creating zip first.");
 				try
@@ -28,11 +29,13 @@ namespace RetroBuild
 				{
 					Logger.Log("[ERROR] Exception creating ZIP: " + ex.Message);
 				}
+
+				zipPath = ArchiveOutputHelper.FindZipArchivePath(options, baseDirectory);
 			}
 
-			if (!File.Exists(zipPath))
+			if (string.IsNullOrEmpty(zipPath) || !File.Exists(zipPath))
 			{
-				Logger.Log("[ERROR] No .zip file found at: " + zipPath);
+				Logger.Log("[ERROR] No .zip file found for installer creation.");
 				return;
 			}
 
@@ -49,8 +52,8 @@ namespace RetroBuild
 
 			try
 			{
-				string setupFileName = string.Concat(new string[] { "TurboRama-v", options.RetrobatVersion, "-", options.Branch, "-", options.Architecture, "-setup.exe" });
-				string setupPath = Path.Combine(baseDirectory, setupFileName);
+				string setupFileName = ArchiveOutputHelper.GetSetupFileName(options);
+				string setupPath = Path.Combine(outputDirectory, setupFileName);
 
 				DeleteOldSplitParts(setupPath);
 
@@ -66,6 +69,13 @@ namespace RetroBuild
 				List<string> parts = SplitFile(zipPath, setupPath + ".pkg", SplitPartSizeBytes);
 				WriteSha256List(setupPath, zipPath, parts);
 
+				LzGamesConsoleUi.Success("Instalador criado com sucesso:");
+				LzGamesConsoleUi.Info(setupPath);
+				foreach (string part in parts)
+				{
+					LzGamesConsoleUi.Info(part);
+				}
+				LzGamesConsoleUi.Warning("Mantenha o .exe e todos os .pkg.### na mesma pasta.");
 				Logger.LogInfo("Created split installer package:");
 				Logger.LogInfo(" - " + setupPath);
 				foreach (string part in parts)
@@ -112,45 +122,6 @@ namespace RetroBuild
 			return string.Format("{0:D2}:{1:D2}:{2:D2}", totalHours, time.Minutes, time.Seconds);
 		}
 
-		private static int GetSafeConsoleWidth()
-		{
-			try
-			{
-				int width = Console.WindowWidth;
-				if (width < 70)
-				{
-					return 70;
-				}
-				return width;
-			}
-			catch
-			{
-				return 100;
-			}
-		}
-
-		private static string BuildPercentBar(int percent, int barWidth)
-		{
-			percent = Math.Max(0, Math.Min(100, percent));
-			barWidth = Math.Max(10, barWidth);
-			int filled = percent * barWidth / 100;
-			return "[" + new string('#', filled) + new string('-', barWidth - filled) + "]";
-		}
-
-		private static void WriteFixedProgressLine(string line)
-		{
-			int width = GetSafeConsoleWidth() - 1;
-			if (width < 50)
-			{
-				width = 50;
-			}
-			if (line.Length > width)
-			{
-				line = line.Substring(0, width);
-			}
-			Console.Write("\r" + line.PadRight(width));
-		}
-
 		private static void PrintSplitProgress(long processedBytes, long totalBytes, DateTime startTime, int partNumber, string currentPart)
 		{
 			int percent = totalBytes > 0L ? (int)(processedBytes * 100L / totalBytes) : 100;
@@ -158,12 +129,12 @@ namespace RetroBuild
 			double speed = elapsed.TotalSeconds > 0.0 ? processedBytes / elapsed.TotalSeconds : 0.0;
 			long remainingBytes = Math.Max(0L, totalBytes - processedBytes);
 			TimeSpan remaining = speed > 0.0 ? TimeSpan.FromSeconds(remainingBytes / speed) : TimeSpan.Zero;
-			int barWidth = Math.Max(10, Math.Min(34, GetSafeConsoleWidth() - 95));
+			int barWidth = Math.Max(10, Math.Min(34, LzGamesConsoleUi.GetSafeConsoleWidth() - 95));
 
 			string line = string.Format(
 				"{0,3}% {1} {2} / {3} | Vel {4}/s | ETA {5} | Parte {6:000}",
 				percent,
-				BuildPercentBar(percent, barWidth),
+				LzGamesConsoleUi.BuildProgressBar(percent, barWidth),
 				FormatBytes(processedBytes),
 				FormatBytes(totalBytes),
 				FormatBytes((long)speed),
@@ -171,7 +142,7 @@ namespace RetroBuild
 				partNumber
 			);
 
-			WriteFixedProgressLine(line);
+			LzGamesConsoleUi.WriteProgressLine(line);
 		}
 
 		private static List<string> SplitFile(string sourceFilePath, string outputBasePath, long partSizeBytes)
@@ -186,10 +157,7 @@ namespace RetroBuild
 			using (FileStream input = new FileStream(sourceFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
 			{
 				long totalBytes = input.Length;
-				Console.WriteLine("Gerando partes split do pacote...");
-				Console.WriteLine("Tamanho do ZIP: " + FormatBytes(totalBytes));
-				Console.WriteLine("Tamanho maximo por parte: " + FormatBytes(partSizeBytes));
-				Console.WriteLine("Barra de progresso fixa: a mesma linha sera atualizada ate terminar.");
+				LzGamesConsoleUi.ShowInstallerSplitHeader(totalBytes, partSizeBytes);
 
 				while (input.Position < input.Length)
 				{
@@ -217,7 +185,7 @@ namespace RetroBuild
 					Console.WriteLine();
 					parts.Add(partPath);
 					Logger.LogInfo("Created package part: " + partPath);
-					Console.WriteLine("Parte criada: " + partPath);
+					LzGamesConsoleUi.Success("Parte criada: " + partPath);
 					partNumber++;
 				}
 			}

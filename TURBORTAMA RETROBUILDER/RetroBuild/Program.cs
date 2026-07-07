@@ -14,6 +14,17 @@ namespace RetroBuild
 	// Token: 0x02000007 RID: 7
 	internal class Program
 	{
+		private static void SafeReadKey()
+		{
+			try
+			{
+				Console.ReadKey();
+			}
+			catch (InvalidOperationException)
+			{
+			}
+		}
+
 		private static void KillProcessByNameSafe(string processName)
 		{
 			try
@@ -155,45 +166,42 @@ namespace RetroBuild
 				{
 					string name = propertyInfo.Name;
 					object value = propertyInfo.GetValue(builderOptions, null);
-					Console.WriteLine("{0} = {1}", name, value);
 					Logger.LogInfo(name + " = " + ((value != null) ? value.ToString() : null));
 				}
 			}
 			catch (Exception ex)
 			{
-				Console.WriteLine("Error loading config: " + ex.Message);
+				LzGamesConsoleUi.ShowFatalError("Erro ao carregar build.ini: " + ex.Message);
 				Logger.Log("[ERROR] Error loading config file: " + ex.Message);
+				SafeReadKey();
 				return;
 			}
 			if (!File.Exists(builderOptions.SevenZipPath))
 			{
+				LzGamesConsoleUi.ShowFatalError("7za.exe nao encontrado: " + builderOptions.SevenZipPath);
 				Logger.Log("[ERROR] 7za.exe not found at: " + builderOptions.SevenZipPath);
+				SafeReadKey();
 				return;
 			}
 			if (!File.Exists(builderOptions.WgetPath))
 			{
+				LzGamesConsoleUi.ShowFatalError("wget.exe nao encontrado: " + builderOptions.WgetPath);
 				Logger.Log("[ERROR] wget.exe not found at: " + builderOptions.WgetPath);
+				SafeReadKey();
 				return;
 			}
 			if (!File.Exists(builderOptions.CurlPath))
 			{
+				LzGamesConsoleUi.ShowFatalError("curl.exe nao encontrado: " + builderOptions.CurlPath);
 				Logger.Log("[ERROR] curl.exe not found at: " + builderOptions.CurlPath);
+				SafeReadKey();
 				return;
 			}
-			Console.Clear();
-			Console.WriteLine("TurboRama Builder Menu");
-			Console.WriteLine("---------------------------------------------------");
-			Console.WriteLine("This executable is made to help download all the required software for TurboRama.");
-			Console.WriteLine("Use the 'build.ini' file to set options for building.");
-			Console.WriteLine("Option 1 must always be done first, as it will download all the required files.");
-			Console.WriteLine("---------------------------------------------------\n");
-			Console.WriteLine("=====================\n");
-			Console.WriteLine("1 - Download and configure");
-			Console.WriteLine("2 - Create archive");
-			Console.WriteLine("3 - Create installer (need archive created first)");
-			Console.WriteLine("Q - Quit\n");
-			Console.Write("Please type your choice here: ");
-			string text2 = Console.ReadLine();
+
+			LzGamesConsoleUi.ShowSplash(builderOptions);
+			LzGamesConsoleUi.ShowConfigSummary(builderOptions);
+
+			string text2 = LzGamesConsoleUi.ShowMainMenu();
 			string text3 = ((text2 != null) ? text2.Trim().ToUpper() : null);
 			if (!(text3 == "1"))
 			{
@@ -203,15 +211,18 @@ namespace RetroBuild
 					{
 						if (text3 == "Q")
 						{
-							Console.WriteLine("Exiting...");
+							LzGamesConsoleUi.Info("Saindo do sistema...");
 							return;
 						}
+						LzGamesConsoleUi.Warning("Opcao invalida.");
+						SafeReadKey();
+						return;
 					}
 					else
 					{
 						Logger.Log("Option selected: Create installer.");
 						Logger.Log("Starting log.\n");
-						Console.WriteLine("=====================");
+						LzGamesConsoleUi.BeginPipelineStep("CREATE INSTALLER", "Gera setup.exe e pacotes .pkg split");
 						Installer.CreateInstaller(builderOptions);
 					}
 				}
@@ -219,7 +230,7 @@ namespace RetroBuild
 				{
 					Logger.Log("Option selected: Create archive.");
 					Logger.Log("Starting log.\n");
-					Console.WriteLine("=====================");
+					LzGamesConsoleUi.BeginPipelineStep("CREATE ARCHIVE", "Compacta a pasta build em ZIP");
 					Program.CreateZipFolderSharpZip(builderOptions);
 				}
 			}
@@ -227,30 +238,21 @@ namespace RetroBuild
 			{
 				Logger.Log("Option selected: Download and configure.");
 				Logger.Log("Starting log.\n");
-				Console.WriteLine("=====================");
+				LzGamesConsoleUi.BeginPipelineStep("DOWNLOAD & CONFIGURE", "Pipeline completo de montagem do TurboRama");
 				Program.GetPackages(builderOptions);
-				Console.WriteLine("=====================");
 				Program.CreateTree(builderOptions);
-				Console.WriteLine("=====================");
 				Program.CreateEmulatorFolders(builderOptions);
-				Console.WriteLine("=====================");
 				Program.CreateSystemFolders(builderOptions);
-				Console.WriteLine("=====================");
 				Program.GetLibretroCores(builderOptions);
-				Console.WriteLine("=====================");
 				Program.GetEmulators(builderOptions);
-				Console.WriteLine("=====================");
 				Program.CopyESFiles(builderOptions);
-				Console.WriteLine("=====================");
 				Program.CreateVersionFile(builderOptions);
-				Console.WriteLine("=====================");
 				Program.CopyTemplateFiles(builderOptions);
-				Console.WriteLine("=====================");
 				Program.SetVersion(builderOptions);
 			}
 			Logger.Log("[INFO] Build finished succesfully.\n");
-			Console.WriteLine("Press any key to exit...");
-			Console.ReadKey();
+			LzGamesConsoleUi.ShowCompletion();
+			SafeReadKey();
 		}
 
 		// Token: 0x0600005A RID: 90 RVA: 0x00003A5C File Offset: 0x00001C5C
@@ -268,7 +270,7 @@ namespace RetroBuild
 				if (!Program.SafeDeleteDirectory(text))
 				{
 					Logger.Log("[ERROR] Failed to delete content of build path. Feche qualquer programa aberto dentro da pasta build e tente novamente.");
-					Console.ReadKey();
+					SafeReadKey();
 					return;
 				}
 				try
@@ -279,7 +281,7 @@ namespace RetroBuild
 				catch (Exception ex2)
 				{
 					Logger.Log("[ERROR] Failed to create build directory: " + ex2.Message);
-					Console.ReadKey();
+					SafeReadKey();
 					return;
 				}
 			}
@@ -290,12 +292,12 @@ namespace RetroBuild
 			catch (Exception ex3)
 			{
 				Logger.Log("[ERROR] Failed to create build directory: " + ex3.Message);
-				Console.ReadKey();
+				SafeReadKey();
 				return;
 			}
 			IL_00C8:
 			Logger.LogLabel("get_packages");
-			Console.WriteLine(":: GETTING REQUIRED PACKAGES...");
+			LzGamesConsoleUi.BeginPipelineStep("GET PACKAGES", "Baixando binarios, EmulationStation, tema e dependencias");
 			string text2;
 			if (Methods.RunProcess("git", "submodule update --init", baseDirectory, out text2) != 0)
 			{
@@ -325,8 +327,14 @@ namespace RetroBuild
 					text6.IndexOf("EmulationStationsRetroBat2026", StringComparison.OrdinalIgnoreCase) >= 0 ||
 					text6.IndexOf("RetroBat2026", StringComparison.OrdinalIgnoreCase) >= 0)
 				{
-					Logger.Log("[WARNING] URL antiga do EmulationStation detectada no build.ini. Corrigindo automaticamente para TurboramaEmulationStation.");
-					text6 = "https://github.com/luziellacerda/TurboramaEmulationStation/releases/download/continuous-master/";
+					Logger.Log("[WARNING] URL antiga do EmulationStation detectada no build.ini. Corrigindo automaticamente para RetroBat-Official/emulationstation.");
+					text6 = "https://github.com/RetroBat-Official/emulationstation/releases/download/continuous-master/";
+				}
+
+				if (text6.IndexOf("TurboramaEmulationStation", StringComparison.OrdinalIgnoreCase) >= 0)
+				{
+					Logger.Log("[WARNING] Repositorio TurboramaEmulationStation indisponivel. Usando RetroBat-Official/emulationstation.");
+					text6 = "https://github.com/RetroBat-Official/emulationstation/releases/download/continuous-master/";
 				}
 
 				text6 = text6.Replace("/releases/tag/", "/releases/download/");
@@ -360,7 +368,7 @@ namespace RetroBuild
 				if (!emulationstationOk)
 				{
 					Logger.Log("[ERROR] Falha ao baixar/extrair EmulationStation. URL usada: " + text6);
-					Console.ReadKey();
+					SafeReadKey();
 					return;
 				}
 				Logger.LogInfo("Emulationstation copied to " + text7);
@@ -478,8 +486,7 @@ namespace RetroBuild
 					{
 						string text23 = text22.Substring(text21.Length + 1);
 						string text24 = Path.Combine(text20, text23);
-						Directory.CreateDirectory(Path.GetDirectoryName(text24));
-						File.Copy(text22, text24, true);
+						Methods.SafeCopyFile(text22, text24, true);
 					}
 					Console.WriteLine("All files copied successfully.");
 				}
@@ -526,12 +533,12 @@ namespace RetroBuild
 				catch (Exception ex)
 				{
 					Logger.Log("[ERROR] Failed to create build directory: " + ex.Message);
-					Console.ReadKey();
+					SafeReadKey();
 					return;
 				}
 			}
 			Logger.LogLabel("build_tree");
-			Console.WriteLine(":: BUILDING TURBORAMA TREE...");
+			LzGamesConsoleUi.BeginPipelineStep("BUILD TREE", "Criando estrutura de pastas do TurboRama");
 			string text2 = Path.Combine(text, "system", "configgen", "retrobat_tree.lst");
 			if (!File.Exists(text2))
 			{
@@ -577,12 +584,12 @@ namespace RetroBuild
 				catch (Exception ex)
 				{
 					Logger.Log("[ERROR] Failed to create build directory: " + ex.Message);
-					Console.ReadKey();
+					SafeReadKey();
 					return;
 				}
 			}
 			Logger.LogLabel("emulator_folders");
-			Console.WriteLine(":: CREATING EMULATOR FOLDERS...");
+			LzGamesConsoleUi.BeginPipelineStep("EMULATOR FOLDERS", "Preparando pastas de emuladores");
 			string text2 = Path.Combine(text, "system", "configgen", "emulators_names.lst");
 			if (!File.Exists(text2))
 			{
@@ -628,12 +635,12 @@ namespace RetroBuild
 				catch (Exception ex)
 				{
 					Logger.Log("[ERROR] Failed to create build directory: " + ex.Message);
-					Console.ReadKey();
+					SafeReadKey();
 					return;
 				}
 			}
 			Logger.LogLabel("system_folders");
-			Console.WriteLine(":: CREATING ROMS AND SAVE FOLDERS...");
+			LzGamesConsoleUi.BeginPipelineStep("ROMS & SAVES", "Criando pastas de ROMs e saves");
 			string text2 = Path.Combine(text, "system", "configgen", "systems_names.lst");
 			if (!File.Exists(text2))
 			{
@@ -697,12 +704,12 @@ namespace RetroBuild
 				catch (Exception ex)
 				{
 					Logger.Log("[ERROR] Failed to create build directory: " + ex.Message);
-					Console.ReadKey();
+					SafeReadKey();
 					return;
 				}
 			}
 			Logger.LogLabel("emulationstation_config");
-			Console.WriteLine(":: COPY EMULATIONSTATION FILES...");
+			LzGamesConsoleUi.BeginPipelineStep("EMULATIONSTATION", "Copiando configuracoes e recursos do ES");
 			string text2 = Path.Combine(text, "system", "templates", "emulationstation");
 			string text3 = Path.Combine(text, "emulationstation", ".emulationstation");
 			foreach (string text4 in list)
@@ -827,7 +834,7 @@ namespace RetroBuild
 				catch (Exception ex8)
 				{
 					Logger.Log("[ERROR] Failed to create translations directory: " + ex8.Message);
-					Console.ReadKey();
+					SafeReadKey();
 					return;
 				}
 			}
@@ -859,7 +866,7 @@ namespace RetroBuild
 		private static void CreateVersionFile(BuilderOptions options)
 		{
 			Logger.LogLabel("create_version");
-			Console.WriteLine(":: CREATE VERSION FILES...");
+			LzGamesConsoleUi.BeginPipelineStep("VERSION FILES", "Gerando arquivos de versao");
 			string text = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "build");
 			string text2 = Path.Combine(text, "system", "version.info");
 			string text3 = Path.Combine(text, "emulationstation", "version.info");
@@ -874,7 +881,7 @@ namespace RetroBuild
 		private static void CopyTemplateFiles(BuilderOptions options)
 		{
 			Logger.LogLabel("copy_template");
-			Console.WriteLine(":: COPY TEMPLATE FILES...");
+			LzGamesConsoleUi.BeginPipelineStep("TEMPLATES", "Copiando templates e arquivos do sistema");
 			string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
 			string text = Path.Combine(baseDirectory, "build");
 			string text2 = Path.Combine(baseDirectory, "system", "tools", "7za.exe");
@@ -950,7 +957,7 @@ namespace RetroBuild
 				return;
 			}
 			Logger.LogLabel("get_lrcores");
-			Console.WriteLine(":: GETTING LIBRETRO CORES...");
+			LzGamesConsoleUi.BeginPipelineStep("LIBRETRO CORES", "Baixando cores do RetroArch");
 			string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
 			string text = Path.Combine(Path.Combine(baseDirectory, "build"), "emulators", "retroarch", "cores");
 			string text2 = Path.Combine(baseDirectory, "system", "configgen", "lrcores_names.lst");
@@ -1004,7 +1011,7 @@ namespace RetroBuild
 				return;
 			}
 			Logger.LogLabel("get_emulators");
-			Console.WriteLine(":: GETTING EMULATORS...");
+			LzGamesConsoleUi.BeginPipelineStep("EMULATORS", "Baixando emuladores do FTP");
 			string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
 			string text = Path.Combine(Path.Combine(baseDirectory, "build"), "emulators");
 			string text2 = Path.Combine(baseDirectory, "system", "configgen", "emulators_names.lst");
@@ -1085,76 +1092,44 @@ namespace RetroBuild
 			return string.Format("{0:D2}:{1:D2}:{2:D2}", totalHours, time.Minutes, time.Seconds);
 		}
 
-		private static int GetSafeConsoleWidth()
-		{
-			try
-			{
-				int width = Console.WindowWidth;
-				if (width < 70)
-				{
-					return 70;
-				}
-				return width;
-			}
-			catch
-			{
-				return 100;
-			}
-		}
-
-		private static string BuildPercentBar(int percent, int barWidth)
-		{
-			percent = Math.Max(0, Math.Min(100, percent));
-			barWidth = Math.Max(10, barWidth);
-			int filled = percent * barWidth / 100;
-			return "[" + new string('#', filled) + new string('-', barWidth - filled) + "]";
-		}
-
-		private static void WriteFixedProgressLine(string line)
-		{
-			int width = GetSafeConsoleWidth() - 1;
-			if (width < 50)
-			{
-				width = 50;
-			}
-			if (line.Length > width)
-			{
-				line = line.Substring(0, width);
-			}
-			Console.Write("\r" + line.PadRight(width));
-		}
-
-		private static void PrintZipProgress(long processedBytes, long totalBytes, DateTime startTime, string currentFile)
+		public static void PrintZipProgress(long processedBytes, long totalBytes, DateTime startTime, string currentFile)
 		{
 			int percent = totalBytes > 0L ? (int)(processedBytes * 100L / totalBytes) : 100;
+			if (percent > 100)
+			{
+				percent = 100;
+			}
+
 			TimeSpan elapsed = DateTime.Now - startTime;
 			double speed = elapsed.TotalSeconds > 0.0 ? processedBytes / elapsed.TotalSeconds : 0.0;
 			long remainingBytes = Math.Max(0L, totalBytes - processedBytes);
 			TimeSpan remaining = speed > 0.0 ? TimeSpan.FromSeconds(remainingBytes / speed) : TimeSpan.Zero;
-			int barWidth = Math.Max(10, Math.Min(34, GetSafeConsoleWidth() - 82));
+			int barWidth = Math.Max(10, Math.Min(28, LzGamesConsoleUi.GetSafeConsoleWidth() - 110));
+			string fileHint = string.IsNullOrWhiteSpace(currentFile) ? string.Empty : " | " + ShortConsolePath(currentFile, 36);
 
 			string line = string.Format(
-				"{0,3}% {1} {2} / {3} | Vel {4}/s | ETA {5}",
+				"{0,3}% {1} {2} / {3} | Vel {4}/s | ETA {5}{6}",
 				percent,
-				BuildPercentBar(percent, barWidth),
+				LzGamesConsoleUi.BuildProgressBar(percent, barWidth),
 				FormatBytes(processedBytes),
 				FormatBytes(totalBytes),
 				FormatBytes((long)speed),
-				FormatRemainingTime(remaining)
+				FormatRemainingTime(remaining),
+				fileHint
 			);
 
-			WriteFixedProgressLine(line);
+			LzGamesConsoleUi.WriteProgressLine(line);
 		}
 
 		// Token: 0x06000063 RID: 99 RVA: 0x00005170 File Offset: 0x00003370
 		public static void CreateZipFolderSharpZip(BuilderOptions options)
 		{
 			Logger.LogLabel("create_ziparchive");
-			Console.WriteLine(":: CREATE ZIP ARCHIVE...");
-			string text = string.Concat(new string[] { "turborama-v", options.RetrobatVersion, "-", options.Branch, "-", options.Architecture, ".zip" });
+			string text = ArchiveOutputHelper.GetZipFileName(options);
 			string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
 			string text2 = Path.Combine(baseDirectory, "build");
-			string text3 = Path.Combine(baseDirectory, text);
+			string outputDirectory = ArchiveOutputHelper.ResolveOutputDirectory(options, baseDirectory, text2);
+			string text3 = Path.Combine(outputDirectory, text);
 			if (!Directory.Exists(text2))
 			{
 				Logger.LogInfo("[ERROR] Source folder does not exist.");
@@ -1173,9 +1148,45 @@ namespace RetroBuild
 
 			Logger.LogInfo("Total files to archive: " + files.Length);
 			Logger.LogInfo("Total input size: " + FormatBytes(totalBytes));
-			Console.WriteLine("Arquivos para compactar: " + files.Length);
-			Console.WriteLine("Tamanho total de entrada: " + FormatBytes(totalBytes));
-			Console.WriteLine("Barra de progresso fixa: a mesma linha sera atualizada ate terminar.");
+			Logger.LogInfo("ZIP compression level: " + options.ZipCompressionLevel);
+			Logger.LogInfo("Use 7-Zip for archive: " + options.Use7ZipForArchive);
+			LzGamesConsoleUi.ShowArchiveSummary(files.Length, totalBytes, options.ZipCompressionLevel, options.Use7ZipForArchive && File.Exists(options.SevenZipPath));
+
+			if (options.SkipRecreateZipIfExists && File.Exists(text3) && new FileInfo(text3).Length > 1024L * 1024L)
+			{
+				Logger.LogInfo("ZIP existente encontrado, pulando recriacao: " + text3);
+				LzGamesConsoleUi.Warning("ZIP ja existe. Pulando compactacao (skip_recreate_zip_if_exists=1).");
+				if (!options.SkipZipSha256)
+				{
+					Program.WriteZipSha256(text3);
+				}
+				return;
+			}
+
+			if (options.Use7ZipForArchive && File.Exists(options.SevenZipPath))
+			{
+				LzGamesConsoleUi.Info("Modo rapido: 7-Zip multithread ativado.");
+				if (Methods.CreateZipWith7z(
+					options.SevenZipPath,
+					text3,
+					text2,
+					options.ZipCompressionLevel,
+					totalBytes,
+					files.Length,
+					Program.PrintZipProgress))
+				{
+					Console.WriteLine();
+					if (!options.SkipZipSha256)
+					{
+						Program.WriteZipSha256(text3);
+					}
+					LzGamesConsoleUi.Success("ZIP concluido: " + text3);
+					return;
+				}
+
+				Logger.Log("[WARNING] 7-Zip falhou, usando SharpZipLib como fallback.");
+				LzGamesConsoleUi.Warning("7-Zip falhou. Tentando modo SharpZipLib...");
+			}
 
 			if (File.Exists(text3))
 			{
@@ -1191,13 +1202,13 @@ namespace RetroBuild
 
 			long processedBytes = 0L;
 			DateTime startTime = DateTime.Now;
-			byte[] buffer = new byte[1024 * 1024];
+			byte[] buffer = new byte[4 * 1024 * 1024];
 
 			using (FileStream fileStream = new FileStream(text3, FileMode.Create, FileAccess.Write, FileShare.None))
 			{
 				using (ZipOutputStream zipOutputStream = new ZipOutputStream(fileStream))
 				{
-					zipOutputStream.SetLevel(9);
+					zipOutputStream.SetLevel(options.ZipCompressionLevel);
 					// TURBORAMA SPLIT/ZIP64: obrigatório para arquivos/pacotes acima de 4 GB.
 					zipOutputStream.UseZip64 = ICSharpCode.SharpZipLib.Zip.UseZip64.On;
 					zipOutputStream.IsStreamOwner = true;
@@ -1249,9 +1260,19 @@ namespace RetroBuild
 			}
 
 			Console.WriteLine();
-			string text6 = text3 + ".sha256.txt";
-			Console.WriteLine("Gerando SHA256 do ZIP...");
-			using (FileStream fileStream3 = File.OpenRead(text3))
+			if (!options.SkipZipSha256)
+			{
+				Program.WriteZipSha256(text3);
+			}
+			Logger.LogInfo("ZIP created at: " + text3);
+			LzGamesConsoleUi.Success("ZIP concluido: " + text3);
+		}
+
+		private static void WriteZipSha256(string zipPath)
+		{
+			string text6 = zipPath + ".sha256.txt";
+			LzGamesConsoleUi.Info("Gerando SHA256 do ZIP...");
+			using (FileStream fileStream3 = File.OpenRead(zipPath))
 			{
 				using (SHA256 sha = SHA256.Create())
 				{
@@ -1259,8 +1280,6 @@ namespace RetroBuild
 					File.WriteAllText(text6, text7);
 				}
 			}
-			Logger.LogInfo("ZIP created at: " + text3);
-			Console.WriteLine("ZIP concluido: " + text3);
 		}
 
 		// Token: 0x06000064 RID: 100 RVA: 0x00005488 File Offset: 0x00003688

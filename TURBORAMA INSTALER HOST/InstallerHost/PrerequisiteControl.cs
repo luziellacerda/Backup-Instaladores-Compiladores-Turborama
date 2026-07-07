@@ -17,71 +17,24 @@ namespace InstallerHost
 	public partial class PrerequisiteControl : UserControl
 	{
 		private CheckBox chkNvidiaApp;
-
-		
 		private bool turboramaPremiumLayoutRunning;
-private Panel turboramaPremiumPanel;
+		private Panel turboramaPremiumPanel;
+		private Label premiumProgressTitleLabel;
+		private Label premiumProgressDetailLabel;
+		private Label premiumProgressCountLabel;
+		private Label premiumProgressPercentLabel;
+		private Label premiumProgressHintLabel;
+		private Panel premiumProgressTrackPanel;
+		private Panel premiumProgressFillPanel;
+		private string premiumProgressTitleText = "Pronto para iniciar";
+		private string premiumProgressDetailText = "Selecione os componentes e clique em Next para continuar.";
 // Token: 0x0600003C RID: 60 RVA: 0x000048C4 File Offset: 0x00002AC4
 		public PrerequisiteControl(MainForm main)
 		{
 			this.mainForm = main;
 			this.InitializeComponent();
-			this.TurboramaEnsurePrerequisitesReadyV15();
-			this.Load += delegate(object s, EventArgs e) { this.TurboramaEnsurePrerequisitesReadyV15(); };
-			this.VisibleChanged += delegate(object s, EventArgs e) { if (this.Visible) { this.TurboramaEnsurePrerequisitesReadyV15(); } };
-this.TurboramaStartForcePrereqV13();
-			this.Load += delegate(object s, EventArgs e) { this.TurboramaStartForcePrereqV13(); };
-			this.VisibleChanged += delegate(object s, EventArgs e)
-			{
-				if (this.Visible)
-				{
-					this.TurboramaStartForcePrereqV13();
-				}
-			};this.TurboramaBuildPremiumPrerequisites();
-			this.Load += delegate(object s, EventArgs e)
-			{
-				this.BeginInvoke(new MethodInvoker(this.TurboramaBuildPremiumPrerequisites));
-			};
-			this.VisibleChanged += delegate(object s, EventArgs e)
-			{
-				if (this.Visible)
-				{
-					this.BeginInvoke(new MethodInvoker(this.TurboramaBuildPremiumPrerequisites));
-				}
-			};this.TurboramaBuildPremiumPrerequisites();
-			this.Load += delegate(object s, EventArgs e)
-			{
-				this.BeginInvoke(new MethodInvoker(this.TurboramaBuildPremiumPrerequisites));
-			};
-			this.VisibleChanged += delegate(object s, EventArgs e)
-			{
-				if (this.Visible)
-				{
-					this.BeginInvoke(new MethodInvoker(this.TurboramaBuildPremiumPrerequisites));
-				}
-			};this.Load += delegate(object s, EventArgs e)
-			{
-				this.BeginInvoke(new MethodInvoker(this.TurboramaBuildPremiumPrerequisites));
-			};
-			this.VisibleChanged += delegate(object s, EventArgs e)
-			{
-				if (this.Visible)
-				{
-					this.BeginInvoke(new MethodInvoker(this.TurboramaBuildPremiumPrerequisites));
-				}
-			};
 
-this.Load += delegate(object s, EventArgs e)
-			{
-				this.BeginInvoke(new MethodInvoker(this.TurboramaBuildPremiumPrerequisites));
-			};
-			this.VisibleChanged += delegate(object s, EventArgs e)
-			{
-				if (this.Visible)
-				{
-					this.BeginInvoke(new MethodInvoker(this.TurboramaBuildPremiumPrerequisites));
-				}
-			};this.wizardHeader.Text = Texts.GetString("PrerequisiteIntro", Array.Empty<object>());
+			this.wizardHeader.Text = Texts.GetString("PrerequisiteIntro", Array.Empty<object>());
 			this.lblAllInstalled.Text = Texts.GetString("All prerequisites installed", Array.Empty<object>());
 			this.chkVCpp.Text = Texts.GetString("vcText", Array.Empty<object>());
 			this.chkDirectX.Text = Texts.GetString("dx9text", Array.Empty<object>());
@@ -90,10 +43,42 @@ this.Load += delegate(object s, EventArgs e)
 			this.btnCancel.Text = Texts.GetString("Cancel", Array.Empty<object>());
 			this.btnNext.Text = Texts.GetString("Next >", Array.Empty<object>());
 			this.btnBack.Text = Texts.GetString("< Back", Array.Empty<object>());
-			this.UpdateStatusLabelSafe(Texts.GetString("WaitingSelect", Array.Empty<object>()));
+
+			this.UpdateStatusLabelSafe("Aguardando início da instalação dos componentes.");
 			this.UpdatePrerequisiteCheckboxes();
-			this.ForceRuntimeCheckboxes();
 			this.CreateNvidiaDriverCheckbox();
+			this.TurboramaBuildPremiumPrerequisites();
+
+			this.Load += delegate(object s, EventArgs e)
+			{
+				if (!this.IsInstallationRunning())
+				{
+					this.UpdatePrerequisiteCheckboxes();
+					this.CreateNvidiaDriverCheckbox();
+				}
+				this.TurboramaBuildPremiumPrerequisites();
+			};
+
+			this.VisibleChanged += delegate(object s, EventArgs e)
+			{
+				if (this.Visible)
+				{
+					if (!this.IsInstallationRunning())
+					{
+						this.UpdatePrerequisiteCheckboxes();
+						this.CreateNvidiaDriverCheckbox();
+					}
+					this.TurboramaBuildPremiumPrerequisites();
+				}
+			};
+
+			this.Resize += delegate(object s, EventArgs e)
+			{
+				if (this.Visible)
+				{
+					this.TurboramaBuildPremiumPrerequisites();
+				}
+			};
 		}
 
 		// Token: 0x0600003D RID: 61 RVA: 0x00004B9B File Offset: 0x00002D9B
@@ -135,23 +120,22 @@ this.Load += delegate(object s, EventArgs e)
 		}
 		private void CreateNvidiaDriverCheckbox()
 		{
-			if (this.chkNvidiaApp != null)
-			{
-				return;
-			}
-
 			bool hasNvidia = NvidiaAppInstallerHelper.HasNvidiaGpu();
 
-			this.chkNvidiaApp = new CheckBox();
-			this.chkNvidiaApp.AutoSize = true;
+			if (this.chkNvidiaApp == null)
+			{
+				this.chkNvidiaApp = new CheckBox();
+				this.chkNvidiaApp.AutoSize = true;
+				this.chkNvidiaApp.Location = new Point(24, 221);
+				this.chkNvidiaApp.Name = "chkNvidiaApp";
+				this.chkNvidiaApp.Size = new Size(420, 17);
+				this.chkNvidiaApp.TabIndex = 6;
+				base.Controls.Add(this.chkNvidiaApp);
+			}
+
 			this.chkNvidiaApp.Checked = hasNvidia;
 			this.chkNvidiaApp.Enabled = hasNvidia;
-			this.chkNvidiaApp.Location = new Point(24, 221);
-			this.chkNvidiaApp.Name = "chkNvidiaApp";
-			this.chkNvidiaApp.Size = new Size(360, 17);
-			this.chkNvidiaApp.TabIndex = 6;
-			this.chkNvidiaApp.Text = hasNvidia ? "NVIDIA App (detect/update GeForce drivers)" : "NVIDIA App (NVIDIA GPU not detected)";
-			base.Controls.Add(this.chkNvidiaApp);
+			this.chkNvidiaApp.Text = hasNvidia ? "NVIDIA App (detectar/atualizar drivers GeForce)" : "NVIDIA App (GPU NVIDIA não detectada)";
 			this.chkNvidiaApp.BringToFront();
 		}
 		private void HandleNvidiaAppCheckbox()
@@ -201,8 +185,12 @@ this.Load += delegate(object s, EventArgs e)
 		protected override void OnLoad(EventArgs e)
 		{
 			base.OnLoad(e);
-			this.ForceRuntimeCheckboxes();
-			this.CreateNvidiaDriverCheckbox();
+			if (!this.IsInstallationRunning())
+			{
+				this.UpdatePrerequisiteCheckboxes();
+				this.CreateNvidiaDriverCheckbox();
+			}
+			this.TurboramaBuildPremiumPrerequisites();
 			base.ActiveControl = this.btnNext;
 		}
 
@@ -213,64 +201,75 @@ this.Load += delegate(object s, EventArgs e)
 		}
 
 		// Token: 0x06000041 RID: 65 RVA: 0x00005344 File Offset: 0x00003544
-						private void BtnNext_Click(object sender, EventArgs e)
+		private void BtnNext_Click(object sender, EventArgs e)
 		{
-			this.UpdatePrerequisiteCheckboxes();
-			this.mainForm.ShowInstall();
+			if (this.installationComplete)
+			{
+				this.mainForm.ShowInstall();
+				return;
+			}
+
+			if (this.IsInstallationRunning())
+			{
+				return;
+			}
+
+			PrerequisiteSelection selection = this.GetPrerequisiteSelection();
+			int totalSteps = this.GetSelectedStepCount(selection);
+
+			if (totalSteps <= 0)
+			{
+				Logger.Log("No prerequisites selected, showing Install screen.");
+				this.installationComplete = true;
+				this.mainForm.ShowInstall();
+				return;
+			}
+
+			this.progressBar.Maximum = Math.Max(1, totalSteps);
+			this.progressBar.Value = 0;
+			this.progressBar.Visible = false;
+			this.statusLabel.Visible = false;
+
+			this.SetPremiumButtonsInstallingState(true);
+			this.SetPremiumProgressHeaderSafe("Instalando componentes", "Preparando downloads e instalações...");
+			this.UpdatePremiumProgressVisualsSafe();
+
+			this.installerWorker = new BackgroundWorker();
+			this.installerWorker.DoWork += this.InstallerWorker_DoWork;
+			this.installerWorker.RunWorkerCompleted += this.InstallerWorker_RunWorkerCompleted;
+			this.installerWorker.RunWorkerAsync(selection);
 		}
 
 		// Token: 0x06000042 RID: 66 RVA: 0x00005514 File Offset: 0x00003714
 		private void InstallerWorker_DoWork(object sender, DoWorkEventArgs e)
 		{
+			PrerequisiteSelection selection = e.Argument as PrerequisiteSelection;
+			if (selection == null)
+			{
+				selection = new PrerequisiteSelection();
+			}
+
 			try
 			{
-				if (this.chkDirectX.Enabled && this.chkDirectX.Checked)
+				Logger.Log("Installing complete offline gaming runtime stack...");
+				RuntimeInstallerHelper.InstallCompleteGamingRuntimeStack(
+					this.SetPremiumProgressHeaderSafe,
+					this.NormalizeSilentArguments,
+					delegate(string zipPath, string destination, Action<int> progress)
+					{
+						this.ExtractZipToFolder(zipPath, destination, progress);
+					});
+
+				while (this.progressBar.Value < this.progressBar.Maximum - 1)
 				{
-					Logger.Log("Launching DirectX Legacy Runtime June 2010 installer...");
-					this.InstallDirectX();
-					this.OfferDirectX11And12Update();
+					this.UpdateProgressBarSafe();
 				}
-				if (this.chkVCpp.Enabled && this.chkVCpp.Checked)
-				{
-					Logger.Log("Launching all Microsoft Visual C++ runtimes 2005-2022 x86/x64...");
-					this.InstallVCppAll();
-				}
-				if (this.chkDokany.Enabled && this.chkDokany.Checked)
-				{
-					Logger.Log("Launching Dokany installer...");
-					this.InstallDokany();
-				}
-				if (this.chkwinFSP.Enabled && this.chkwinFSP.Checked)
-				{
-					Logger.Log("Launching WinFsp installer...");
-					this.InstallWinFsp();
-				}
-				if (this.chkNvidiaApp != null && this.chkNvidiaApp.Enabled && this.chkNvidiaApp.Checked)
+
+				if (selection.InstallNvidiaApp)
 				{
 					Logger.Log("Launching NVIDIA App installer...");
 					NvidiaAppInstallerHelper.InstallOrOpenNvidiaApp();
 					this.UpdateProgressBarSafe();
-				}
-				int num = 0;
-				if (this.chkDirectX.Enabled && this.chkDirectX.Checked)
-				{
-					num++;
-				}
-				if (this.chkVCpp.Enabled && this.chkVCpp.Checked)
-				{
-					num += this.vcRedistResources.Count;
-				}
-				if (this.chkDokany.Enabled && this.chkDokany.Checked)
-				{
-					num++;
-				}
-				if (this.chkwinFSP.Enabled && this.chkwinFSP.Checked)
-				{
-					num++;
-				}
-				if (this.chkNvidiaApp != null && this.chkNvidiaApp.Enabled && this.chkNvidiaApp.Checked)
-				{
-					num++;
 				}
 			}
 			catch (Exception ex)
@@ -282,21 +281,35 @@ this.Load += delegate(object s, EventArgs e)
 		// Token: 0x06000043 RID: 67 RVA: 0x00005678 File Offset: 0x00003878
 		private void InstallerWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
 		{
+			this.SetPremiumButtonsInstallingState(false);
+
 			Exception ex = e.Result as Exception;
 			if (ex != null)
 			{
-				Logger.Log("Installation error: " + ex.Message);
-				MessageBox.Show(Texts.GetString("InstallFail", Array.Empty<object>()) + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Hand);
-				this.btnNext.Enabled = true;
-				this.btnBack.Enabled = true;
-				this.btnCancel.Enabled = true;
+				Logger.Log("Prerequisite installation error: " + ex.Message);
+				this.SetPremiumProgressHeaderSafe("Falha na instalação", ex.Message);
+				this.installationComplete = false;
+				MessageBox.Show(
+					"A instalação dos componentes obrigatórios falhou. O TurboRama NÃO pode ser instalado sem eles." + Environment.NewLine + Environment.NewLine +
+					"Detalhes: " + ex.Message + Environment.NewLine + Environment.NewLine +
+					"Execute o instalador novamente como Administrador. Se persistir, recompile o InstallerHost com Baixar_Prerequisitos_Instalador.bat.",
+					"Componentes obrigatórios",
+					MessageBoxButtons.OK,
+					MessageBoxIcon.Hand);
 				return;
 			}
+
 			this.UpdateStatusLabelSafe(Texts.GetString("InstallComplete", Array.Empty<object>()));
 			this.installationComplete = true;
-			this.btnNext.Enabled = true;
-			this.btnCancel.Enabled = true;
-			this.progressBar.Value = this.progressBar.Maximum;
+			if (this.progressBar.Maximum > 0)
+			{
+				this.progressBar.Value = this.progressBar.Maximum;
+			}
+			this.SetPremiumProgressHeaderSafe("Componentes concluídos", "Todos os requisitos foram concluídos. Avançando para a instalação principal...");
+			this.UpdatePremiumProgressVisualsSafe();
+
+			Logger.Log("Prerequisites completed, showing Install screen.");
+			this.mainForm.ShowInstall();
 		}
 
 		// Token: 0x06000044 RID: 68 RVA: 0x00005740 File Offset: 0x00003940
@@ -358,6 +371,7 @@ this.Load += delegate(object s, EventArgs e)
 					catch
 					{
 					}
+					this.SetPremiumProgressHeaderSafe("Baixando componente", key);
 					this.UpdateStatusLabelSafe(Texts.GetString("Downloading", Array.Empty<object>()) + " " + key + "...");
 					Logger.Log("Downloading ZIP from " + text5 + "...");
 					this.DownloadWithWget(text, text5, text3);
@@ -369,6 +383,7 @@ this.Load += delegate(object s, EventArgs e)
 					{
 						throw new FileNotFoundException("Installer not found: " + text9);
 					}
+					this.SetPremiumProgressHeaderSafe("Extraindo componente", key);
 					this.UpdateStatusLabelSafe(Texts.GetString("Extracting", Array.Empty<object>()) + " " + key + "...");
 					Process process = new Process();
 					process.StartInfo.FileName = text9;
@@ -386,11 +401,13 @@ this.Load += delegate(object s, EventArgs e)
 					{
 						throw new FileNotFoundException("DXSETUP.exe not found after extraction.");
 					}
+					this.SetPremiumProgressHeaderSafe("Instalando DirectX", "DirectX Legacy June 2010");
 					this.UpdateStatusLabelSafe(Texts.GetString("InstallDX", Array.Empty<object>()));
 					Process process2 = new Process();
 					process2.StartInfo.FileName = text10;
-					process2.StartInfo.Arguments = "";
-					process2.StartInfo.UseShellExecute = true;
+					process2.StartInfo.Arguments = "/silent";
+					process2.StartInfo.UseShellExecute = false;
+					process2.StartInfo.CreateNoWindow = true;
 					process2.Start();
 					process2.WaitForExit();
 					Logger.Log(string.Format("DirectX installation finished with exit code: {0}", process2.ExitCode));
@@ -428,35 +445,7 @@ this.Load += delegate(object s, EventArgs e)
 		// Token: 0x06000045 RID: 69 RVA: 0x00005BA4 File Offset: 0x00003DA4
 				private void OfferDirectX11And12Update()
 		{
-			try
-			{
-				string message = "DirectX Legacy June 2010 was installed or checked." + Environment.NewLine + Environment.NewLine +
-					"DirectX 11 and DirectX 12 do not have a separate offline installer on Windows 10/11." + Environment.NewLine +
-					"They are part of Windows and are updated through Windows Update and video drivers." + Environment.NewLine + Environment.NewLine +
-					"Do you want to open Windows Update now to check DirectX 11/12 system updates?";
-
-				DialogResult result = MessageBox.Show(
-					message,
-					"DirectX 11/12",
-					MessageBoxButtons.YesNo,
-					MessageBoxIcon.Information
-				);
-
-				if (result == DialogResult.Yes)
-				{
-					ProcessStartInfo info = new ProcessStartInfo
-					{
-						FileName = "ms-settings:windowsupdate",
-						UseShellExecute = true
-					};
-					Process.Start(info);
-					Logger.Log("Opened Windows Update for DirectX 11/12 updates.");
-				}
-			}
-			catch (Exception ex)
-			{
-				Logger.Log("Failed to open Windows Update for DirectX 11/12: " + ex.ToString());
-			}
+			Logger.Log("DirectX 11/12 prompt skipped to keep prerequisite flow silent and professional.");
 		}
 private void InstallVCppAll()
 		{
@@ -475,12 +464,14 @@ private void InstallVCppAll()
 				string text5 = keyValuePair.Value.Url + key;
 				try
 				{
+					this.SetPremiumProgressHeaderSafe("Baixando componente", key);
 					this.UpdateStatusLabelSafe(Texts.GetString("Downloading", Array.Empty<object>()) + " " + key + "...");
 					Logger.Log("Downloading ZIP from " + text5 + "...");
 					this.DownloadWithWget(text, text5, text3);
 					Logger.Log("Download and extraction complete.");
 					this.ExtractZipToFolder(text3, text4, null);
 					Logger.Log("Extraction complete.");
+					this.SetPremiumProgressHeaderSafe("Instalando componente", key);
 					this.UpdateStatusLabelSafe(Texts.GetString("Installing", Array.Empty<object>()) + " " + key + "...");
 					string text6 = Path.Combine(text4, key.Replace(".zip", ".exe"));
 					if (!File.Exists(text6))
@@ -489,9 +480,9 @@ private void InstallVCppAll()
 					}
 					Process process = new Process();
 					process.StartInfo.FileName = text6;
-					process.StartInfo.Arguments = value.Arguments;
-					process.StartInfo.UseShellExecute = true;
-					process.StartInfo.CreateNoWindow = false;
+					process.StartInfo.Arguments = this.NormalizeSilentArguments(key, value.Arguments);
+					process.StartInfo.UseShellExecute = false;
+					process.StartInfo.CreateNoWindow = true;
 					Logger.Log("Running installer: " + text6 + " " + value.Arguments);
 					process.Start();
 					process.WaitForExit();
@@ -545,12 +536,14 @@ private void InstallVCppAll()
 				string text5 = keyValuePair.Value.Url + key;
 				try
 				{
+					this.SetPremiumProgressHeaderSafe("Baixando componente", key);
 					this.UpdateStatusLabelSafe(Texts.GetString("Downloading", Array.Empty<object>()) + " " + key + "...");
 					Logger.Log("Downloading ZIP from " + text5 + "...");
 					this.DownloadWithWget(text, text5, text3);
 					Logger.Log("Download and extraction complete.");
 					this.ExtractZipToFolder(text3, text4, null);
 					Logger.Log("Extraction complete.");
+					this.SetPremiumProgressHeaderSafe("Instalando componente", key);
 					this.UpdateStatusLabelSafe(Texts.GetString("Installing", Array.Empty<object>()) + " " + key + "...");
 					string text6 = Path.Combine(text4, key.Replace(".zip", ".exe"));
 					if (!File.Exists(text6))
@@ -559,9 +552,9 @@ private void InstallVCppAll()
 					}
 					Process process = new Process();
 					process.StartInfo.FileName = text6;
-					process.StartInfo.Arguments = value.Arguments;
-					process.StartInfo.UseShellExecute = true;
-					process.StartInfo.CreateNoWindow = false;
+					process.StartInfo.Arguments = this.NormalizeSilentArguments(key, value.Arguments);
+					process.StartInfo.UseShellExecute = false;
+					process.StartInfo.CreateNoWindow = true;
 					Logger.Log("Running installer: " + text6 + " " + value.Arguments);
 					process.Start();
 					process.WaitForExit();
@@ -616,7 +609,8 @@ private void InstallVCppAll()
 					string text5 = keyValuePair.Value.Url + key;
 					try
 					{
-						this.UpdateStatusLabelSafe(Texts.GetString("Downloading", Array.Empty<object>()) + " " + key + "...");
+						this.SetPremiumProgressHeaderSafe("Baixando componente", key);
+					this.UpdateStatusLabelSafe(Texts.GetString("Downloading", Array.Empty<object>()) + " " + key + "...");
 						Logger.Log("Downloading " + text5 + "...");
 						this.DownloadWithWget(text, text5, text3);
 						this.ExtractZipToFolder(text3, text4, null);
@@ -626,12 +620,14 @@ private void InstallVCppAll()
 						{
 							throw new FileNotFoundException("No MSI found inside " + key);
 						}
+						this.SetPremiumProgressHeaderSafe("Instalando WinFsp", Path.GetFileName(text6));
 						this.UpdateStatusLabelSafe(Texts.GetString("Installing", Array.Empty<object>()) + " " + Path.GetFileName(text6) + "...");
 						Logger.Log("Running WinFsp MSI installer: " + text6);
 						Process process = new Process();
 						process.StartInfo.FileName = "msiexec.exe";
-						process.StartInfo.Arguments = "/i \"" + text6 + "\" /quiet /norestart";
-						process.StartInfo.UseShellExecute = true;
+						process.StartInfo.Arguments = "/i \"" + text6 + "\" /qn /norestart";
+						process.StartInfo.UseShellExecute = false;
+						process.StartInfo.CreateNoWindow = true;
 						process.Start();
 						process.WaitForExit();
 						Logger.Log(string.Format("WinFsp installer finished with code {0}", process.ExitCode));
@@ -687,23 +683,16 @@ private void InstallVCppAll()
 		{
 			if (this.progressBar.InvokeRequired)
 			{
-				this.progressBar.Invoke(new Action(delegate
-				{
-					if (this.progressBar.Value < this.progressBar.Maximum)
-					{
-						ProgressBar progressBar2 = this.progressBar;
-						int value2 = progressBar2.Value;
-						progressBar2.Value = value2 + 1;
-					}
-				}));
+				this.progressBar.Invoke(new Action(this.UpdateProgressBarSafe));
 				return;
 			}
+
 			if (this.progressBar.Value < this.progressBar.Maximum)
 			{
-				ProgressBar progressBar = this.progressBar;
-				int value = progressBar.Value;
-				progressBar.Value = value + 1;
+				this.progressBar.Value++;
 			}
+
+			this.UpdatePremiumProgressVisualsSafe();
 		}
 
 		// Token: 0x0600004B RID: 75 RVA: 0x000064F8 File Offset: 0x000046F8
@@ -731,47 +720,62 @@ private void InstallVCppAll()
 		// Token: 0x0600004C RID: 76 RVA: 0x0000658C File Offset: 0x0000478C
 		private void ExtractZipToFolder(string zipFilePath, string destinationFolder, Action<int> progress = null)
 		{
+			string destinationRoot = Path.GetFullPath(destinationFolder);
+			if (!destinationRoot.EndsWith(Path.DirectorySeparatorChar.ToString()))
+			{
+				destinationRoot += Path.DirectorySeparatorChar;
+			}
+
 			using (FileStream fileStream = File.OpenRead(zipFilePath))
 			{
 				using (ZipFile zipFile = new ZipFile(fileStream))
 				{
-					long num = 0L;
+					long totalSize = 0L;
 					foreach (object obj in zipFile)
 					{
 						ZipEntry zipEntry = (ZipEntry)obj;
-						if (zipEntry.IsFile)
+						if (zipEntry.IsFile && zipEntry.Size > 0L)
 						{
-							num += zipEntry.Size;
+							totalSize += zipEntry.Size;
 						}
 					}
-					long num2 = 0L;
+
+					long extractedSize = 0L;
 					foreach (object obj2 in zipFile)
 					{
 						ZipEntry zipEntry2 = (ZipEntry)obj2;
-						if (zipEntry2.IsFile)
+						if (!zipEntry2.IsFile)
 						{
-							string name = zipEntry2.Name;
-							string text = Path.Combine(destinationFolder, name);
-							string directoryName = Path.GetDirectoryName(text);
-							if (!Directory.Exists(directoryName))
+							continue;
+						}
+
+						string safeEntryName = zipEntry2.Name.Replace('/', Path.DirectorySeparatorChar);
+						string outputFile = Path.GetFullPath(Path.Combine(destinationRoot, safeEntryName));
+						if (!outputFile.StartsWith(destinationRoot, StringComparison.OrdinalIgnoreCase))
+						{
+							throw new IOException("Unsafe ZIP entry path: " + zipEntry2.Name);
+						}
+
+						string directoryName = Path.GetDirectoryName(outputFile);
+						if (!string.IsNullOrEmpty(directoryName) && !Directory.Exists(directoryName))
+						{
+							Directory.CreateDirectory(directoryName);
+						}
+
+						using (Stream inputStream = zipFile.GetInputStream(zipEntry2))
+						{
+							using (FileStream fileStream2 = File.Create(outputFile))
 							{
-								Directory.CreateDirectory(directoryName);
-							}
-							using (Stream inputStream = zipFile.GetInputStream(zipEntry2))
-							{
-								using (FileStream fileStream2 = File.Create(text))
+								byte[] array = new byte[8192];
+								int bytesRead;
+								while ((bytesRead = inputStream.Read(array, 0, array.Length)) > 0)
 								{
-									byte[] array = new byte[4096];
-									int num3;
-									while ((num3 = inputStream.Read(array, 0, array.Length)) > 0)
+									fileStream2.Write(array, 0, bytesRead);
+									extractedSize += (long)bytesRead;
+									if (progress != null && totalSize > 0L)
 									{
-										fileStream2.Write(array, 0, num3);
-										num2 += (long)num3;
-										if (progress != null)
-										{
-											int num4 = (int)(num2 * 100L / num);
-											progress(num4);
-										}
+										int percent = (int)(extractedSize * 100L / totalSize);
+										progress(percent);
 									}
 								}
 							}
@@ -784,43 +788,41 @@ private void InstallVCppAll()
 		// Token: 0x0600004D RID: 77 RVA: 0x00006790 File Offset: 0x00004990
 		private void DownloadWithWget(string wgetPath, string url, string outputPath)
 		{
-			try
+			using (Process process = new Process())
 			{
-				using (Process process = new Process())
+				process.StartInfo.FileName = wgetPath;
+				process.StartInfo.Arguments = string.Concat(new string[] { "\"", url, "\" -O \"", outputPath, "\" --no-check-certificate" });
+				process.StartInfo.CreateNoWindow = true;
+				process.StartInfo.UseShellExecute = false;
+				process.StartInfo.RedirectStandardOutput = true;
+				process.StartInfo.RedirectStandardError = true;
+				process.OutputDataReceived += delegate(object s, DataReceivedEventArgs e)
 				{
-					process.StartInfo.FileName = wgetPath;
-					process.StartInfo.Arguments = string.Concat(new string[] { "\"", url, "\" -O \"", outputPath, "\" --no-check-certificate" });
-					process.StartInfo.CreateNoWindow = true;
-					process.StartInfo.UseShellExecute = false;
-					process.StartInfo.RedirectStandardOutput = true;
-					process.StartInfo.RedirectStandardError = true;
-					process.OutputDataReceived += delegate(object s, DataReceivedEventArgs e)
+					if (e.Data != null)
 					{
-						if (e.Data != null)
-						{
-							Logger.Log("wget stdout: " + e.Data);
-						}
-					};
-					process.ErrorDataReceived += delegate(object s, DataReceivedEventArgs e)
-					{
-						if (e.Data != null)
-						{
-							Logger.Log("wget stderr: " + e.Data);
-						}
-					};
-					process.Start();
-					process.BeginOutputReadLine();
-					process.BeginErrorReadLine();
-					process.WaitForExit();
-					if (process.ExitCode != 0)
-					{
-						throw new Exception(string.Format("wget failed with exit code {0}", process.ExitCode));
+						Logger.Log("wget stdout: " + e.Data);
 					}
+				};
+				process.ErrorDataReceived += delegate(object s, DataReceivedEventArgs e)
+				{
+					if (e.Data != null)
+					{
+						Logger.Log("wget stderr: " + e.Data);
+					}
+				};
+				process.Start();
+				process.BeginOutputReadLine();
+				process.BeginErrorReadLine();
+				process.WaitForExit();
+				if (process.ExitCode != 0)
+				{
+					throw new Exception(string.Format("wget failed with exit code {0}", process.ExitCode));
 				}
 			}
-			catch
+
+			if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0L)
 			{
-				Logger.Log("Error Downloading" + url);
+				throw new IOException("Download failed or created an empty file: " + outputPath);
 			}
 		}
 
@@ -829,20 +831,25 @@ private void InstallVCppAll()
 		{
 			if (this.statusLabel.InvokeRequired)
 			{
-				this.statusLabel.Invoke(new Action(delegate
-				{
-					this.statusLabel.Text = text;
-				}));
+				this.statusLabel.Invoke(new Action<string>(this.UpdateStatusLabelSafe), text);
 				return;
 			}
+
 			this.statusLabel.Text = text;
+			this.statusLabel.Visible = false;
+			this.SetPremiumProgressHeaderSafe(this.premiumProgressTitleText, text);
 		}
 
 		// Token: 0x0600004F RID: 79 RVA: 0x00006948 File Offset: 0x00004B48
-						private void UpdatePrerequisiteCheckboxes()
+		private void UpdatePrerequisiteCheckboxes()
 		{
 			try
 			{
+				if (this.IsInstallationRunning())
+				{
+					return;
+				}
+
 				this.chkVCpp.Enabled = true;
 				this.chkVCpp.Checked = true;
 				this.chkVCpp.CheckState = CheckState.Checked;
@@ -859,29 +866,185 @@ private void InstallVCppAll()
 				this.chkwinFSP.Checked = true;
 				this.chkwinFSP.CheckState = CheckState.Checked;
 
+				this.CreateNvidiaDriverCheckbox();
 				this.lblAllInstalled.Visible = false;
 				this.statusLabel.Visible = false;
 				this.progressBar.Visible = false;
 				this.progressBar.Value = 0;
-				this.progressBar.Maximum = 1;
+				this.progressBar.Maximum = Math.Max(1, this.GetSelectedStepCount(this.GetPrerequisiteSelection()));
 
-				this.btnBack.Enabled = true;
 				this.btnBack.Visible = true;
-
-				this.btnNext.Enabled = true;
 				this.btnNext.Visible = true;
-
-				this.btnCancel.Enabled = true;
 				this.btnCancel.Visible = true;
-
-				this.btnBack.BringToFront();
-				this.btnNext.BringToFront();
-				this.btnCancel.BringToFront();
+				this.SetPremiumButtonsInstallingState(false);
+				this.SetPremiumProgressHeaderSafe("Pronto para iniciar", "Selecione os componentes desejados e clique em Next para continuar.");
+				this.UpdatePremiumProgressVisualsSafe();
 			}
 			catch (Exception ex)
 			{
 				Logger.Log("Error setting prerequisite checkboxes: " + ex.Message);
 			}
+		}
+
+
+		private bool IsInstallationRunning()
+		{
+			return this.installerWorker != null && this.installerWorker.IsBusy;
+		}
+
+		private void SetPremiumButtonsInstallingState(bool installing)
+		{
+			this.btnBack.Visible = true;
+			this.btnNext.Visible = true;
+			this.btnCancel.Visible = true;
+			this.btnBack.Enabled = !installing;
+			this.btnCancel.Enabled = !installing;
+			this.btnNext.Enabled = !installing;
+			this.btnNext.Text = installing ? "Instalando..." : Texts.GetString("Next >", Array.Empty<object>());
+			this.btnBack.BringToFront();
+			this.btnNext.BringToFront();
+			this.btnCancel.BringToFront();
+		}
+
+		private void SetPremiumProgressHeaderSafe(string title, string detail)
+		{
+			if (string.IsNullOrWhiteSpace(title))
+			{
+				title = "Instalando componentes";
+			}
+			if (string.IsNullOrWhiteSpace(detail))
+			{
+				detail = "Aguardando processamento...";
+			}
+
+			this.premiumProgressTitleText = title;
+			this.premiumProgressDetailText = detail;
+
+			if (this.InvokeRequired)
+			{
+				this.Invoke(new Action<string, string>(this.SetPremiumProgressHeaderSafe), title, detail);
+				return;
+			}
+
+			if (this.premiumProgressTitleLabel != null)
+			{
+				this.premiumProgressTitleLabel.Text = title;
+			}
+
+			if (this.premiumProgressDetailLabel != null)
+			{
+				this.premiumProgressDetailLabel.Text = detail;
+			}
+		}
+
+		private void UpdatePremiumProgressVisualsSafe()
+		{
+			if (this.InvokeRequired)
+			{
+				this.Invoke(new Action(this.UpdatePremiumProgressVisualsSafe));
+				return;
+			}
+
+			int maximum = Math.Max(1, this.progressBar.Maximum);
+			int value = Math.Max(0, Math.Min(this.progressBar.Value, maximum));
+			int percent = (int)Math.Round((double)value * 100.0 / (double)maximum);
+
+			if (this.premiumProgressCountLabel != null)
+			{
+				this.premiumProgressCountLabel.Text = string.Format("Concluídos: {0} de {1}", value, maximum);
+			}
+
+			if (this.premiumProgressPercentLabel != null)
+			{
+				this.premiumProgressPercentLabel.Text = percent.ToString() + "%";
+			}
+
+			if (this.premiumProgressHintLabel != null)
+			{
+				this.premiumProgressHintLabel.Text = value >= maximum ? "Todos os componentes foram processados." : "O instalador mantém o fundo ativo enquanto processa cada etapa.";
+			}
+
+			if (this.premiumProgressFillPanel != null && this.premiumProgressTrackPanel != null)
+			{
+				int trackWidth = Math.Max(1, this.premiumProgressTrackPanel.ClientSize.Width);
+				int fillWidth = (int)Math.Round((double)trackWidth * (double)value / (double)maximum);
+				this.premiumProgressFillPanel.Width = Math.Max(0, Math.Min(trackWidth, fillWidth));
+				this.premiumProgressFillPanel.Height = this.premiumProgressTrackPanel.Height;
+			}
+
+			if (this.premiumProgressTitleLabel != null)
+			{
+				this.premiumProgressTitleLabel.Text = this.premiumProgressTitleText;
+			}
+
+			if (this.premiumProgressDetailLabel != null)
+			{
+				this.premiumProgressDetailLabel.Text = this.premiumProgressDetailText;
+			}
+		}
+
+		private string NormalizeSilentArguments(string packageName, string originalArguments)
+		{
+			string name = (packageName ?? string.Empty).ToLowerInvariant();
+			string args = (originalArguments ?? string.Empty).Trim();
+			if (name.Contains("2005") || name.Contains("2008"))
+			{
+				return "/q";
+			}
+			if (name.Contains("2010") || name.Contains("2012") || name.Contains("2013") || name.Contains("2015"))
+			{
+				return "/passive /norestart";
+			}
+			if (name.Contains("dokan"))
+			{
+				return "/quiet /norestart";
+			}
+			return args;
+		}
+
+
+		private PrerequisiteSelection GetPrerequisiteSelection()
+		{
+			PrerequisiteSelection selection = new PrerequisiteSelection();
+			selection.InstallVCpp = this.chkVCpp.Enabled && this.chkVCpp.Checked;
+			selection.InstallDirectX = this.chkDirectX.Enabled && this.chkDirectX.Checked;
+			selection.InstallDokany = this.chkDokany.Enabled && this.chkDokany.Checked;
+			selection.InstallWinFsp = this.chkwinFSP.Enabled && this.chkwinFSP.Checked;
+			selection.InstallNvidiaApp = this.chkNvidiaApp != null && this.chkNvidiaApp.Enabled && this.chkNvidiaApp.Checked;
+			return selection;
+		}
+
+		private Dictionary<string, InstallerInfo> GetLegacyVcRedistResources()
+		{
+			Dictionary<string, InstallerInfo> legacy = new Dictionary<string, InstallerInfo>();
+			foreach (KeyValuePair<string, InstallerInfo> entry in this.vcRedistResources)
+			{
+				if (entry.Key.IndexOf("2015", StringComparison.OrdinalIgnoreCase) >= 0)
+				{
+					continue;
+				}
+				legacy.Add(entry.Key, entry.Value);
+			}
+			return legacy;
+		}
+
+		private int GetSelectedStepCount(PrerequisiteSelection selection)
+		{
+			int total = 24;
+			if (selection.InstallNvidiaApp)
+			{
+				total++;
+			}
+			return total;
+		}
+
+		private class PrerequisiteSelection
+		{
+			public bool InstallVCpp;
+			public bool InstallDirectX;
+			public bool InstallDokany;
+			public bool InstallWinFsp;
+			public bool InstallNvidiaApp;
 		}
 
 		// Token: 0x04000034 RID: 52
@@ -1017,6 +1180,10 @@ base.BackColor = TurboramaPremiumUi.Background;
 					}
 				}
 
+				if (nvidia == null && this.chkNvidiaApp != null)
+				{
+					nvidia = this.chkNvidiaApp;
+				}
 				if (nvidia == null)
 				{
 					nvidia = new CheckBox();
@@ -1096,12 +1263,49 @@ base.BackColor = TurboramaPremiumUi.Background;
 				greenLine.BackColor = TurboramaPremiumUi.Green;
 				this.turboramaPremiumPanel.Controls.Add(greenLine);
 
-				this.TurboramaAddPremiumCheckRow(vc, contentLeft, 112, contentWidth, "Visual C++ Complete", "Runtimes Microsoft 2005-2022 x86 + x64", true);
+				bool hasNvidiaForRow = this.chkNvidiaApp != null && this.chkNvidiaApp.Enabled && this.chkNvidiaApp.Checked;
+
+					this.TurboramaAddPremiumCheckRow(vc, contentLeft, 112, contentWidth, "Visual C++ Complete", "Runtimes Microsoft 2005-2022 x86 + x64", true);
 				this.TurboramaAddPremiumCheckRow(dx, contentLeft, 157, contentWidth, "DirectX Complete", "Legacy June 2010 + DirectX 11/12 pelo Windows Update", true);
-				this.TurboramaAddPremiumCheckRow(nvidia, contentLeft, 202, contentWidth, "NVIDIA App", "Detectar e atualizar drivers GeForce", true);
+				this.TurboramaAddPremiumCheckRow(nvidia, contentLeft, 202, contentWidth, "NVIDIA App", hasNvidiaForRow ? "Detectar e atualizar drivers GeForce" : "GPU NVIDIA não detectada", hasNvidiaForRow, hasNvidiaForRow);
 				this.TurboramaAddPremiumCheckRow(dokan, contentLeft, 247, contentWidth, "Dokan / WinFsp", "Suporte para montagem de arquivos e sistemas virtuais", true);
 
 				this.turboramaPremiumPanel.Controls.Add(TurboramaPremiumUi.MakeLabel("Configuracao recomendada pronta para continuar.", contentLeft, 296, contentWidth, 26, TurboramaPremiumUi.Green, 9f, true));
+
+				this.premiumProgressTitleLabel = TurboramaPremiumUi.MakeLabel(this.premiumProgressTitleText, contentLeft, 338, contentWidth - 110, 24, Color.White, 10.2f, true);
+				this.turboramaPremiumPanel.Controls.Add(this.premiumProgressTitleLabel);
+
+				this.premiumProgressPercentLabel = TurboramaPremiumUi.MakeLabel("0%", contentLeft + contentWidth - 90, 338, 90, 24, TurboramaPremiumUi.Green, 10.2f, true);
+				this.premiumProgressPercentLabel.TextAlign = ContentAlignment.MiddleRight;
+				this.turboramaPremiumPanel.Controls.Add(this.premiumProgressPercentLabel);
+
+				this.premiumProgressDetailLabel = TurboramaPremiumUi.MakeLabel(this.premiumProgressDetailText, contentLeft, 364, contentWidth, 28, TurboramaPremiumUi.Muted, 8.6f, false);
+				this.turboramaPremiumPanel.Controls.Add(this.premiumProgressDetailLabel);
+
+				this.premiumProgressTrackPanel = new Panel();
+				this.premiumProgressTrackPanel.Left = contentLeft;
+				this.premiumProgressTrackPanel.Top = 400;
+				this.premiumProgressTrackPanel.Width = Math.Max(160, contentWidth);
+				this.premiumProgressTrackPanel.Height = 18;
+				this.premiumProgressTrackPanel.BackColor = Color.FromArgb(48, 48, 48);
+				this.premiumProgressTrackPanel.BorderStyle = BorderStyle.FixedSingle;
+				this.turboramaPremiumPanel.Controls.Add(this.premiumProgressTrackPanel);
+
+				this.premiumProgressFillPanel = new Panel();
+				this.premiumProgressFillPanel.Left = 0;
+				this.premiumProgressFillPanel.Top = 0;
+				this.premiumProgressFillPanel.Height = this.premiumProgressTrackPanel.Height;
+				this.premiumProgressFillPanel.Width = 0;
+				this.premiumProgressFillPanel.BackColor = TurboramaPremiumUi.Green;
+				this.premiumProgressTrackPanel.Controls.Add(this.premiumProgressFillPanel);
+
+				this.premiumProgressCountLabel = TurboramaPremiumUi.MakeLabel("Concluídos: 0 de " + Math.Max(1, this.progressBar.Maximum).ToString(), contentLeft, 426, contentWidth, 22, Color.White, 8.8f, true);
+				this.turboramaPremiumPanel.Controls.Add(this.premiumProgressCountLabel);
+
+				this.premiumProgressHintLabel = TurboramaPremiumUi.MakeLabel("O instalador mantém o fundo ativo enquanto processa cada etapa.", contentLeft, 448, contentWidth, 22, TurboramaPremiumUi.Muted, 8.4f, false);
+				this.turboramaPremiumPanel.Controls.Add(this.premiumProgressHintLabel);
+
+				this.UpdatePremiumProgressVisualsSafe();
 
 				this.turboramaPremiumPanel.SendToBack();
 				this.turboramaPremiumPanel.BringToFront();
@@ -1148,7 +1352,7 @@ base.BackColor = TurboramaPremiumUi.Background;
 			}
 		}
 
-		private void TurboramaAddPremiumCheckRow(CheckBox checkBox, int left, int top, int width, string title, string subtitle, bool checkedState)
+		private void TurboramaAddPremiumCheckRow(CheckBox checkBox, int left, int top, int width, string title, string subtitle, bool checkedState, bool enabledState = true)
 		{
 			if (checkBox == null)
 			{
@@ -1169,7 +1373,7 @@ base.BackColor = TurboramaPremiumUi.Background;
 			stripe.Top = 0;
 			stripe.Width = 4;
 			stripe.Height = row.Height;
-			stripe.BackColor = TurboramaPremiumUi.Green;
+			stripe.BackColor = enabledState ? TurboramaPremiumUi.Green : TurboramaPremiumUi.Muted;
 			row.Controls.Add(stripe);
 
 			checkBox.Parent = row;
@@ -1180,15 +1384,15 @@ base.BackColor = TurboramaPremiumUi.Background;
 			checkBox.AutoSize = false;
 			checkBox.Text = title;
 			checkBox.Visible = true;
-			checkBox.Enabled = true;
+			checkBox.Enabled = enabledState;
 			checkBox.ThreeState = false;
-			checkBox.Checked = checkedState;
-			checkBox.CheckState = checkedState ? CheckState.Checked : CheckState.Unchecked;
+			checkBox.Checked = checkedState && enabledState;
+			checkBox.CheckState = (checkedState && enabledState) ? CheckState.Checked : CheckState.Unchecked;
 			TurboramaPremiumUi.StyleCheckBox(checkBox);
 			row.Controls.Add(checkBox);
 			checkBox.BringToFront();
 
-			Label sub = TurboramaPremiumUi.MakeLabel(subtitle, 245, 8, row.Width - 255, 20, TurboramaPremiumUi.Muted, 8.2f, false);
+			Label sub = TurboramaPremiumUi.MakeLabel(subtitle, 245, 8, row.Width - 255, 20, enabledState ? TurboramaPremiumUi.Muted : Color.FromArgb(110, 110, 110), 8.2f, false);
 			row.Controls.Add(sub);
 
 			if (title.ToLowerInvariant().Contains("nvidia"))
@@ -1302,8 +1506,7 @@ base.BackColor = TurboramaPremiumUi.Background;
 						string info = ((checkBox.Name ?? string.Empty) + " " + (checkBox.Text ?? string.Empty)).ToLowerInvariant();
 
 						if (info.Contains("visual") || info.Contains("c++") || info.Contains("vc++") || info.Contains("vcredist") ||
-							info.Contains("directx") || info.Contains("nvidia") || info.Contains("geforce") ||
-							info.Contains("dokan") || info.Contains("winfsp"))
+							info.Contains("directx") || info.Contains("dokan") || info.Contains("winfsp"))
 						{
 							checkBox.Enabled = true;
 							checkBox.ThreeState = false;
@@ -1316,10 +1519,6 @@ base.BackColor = TurboramaPremiumUi.Background;
 								checkBox.BackColor = Color.FromArgb(18, 24, 20);
 							}
 
-							if (info.Contains("nvidia") || info.Contains("geforce"))
-							{
-								this.chkNvidiaApp = checkBox;
-							}
 						}
 					}
 					catch

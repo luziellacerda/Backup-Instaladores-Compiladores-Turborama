@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Net;
 using System.Reflection;
 
@@ -9,6 +10,85 @@ namespace RetroBuild
 	// Token: 0x02000006 RID: 6
 	internal class Methods
 	{
+		private static readonly string[] RepoCopySkipSegments = new string[]
+		{
+			"\\.git\\",
+			"\\venv\\",
+			"\\node_modules\\",
+			"\\__pycache__\\",
+			"\\.venv\\"
+		};
+
+		public static string ToLongPath(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+			{
+				return path;
+			}
+
+			string fullPath = Path.GetFullPath(path);
+			if (fullPath.StartsWith(@"\\?\", StringComparison.Ordinal))
+			{
+				return fullPath;
+			}
+
+			if (fullPath.StartsWith(@"\\", StringComparison.Ordinal))
+			{
+				return @"\\?\UNC\" + fullPath.Substring(2);
+			}
+
+			return @"\\?\" + fullPath;
+		}
+
+		public static void SafeCreateDirectory(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+			{
+				return;
+			}
+
+			Directory.CreateDirectory(ToLongPath(path));
+		}
+
+		public static bool SafeCopyFile(string sourceFile, string destinationFile, bool overwrite)
+		{
+			try
+			{
+				string destinationDirectory = Path.GetDirectoryName(destinationFile);
+				if (!string.IsNullOrEmpty(destinationDirectory))
+				{
+					SafeCreateDirectory(destinationDirectory);
+				}
+
+				File.Copy(ToLongPath(sourceFile), ToLongPath(destinationFile), overwrite);
+				return true;
+			}
+			catch (Exception ex)
+			{
+				Logger.Log("[WARNING] Falha ao copiar arquivo: " + sourceFile + " -> " + ex.Message);
+				return false;
+			}
+		}
+
+		private static bool ShouldSkipRepoPath(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+			{
+				return true;
+			}
+
+			string normalized = path.Replace('/', '\\');
+			foreach (string segment in RepoCopySkipSegments)
+			{
+				if (normalized.IndexOf(segment, StringComparison.OrdinalIgnoreCase) >= 0)
+				{
+					return true;
+				}
+			}
+
+			return normalized.EndsWith("\\.git", StringComparison.OrdinalIgnoreCase);
+		}
+
 		// Token: 0x0600004C RID: 76 RVA: 0x00002C5B File Offset: 0x00000E5B
 		public static string PathCombineExeDir(string relativePath)
 		{
@@ -233,7 +313,7 @@ namespace RetroBuild
 						}
 						catch (UnauthorizedAccessException)
 						{
-							Console.WriteLine("Access denied to file: " + text2);
+							Logger.WriteConsole("Access denied to file: " + text2);
 						}
 					}
 					try
@@ -242,7 +322,7 @@ namespace RetroBuild
 					}
 					catch (UnauthorizedAccessException)
 					{
-						Console.WriteLine("Access denied to directory: " + text);
+						Logger.WriteConsole("Access denied to directory: " + text);
 					}
 				}
 				using (Process process = Process.Start(new ProcessStartInfo
@@ -270,22 +350,23 @@ namespace RetroBuild
 				}
 				foreach (string text4 in Directory.GetDirectories(text, "*", SearchOption.AllDirectories))
 				{
-					if (!text4.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+					if (ShouldSkipRepoPath(text4))
 					{
-						string text5 = text4.Replace(text, buildFolder);
-						if (!Directory.Exists(text5))
-						{
-							Directory.CreateDirectory(text5);
-						}
+						continue;
 					}
+
+					string text5 = text4.Replace(text, buildFolder);
+					SafeCreateDirectory(text5);
 				}
 				foreach (string text6 in Directory.GetFiles(text, "*.*", SearchOption.AllDirectories))
 				{
-					if (!text6.Contains(Path.Combine(".git", "")) && !text6.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+					if (ShouldSkipRepoPath(text6))
 					{
-						string text7 = text6.Replace(text, buildFolder);
-						File.Copy(text6, text7, true);
+						continue;
 					}
+
+					string text7 = text6.Replace(text, buildFolder);
+					SafeCopyFile(text6, text7, true);
 				}
 				Logger.LogInfo("Repository copied to " + buildFolder + ".");
 				flag = true;
@@ -334,7 +415,7 @@ namespace RetroBuild
 						{
 							File.SetAttributes(text2, FileAttributes.Normal);
 							File.Delete(text2);
-							Console.WriteLine("Deleted file: " + text2);
+							Logger.WriteConsole("Deleted file: " + text2);
 							Logger.LogInfo("Deleted .git files from " + path);
 						}
 						catch (Exception ex2)
@@ -362,6 +443,132 @@ namespace RetroBuild
 		}
 
 		// Token: 0x06000056 RID: 86 RVA: 0x00003600 File Offset: 0x00001800
+		public static bool CreateZipWith7z(
+			string sevenZipExe,
+			string zipFilePath,
+			string sourceDirectory,
+			int compressionLevel,
+			long totalInputBytes,
+			int totalFileCount,
+			Action<long, long, DateTime, string> progressCallback)
+		{
+			if (!Directory.Exists(sourceDirectory))
+			{
+				throw new DirectoryNotFoundException("Pasta de origem nao encontrada: " + sourceDirectory);
+			}
+
+			if (File.Exists(zipFilePath))
+			{
+				File.Delete(zipFilePath);
+			}
+
+			string speedFlags = compressionLevel <= 0 ? "-mtc=off -mtm=off -mta=off" : string.Empty;
+			string arguments = string.Format(
+				"a -tzip \"{0}\" \"{1}\\*\" -r -mx{2} -mmt=on -bb1 {3} -y",
+				zipFilePath,
+				sourceDirectory.TrimEnd('\\'),
+				compressionLevel,
+				speedFlags).Replace("  ", " ").Trim();
+
+			Logger.LogInfo("Creating ZIP with 7-Zip: " + arguments);
+			Logger.WriteConsole("Compactando com 7-Zip (nivel " + compressionLevel + ", todos os nucleos da CPU)...");
+			Logger.WriteConsole("Arquivos: " + totalFileCount + " | Tamanho de entrada: " + FormatBytes(totalInputBytes));
+
+			DateTime startTime = DateTime.Now;
+			string currentFile = "Iniciando...";
+			bool running = true;
+
+			Thread progressThread = new Thread(delegate()
+			{
+				while (running)
+				{
+					try
+					{
+						long processedBytes = 0L;
+						if (File.Exists(zipFilePath))
+						{
+							processedBytes = new FileInfo(zipFilePath).Length;
+						}
+
+						if (totalInputBytes > 0L)
+						{
+							processedBytes = Math.Min(totalInputBytes, processedBytes);
+						}
+
+						if (progressCallback != null)
+						{
+							progressCallback(processedBytes, totalInputBytes, startTime, currentFile);
+						}
+					}
+					catch
+					{
+					}
+
+					Thread.Sleep(250);
+				}
+			});
+			progressThread.IsBackground = true;
+			progressThread.Start();
+
+			Process process = new Process();
+			process.StartInfo.FileName = sevenZipExe;
+			process.StartInfo.Arguments = arguments;
+			process.StartInfo.CreateNoWindow = true;
+			process.StartInfo.UseShellExecute = false;
+			process.StartInfo.RedirectStandardOutput = true;
+			process.StartInfo.RedirectStandardError = true;
+			process.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+			process.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
+			process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e)
+			{
+				if (!string.IsNullOrWhiteSpace(e.Data))
+				{
+					currentFile = e.Data.Trim();
+				}
+			};
+			process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e)
+			{
+				if (!string.IsNullOrWhiteSpace(e.Data))
+				{
+					currentFile = e.Data.Trim();
+				}
+			};
+			process.Start();
+			process.BeginOutputReadLine();
+			process.BeginErrorReadLine();
+			process.WaitForExit();
+			running = false;
+			progressThread.Join(1000);
+
+			if (progressCallback != null)
+			{
+				progressCallback(totalInputBytes, totalInputBytes, startTime, "Concluido");
+			}
+
+			if (process.ExitCode != 0 || !File.Exists(zipFilePath))
+			{
+				Logger.Log("[ERROR] 7-Zip archive failed with exit code " + process.ExitCode);
+				return false;
+			}
+
+			Logger.LogInfo("ZIP created with 7-Zip at: " + zipFilePath);
+			return true;
+		}
+
+		private static string FormatBytes(long bytes)
+		{
+			string[] units = new string[] { "B", "KB", "MB", "GB", "TB" };
+			double value = bytes;
+			int unit = 0;
+			while (value >= 1024.0 && unit < units.Length - 1)
+			{
+				value /= 1024.0;
+				unit++;
+			}
+
+			return string.Format("{0:0.00} {1}", value, units[unit]);
+		}
+
 		public static void ExtractZipWith7z(string sevenZipExe, string zipFilePath, string outputDir)
 		{
 			Process process = new Process();
