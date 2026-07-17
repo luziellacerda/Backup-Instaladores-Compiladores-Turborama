@@ -1,0 +1,8 @@
+﻿INTEGRACAO CAD no instalador 2026-07-15T18:51:06.2256571-03:00
+- CadBlockService: DISM+AUTO hard, reg KF, WEKF, tarefas ONSTART, scripts em C:\TurboRama\Logs
+- ApplyKioskPoliciesStep ja chamava CadBlock (agora reforçado)
+- FactoryFullInstall.SeedPackToMachine ja chamava CadBlock
+- OptionalAdvancedModulesStep: KeyboardFilter agora chama CadBlock completo
+- Factory pack enableKeyboardFilter=true
+- Publish: D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama\publish\Installer
+- Backup: D:\Backup-Instaladores-Compiladores-Turborama\BACKUPS-TURBORAMA\TurboRama-CAD-Installer-Integrate_2026-07-15_18-49-43

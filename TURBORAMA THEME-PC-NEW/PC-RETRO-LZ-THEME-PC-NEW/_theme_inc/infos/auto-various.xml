@@ -1,0 +1,11 @@
+<!-- Theme by LZRetroGames
+-->
+<theme>
+	<formatVersion>7</formatVersion>
+	<view name="system,detailed, grid">
+		<image name="linea-inferior" extra="static">
+			<color>4274fd</color>
+			<colorEnd>5100ad</colorEnd>
+		</image>
+	</view>
+</theme>

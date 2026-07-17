@@ -1,0 +1,18 @@
+<!-- Theme by LZRetroGames
+-->
+<theme>
+	<formatVersion>7</formatVersion>
+
+	<view name="system">
+
+		<text name="system_name" extra="true">
+			<text>Flash Player</text>
+		</text>
+	</view>
+	<view name="system,detailed, grid">
+		<image name="linea-inferior" extra="static">
+			<color>500505</color>
+			<colorEnd>db1616</colorEnd>
+		</image>
+	</view>
+</theme>

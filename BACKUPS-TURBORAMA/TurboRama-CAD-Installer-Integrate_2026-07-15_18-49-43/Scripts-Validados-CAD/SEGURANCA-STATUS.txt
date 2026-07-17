@@ -1,0 +1,24 @@
+﻿APLICADO em 2026-07-15 15:01:48
+========================================
+OK  Ctrl+Alt+Del = Blocked (registo Keyboard Filter)
+OK  Ctrl+End     = Allowed
+OK  Windows/Alt+Tab/Shift+Ctrl+Esc = Blocked (registo)
+OK  CAD esvaziado (TaskMgr/Lock off)
+OK  Agente Security a correr (Ctrl+End)
+OK  Feature Client-DeviceLockdown habilitada (DISM)
+OK  Run + tarefa logon TurboRamaSecurityAgent
+
+PENDENTE (precisa REBOOT):
+- MsKeyboardFilter service fica RUNNING de forma estavel
+- Bloqueio real de Ctrl+Alt+Del (SAS) so apos o filtro carregar no boot
+- WEKF WMI (classe fica disponivel apos reboot da feature)
+
+TESTE AGORA:
+1) Prima Ctrl+End  -> menu TurboRama (PIN)
+   ou se nao tiver teclado: criamos trigger open-security
+
+2) Prima Ctrl+Alt+Del -> pode ainda abrir ATE reiniciar
+
+TESTE DEPOIS DE REINICIAR:
+1) Ctrl+Alt+Del NAO abre
+2) Ctrl+End abre menu

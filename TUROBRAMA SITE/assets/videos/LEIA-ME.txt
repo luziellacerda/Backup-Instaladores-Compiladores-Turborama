@@ -1,0 +1,10 @@
+PASTA DE VÍDEOS GERAIS
+
+Use esta pasta para vídeos maiores do bloco "Vídeos para formar venda".
+
+Depois de colocar o arquivo aqui, edite config.js:
+
+videoApresentacao: "assets/videos/apresentacao.mp4",
+videoDemo: "assets/videos/demo.mp4"
+
+Para vídeos curtos que passam dentro do carrossel automático, use a pasta assets/slides/.

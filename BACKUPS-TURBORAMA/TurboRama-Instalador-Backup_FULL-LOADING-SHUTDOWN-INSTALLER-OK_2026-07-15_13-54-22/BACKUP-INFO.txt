@@ -1,0 +1,33 @@
+﻿BACKUP TURBORAMA — FULL LOADING + SHUTDOWN + INSTALLER OK
+Data: 2026-07-15 13:54:22
+Pasta: TurboRama-Instalador-Backup_FULL-LOADING-SHUTDOWN-INSTALLER-OK_2026-07-15_13-54-22
+
+Estado para restaurar / continuar trabalho.
+
+CONTEUDO
+- Projeto-Novo-TurboRama     codigo-fonte (sem bin/obj)
+- Publish-Loading           C:\TurboRama\App\Launcher (binarios + assets)
+- TurboRama-Factory-Pack     pack instalacao completo (Launcher + Installer + scripts ES)
+- QUICK-KEY-FILES           fontes e scripts chave
+
+INCLUI
+1) Loading PS3 + 5 boas-vindas (LoadingScreenForm.cs)
+2) Desligar igual loading + 5 despedidas (ShutdownScreenForm.cs)
+3) Assets separados: logo.png / logo-shutdown.png / boot.wav
+4) Power-off kiosk: quit=shutdown, reboot, crash curto relanca
+5) Splash sem ecrã preto: poll power-request + kill ES
+6) maintenance.lock no power-off (Watchdog)
+7) Scripts ES em pack + InstallEmulationStationPowerScripts + EsPowerScriptsInstaller
+8) Installer UI + Installation.dll atualizados no pack
+9) Config template showLoadingScreen=true
+
+RESTAURAR LAUNCHER NO PC
+  copiar Publish-Loading\* -> C:\TurboRama\App\Launcher\
+
+RESTAURAR PACK / INSTALAR NOUTRO PC
+  usar TurboRama-Factory-Pack deste backup
+  INSTALAR-COMPLETO.bat (Admin)
+
+TESTES SEM DESLIGAR
+  C:\TurboRama\App\Launcher\TESTAR-LOADING.bat
+  C:\TurboRama\App\Launcher\TESTAR-DESLIGAR.bat

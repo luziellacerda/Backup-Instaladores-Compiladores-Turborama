@@ -1,0 +1,3 @@
+Put game/frontend EXE here, e.g. Frontend.exe or TurboRama.exe
+After install: C:\TurboRama\Frontend\
+Edit Config\turborama.json if the name differs.

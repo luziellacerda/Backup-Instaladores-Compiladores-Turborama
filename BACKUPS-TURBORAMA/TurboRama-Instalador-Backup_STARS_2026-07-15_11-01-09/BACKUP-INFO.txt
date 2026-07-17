@@ -1,0 +1,21 @@
+TurboRama Instalador - Backup STARS
+==================================
+Data/Hora: 2026-07-15 11:01:09
+Pasta: D:\Backup-Instaladores-Compiladores-Turborama\BACKUPS-TURBORAMA\TurboRama-Instalador-Backup_STARS_2026-07-15_11-01-09
+
+MARCO: STARS (hiperespaço)
+--------------------------
+- Fundo PRETO + estrelas BRANCAS brilhantes (estilo Star Wars)
+- Sem tracos coloridos no fundo
+- Card UI: preto / verde / branco / vermelho
+- Fix: nao trava em 100% (saida por relogio + HideLoading antes do jogo)
+- Som: boot.wav em Assets
+
+Conteudo:
+- Projeto-Novo-TurboRama\
+- TurboRama-Factory-Pack\
+- Publish-Loading\Projeto-Novo-TurboRama                 0,75 MB     121 arquivos
+Publish-Loading                        0,55 MB      13 arquivos
+TurboRama-Factory-Pack                 9,21 MB     164 arquivos
+TOTAL: 10.52 MB (299 arquivos)
+

@@ -1,0 +1,5 @@
+﻿Backup: 2026-07-15_18-49-43
+Motivo: antes de integrar bloqueio CAD/WEKF validado no instalador
+Fonte: D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama
+Scripts validados: C:\Turborama\Logs (apply-official-cad-block)
+Estado pos-reboot: MsKeyboardFilter Running, WEKF CAD OK

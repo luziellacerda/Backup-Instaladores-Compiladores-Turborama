@@ -1,0 +1,4 @@
+﻿BACKUP automatico ANTES de restaurar LOADING-PS3-OK
+Data: 2026-07-15 13:11:32
+Contem: Publish atual (loading OK + tela desligar redesenhada) + fontes Launcher chave
+Para voltar a ESTE estado: copiar Publish-Loading\* para C:\TurboRama\App\Launcher\

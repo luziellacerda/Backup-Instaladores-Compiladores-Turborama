@@ -1,0 +1,33 @@
+﻿TurboRama x Arcade Timer — teste automatico
+Data: 2026-07-16 12:08:02
+PASS=24 FAIL=0 WARN=3
+[PASS] B0.1 — MsKeyboardFilter RUNNING
+[PASS] B0.2 — CAD Blocked
+[PASS] B0.3cfg — Ctrl+End Allowed (Allowed)
+[PASS] B0.4 — Agent heartbeat fresh (0s) 2026-07-16 12:07:14 PID=7316 User=Admin Hot=1 Hook=1 Ctrl+End
+[WARN] B0.4p — No SecurityAgent process name match; folder: 
+[PASS] B0.5L — TurboRama.Launcher alive count=3
+[PASS] B0.5ES — emulationstation alive count=1
+[PASS] B0.5W — TurboRama.Watchdog alive count=1
+[PASS] B5.18 — F10 not Blocked ()
+[PASS] B5.19 — Win key Blocked
+[INFO] B5.esc — Escape=Allowed (lab close Timer needs Allowed)
+[PASS] A1.1 — Timer started pid=9296
+[WARN] A1.2 — Second instance still alive pid=700 — may lack mutex
+[PASS] A1.3 — Log exists: arcade-timer-2026-07-16.log
+[PASS] A2.5 — F10 +5min remainingSeconds=300
+[PASS] A2.6 — Rapid F10 delta=300s (debounce-ish, not unlimited)
+[INFO] A2.7 — Spaced F10: 600 -> 1200
+[PASS] A3.9 — Time not draining without emulator (1200 -> 1200 over ~13s)
+[WARN] A4.11 — Credit file not decreasing 1196 -> 1194 (may save only on change of state). Checking logs...
+[PASS] A4.12 — Paused after Notepad close 1194 -> 1194
+[PASS] A5.15 — Notepad killed without credit
+[PASS] A7.19ES — ES still alive ids=3460
+[PASS] A7.19L — Launcher still alive
+[PASS] A7.19W — Watchdog still alive
+[PASS] A7.19X — Explorer still alive
+[PASS] B4.15 — Kiosk OK after Timer kill
+[PASS] B4.15W — Watchdog OK after Timer kill
+[INFO] SEC.files — Recent non-log TurboRama files: 0
+[PASS] B6.CAD — Filter still RUNNING after tests
+[PASS] B6.CAD2 — CAD still Blocked

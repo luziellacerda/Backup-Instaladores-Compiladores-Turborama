@@ -1,0 +1,12 @@
+<svg width="900" height="260" viewBox="0 0 900 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="900" height="260" rx="46" fill="#060A12"/>
+  <path d="M78 154C78 107.608 115.608 70 162 70H275C321.392 70 359 107.608 359 154C359 200.392 321.392 238 275 238H162C115.608 238 78 200.392 78 154Z" fill="#071322" stroke="#16FF88" stroke-width="8"/>
+  <path d="M151 128H190V91H221V128H260V159H221V197H190V159H151V128Z" fill="#16FF88"/>
+  <circle cx="291" cy="123" r="17" fill="#FF3C7E"/>
+  <circle cx="321" cy="154" r="17" fill="#2F8BFF"/>
+  <circle cx="291" cy="185" r="17" fill="#FFD233"/>
+  <path d="M397 91H806V125H659V205H625V125H397V91Z" fill="#EAF2FF"/>
+  <path d="M397 147H576V180H397V147Z" fill="#16FF88"/>
+  <path d="M397 199H806V232H397V199Z" fill="#2F8BFF"/>
+  <text x="397" y="71" fill="#16FF88" font-family="Arial Black, Arial, sans-serif" font-size="46" letter-spacing="2">TURBORAMA</text>
+</svg>

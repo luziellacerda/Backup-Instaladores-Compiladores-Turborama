@@ -1,0 +1,4 @@
+PASTA DE VÍDEOS GERAIS
+
+Esta pasta pode ser usada para vídeos maiores do bloco "Vídeo e demonstração".
+Para os slides automáticos mobile, prefira colocar vídeos curtos em assets/slides/.

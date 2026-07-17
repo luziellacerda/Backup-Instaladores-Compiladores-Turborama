@@ -1,0 +1,13 @@
+<!-- Theme by LZRetroGames
+-->
+<theme>
+	<formatVersion>7</formatVersion>
+
+	<view name="system">	
+
+		<text name="system_name" extra="true">
+			<text>Eighting</text>
+		</text>
+		
+	</view>
+</theme>

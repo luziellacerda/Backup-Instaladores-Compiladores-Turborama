@@ -1,0 +1,25 @@
+TURBORAMA — DUAS TELAS = DOIS FICHEIROS (separados)
+
+1) LOADING / BOOT (ligar o sistema)
+   Codigo:  LoadingScreenForm.cs
+   Preview: TurboRama.Launcher.exe --test-loading
+            TESTAR-LOADING.bat
+   Assets:
+     Assets\logo.png      ← logo da loading
+     Assets\boot.wav      ← som da loading
+
+2) DESLIGAR (opcao Desligar no menu)
+   Codigo:  ShutdownScreenForm.cs
+   Preview: TurboRama.Launcher.exe --test-shutdown
+            TESTAR-DESLIGAR.bat
+   Assets:
+     Assets\logo-shutdown.png   ← logo do desligar (FICHEIRO SEPARADO)
+     Assets\shutdown.wav        ← som opcional do desligar (FICHEIRO SEPARADO)
+
+NAO misturar:
+  - Nao uses --test-loading para ver o desligar
+  - Nao edites logo.png pensando que muda o desligar
+  - Para mudar o desligar, edita logo-shutdown.png
+
+Se logo-shutdown.png nao existir, o Launcher cria uma copia inicial
+a partir de logo.png — depois podes substituir so o do desligar.

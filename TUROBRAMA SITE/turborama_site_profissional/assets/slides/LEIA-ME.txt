@@ -1,0 +1,24 @@
+PASTA DOS SLIDES MOBILE - TURBORAMA
+
+Coloque aqui os arquivos usados no carrossel da versão mobile.
+
+Arquivos aceitos:
+- Imagens: .jpg, .jpeg, .png, .webp, .svg
+- Vídeos: .mp4, .webm, .ogg
+
+Como usar:
+1. Copie seus arquivos para esta pasta: assets/slides/
+2. Abra o arquivo config.js
+3. Edite a lista slidesMobile, exemplo:
+
+slidesMobile: [
+  { tipo: "imagem", arquivo: "assets/slides/minha-imagem-01.jpg", etiqueta: "Sistema", titulo: "Visual premium", texto: "Texto que aparece abaixo do slide." },
+  { tipo: "video", arquivo: "assets/slides/meu-video-01.mp4", etiqueta: "Demo", titulo: "Sistema funcionando", texto: "Vídeo curto para anúncio mobile." }
+]
+
+Tamanho recomendado para imagens:
+- 1080 x 1680 px para vertical mobile
+- também funciona 1080 x 1920 px
+
+Dica:
+Use vídeos curtos de 8 a 20 segundos para anúncio mobile ficar rápido.

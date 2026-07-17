@@ -286,12 +286,13 @@ namespace InstallerHost
 			Exception ex = e.Result as Exception;
 			if (ex != null)
 			{
+				string maskedError = DownloadDisplayMask.Apply(ex.Message);
 				Logger.Log("Prerequisite installation error: " + ex.Message);
-				this.SetPremiumProgressHeaderSafe("Falha na instalação", ex.Message);
+				this.SetPremiumProgressHeaderSafe("Falha na instalação", maskedError);
 				this.installationComplete = false;
 				MessageBox.Show(
 					"A instalação dos componentes obrigatórios falhou. O TurboRama NÃO pode ser instalado sem eles." + Environment.NewLine + Environment.NewLine +
-					"Detalhes: " + ex.Message + Environment.NewLine + Environment.NewLine +
+					"Detalhes: " + maskedError + Environment.NewLine + Environment.NewLine +
 					"Execute o instalador novamente como Administrador. Se persistir, recompile o InstallerHost com Baixar_Prerequisitos_Instalador.bat.",
 					"Componentes obrigatórios",
 					MessageBoxButtons.OK,
@@ -430,7 +431,7 @@ namespace InstallerHost
 				catch (Exception ex)
 				{
 					Logger.Log("DirectX installation failed: " + ex.Message);
-					MessageBox.Show("DirectX installation failed:\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+					MessageBox.Show("DirectX installation failed:\n" + DownloadDisplayMask.Apply(ex.Message), "Error", MessageBoxButtons.OK, MessageBoxIcon.Hand);
 				}
 				try
 				{
@@ -505,7 +506,7 @@ private void InstallVCppAll()
 				catch (Exception ex)
 				{
 					Logger.Log("Failed to install " + key + ": " + ex.Message);
-					MessageBox.Show("Error installing " + key + ":\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+					MessageBox.Show("Error installing " + key + ":\n" + DownloadDisplayMask.Apply(ex.Message), "Error", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
 				}
 				this.UpdateProgressBarSafe();
 			}
@@ -577,7 +578,7 @@ private void InstallVCppAll()
 				catch (Exception ex)
 				{
 					Logger.Log("Failed to install " + key + ": " + ex.Message);
-					MessageBox.Show("Error installing " + key + ":\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+					MessageBox.Show("Error installing " + key + ":\n" + DownloadDisplayMask.Apply(ex.Message), "Error", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
 				}
 				this.UpdateProgressBarSafe();
 			}
@@ -635,7 +636,7 @@ private void InstallVCppAll()
 					catch (Exception ex)
 					{
 						Logger.Log("WinFsp installation failed: " + ex.Message);
-						MessageBox.Show("WinFsp installation failed:\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+						MessageBox.Show("WinFsp installation failed:\n" + DownloadDisplayMask.Apply(ex.Message), "Error", MessageBoxButtons.OK, MessageBoxIcon.Hand);
 					}
 				}
 			}
@@ -829,6 +830,7 @@ private void InstallVCppAll()
 		// Token: 0x0600004E RID: 78 RVA: 0x000068F0 File Offset: 0x00004AF0
 		private void UpdateStatusLabelSafe(string text)
 		{
+			text = DownloadDisplayMask.Apply(text);
 			if (this.statusLabel.InvokeRequired)
 			{
 				this.statusLabel.Invoke(new Action<string>(this.UpdateStatusLabelSafe), text);
@@ -916,6 +918,9 @@ private void InstallVCppAll()
 			{
 				detail = "Aguardando processamento...";
 			}
+
+			title = DownloadDisplayMask.Apply(title);
+			detail = DownloadDisplayMask.Apply(detail);
 
 			this.premiumProgressTitleText = title;
 			this.premiumProgressDetailText = detail;

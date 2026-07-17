@@ -1,44 +1,45 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.Win32;
 
 namespace InstallerHost
 {
-	// Token: 0x0200000A RID: 10
 	public static class PrerequisiteDetector
 	{
-		// Token: 0x06000034 RID: 52 RVA: 0x000044C8 File Offset: 0x000026C8
 		public static bool IsDotNet35Installed()
 		{
-			try
+			string[] keys =
 			{
-				using (RegistryKey key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\NET Framework Setup\NDP\v3.5"))
-				{
-					if (key != null)
-					{
-						object install = key.GetValue("Install");
-						if (install != null && Convert.ToInt32(install) == 1)
-						{
-							return true;
-						}
-					}
-				}
+				@"SOFTWARE\Microsoft\NET Framework Setup\NDP\v3.5",
+				@"SOFTWARE\Microsoft\NET Framework Setup\NDP\v3.5\1033"
+			};
 
-				using (RegistryKey key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\NET Framework Setup\NDP\v3.5\1033"))
+			foreach (RegistryView view in GetRegistryViews())
+			{
+				foreach (string keyPath in keys)
 				{
-					if (key != null)
+					try
 					{
-						object install = key.GetValue("Install");
-						if (install != null && Convert.ToInt32(install) == 1)
+						using (RegistryKey key = OpenLocalMachineSubKey(view, keyPath))
 						{
-							return true;
+							if (key == null)
+							{
+								continue;
+							}
+
+							object install = key.GetValue("Install");
+							if (install != null && Convert.ToInt32(install) == 1)
+							{
+								return true;
+							}
 						}
 					}
+					catch
+					{
+					}
 				}
-			}
-			catch
-			{
 			}
 
 			return false;
@@ -60,18 +61,30 @@ namespace InstallerHost
 				}
 			}
 
-			try
+			string[] registryPaths =
 			{
-				using (RegistryKey key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"))
+				@"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+				@"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+			};
+
+			foreach (RegistryView view in GetRegistryViews())
+			{
+				foreach (string registryPath in registryPaths)
 				{
-					if (key != null && key.GetValue("pv") != null)
+					try
 					{
-						return true;
+						using (RegistryKey key = OpenLocalMachineSubKey(view, registryPath))
+						{
+							if (key != null && key.GetValue("pv") != null)
+							{
+								return true;
+							}
+						}
+					}
+					catch
+					{
 					}
 				}
-			}
-			catch
-			{
 			}
 
 			return false;
@@ -79,78 +92,51 @@ namespace InstallerHost
 
 		public static bool IsXnaFrameworkInstalled()
 		{
-			string[] uninstallRoots =
-			{
-				@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-				@"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
-			};
-
-			foreach (string root in uninstallRoots)
-			{
-				using (RegistryKey key = Registry.LocalMachine.OpenSubKey(root))
-				{
-					if (key == null)
-					{
-						continue;
-					}
-
-					foreach (string subKeyName in key.GetSubKeyNames())
-					{
-						using (RegistryKey subKey = key.OpenSubKey(subKeyName))
-						{
-							string displayName = subKey != null && subKey.GetValue("DisplayName") != null
-								? subKey.GetValue("DisplayName").ToString()
-								: string.Empty;
-
-							if (!string.IsNullOrEmpty(displayName) &&
-								displayName.IndexOf("Microsoft XNA Framework", StringComparison.OrdinalIgnoreCase) >= 0)
-							{
-								return true;
-							}
-						}
-					}
-				}
-			}
-
-			return false;
+			return EnumerateUninstallDisplayNames().Any(displayName =>
+				!string.IsNullOrEmpty(displayName) &&
+				displayName.IndexOf("Microsoft XNA Framework", StringComparison.OrdinalIgnoreCase) >= 0);
 		}
 
 		public static bool IsOpenAlInstalled()
 		{
-			string[] candidates =
+			List<string> candidates = new List<string>();
+			foreach (string folder in GetSystemDllSearchFolders())
 			{
-				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "OpenAL32.dll"),
-				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.SystemX86), "OpenAL32.dll"),
-				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "OpenAL", "oalinst.exe")
-			};
+				candidates.Add(Path.Combine(folder, "OpenAL32.dll"));
+			}
+
+			candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "OpenAL", "oalinst.exe"));
+			candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "OpenAL", "oalinst.exe"));
 
 			return candidates.Any(File.Exists);
 		}
 
 		public static bool IsDotNet48Installed()
 		{
-			try
+			foreach (RegistryView view in GetRegistryViews())
 			{
-				using (RegistryKey key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full"))
+				try
 				{
-					if (key == null)
+					using (RegistryKey key = OpenLocalMachineSubKey(view, @"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full"))
 					{
-						return false;
-					}
+						if (key == null)
+						{
+							continue;
+						}
 
-					object release = key.GetValue("Release");
-					if (release == null)
-					{
-						return false;
+						object release = key.GetValue("Release");
+						if (release != null && Convert.ToInt32(release) >= 528040)
+						{
+							return true;
+						}
 					}
-
-					return Convert.ToInt32(release) >= 528040;
+				}
+				catch
+				{
 				}
 			}
-			catch
-			{
-				return false;
-			}
+
+			return false;
 		}
 
 		public static bool IsVcRedist2015_2022Installed(string architecture)
@@ -165,9 +151,9 @@ namespace InstallerHost
 				IsVcRedist2015_2022Installed("x86");
 		}
 
-		public static System.Collections.Generic.List<string> GetMissingLegacyVcRedistVersions()
+		public static List<string> GetMissingLegacyVcRedistVersions()
 		{
-			System.Collections.Generic.List<string> missing = new System.Collections.Generic.List<string>();
+			List<string> missing = new List<string>();
 			string[] legacyVersions = new string[] { "2005", "2008", "2010", "2012", "2013" };
 
 			foreach (string version in legacyVersions)
@@ -191,7 +177,25 @@ namespace InstallerHost
 				IsLegacyVcSxSPresent(version, arch);
 		}
 
-		// Token: 0x06000035 RID: 53 RVA: 0x00004518 File Offset: 0x00002718
+		public static bool WaitForLegacyVcRedistInstalled(string version, string arch, int timeoutMilliseconds)
+		{
+			int elapsed = 0;
+			const int interval = 500;
+
+			while (elapsed < timeoutMilliseconds)
+			{
+				if (IsLegacyVcRedistInstalled(version, arch))
+				{
+					return true;
+				}
+
+				System.Threading.Thread.Sleep(interval);
+				elapsed += interval;
+			}
+
+			return IsLegacyVcRedistInstalled(version, arch);
+		}
+
 		private static bool IsVersionInstalled(string version, string arch)
 		{
 			if (version == "2015_2022")
@@ -202,14 +206,9 @@ namespace InstallerHost
 			return IsLegacyVcRedistInstalled(version, arch);
 		}
 
-		// Token: 0x06000036 RID: 54 RVA: 0x00004590 File Offset: 0x00002790
 		private static bool IsInstalledFromRuntimeKey(string path)
 		{
-			foreach (RegistryView registryView in new RegistryView[]
-			{
-				RegistryView.Registry64,
-				RegistryView.Registry32
-			})
+			foreach (RegistryView registryView in GetRegistryViews())
 			{
 				using (RegistryKey registryKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, registryView))
 				{
@@ -222,25 +221,58 @@ namespace InstallerHost
 					}
 				}
 			}
+
 			return false;
 		}
 
-		// Token: 0x06000037 RID: 55 RVA: 0x00004640 File Offset: 0x00002840
 		private static bool IsInstalledFromUninstall(string version, string arch)
 		{
-			string[] uninstallRoots = new string[]
+			foreach (string displayName in EnumerateUninstallDisplayNames(GetPreferredRegistryViews(arch)))
 			{
-				"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
-				"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+				if (MatchesLegacyVcRedistDisplayName(displayName, version, arch))
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		private static IEnumerable<string> EnumerateUninstallDisplayNames()
+		{
+			return EnumerateUninstallDisplayNames(GetRegistryViews());
+		}
+
+		private static IEnumerable<string> EnumerateUninstallDisplayNames(IEnumerable<RegistryView> views)
+		{
+			List<string> displayNames = new List<string>();
+			HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			string[] uninstallRoots =
+			{
+				@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+				@"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
 			};
 
-			foreach (string root in uninstallRoots)
+			foreach (RegistryView view in views)
 			{
-				using (RegistryKey registryKey = Registry.LocalMachine.OpenSubKey(root, RegistryKeyPermissionCheck.ReadSubTree))
+				foreach (string root in uninstallRoots)
+				{
+					CollectUninstallDisplayNames(view, root, seen, displayNames);
+				}
+			}
+
+			return displayNames;
+		}
+
+		private static void CollectUninstallDisplayNames(RegistryView view, string root, HashSet<string> seen, List<string> displayNames)
+		{
+			try
+			{
+				using (RegistryKey registryKey = OpenLocalMachineSubKey(view, root))
 				{
 					if (registryKey == null)
 					{
-						continue;
+						return;
 					}
 
 					foreach (string subKeyName in registryKey.GetSubKeyNames())
@@ -249,16 +281,17 @@ namespace InstallerHost
 						{
 							object displayValue = subKey != null ? subKey.GetValue("DisplayName") : null;
 							string displayName = displayValue != null ? displayValue.ToString() : null;
-							if (MatchesLegacyVcRedistDisplayName(displayName, version, arch))
+							if (!string.IsNullOrEmpty(displayName) && seen.Add(displayName))
 							{
-								return true;
+								displayNames.Add(displayName);
 							}
 						}
 					}
 				}
 			}
-
-			return false;
+			catch
+			{
+			}
 		}
 
 		private static bool MatchesLegacyVcRedistDisplayName(string displayName, string version, string arch)
@@ -318,11 +351,8 @@ namespace InstallerHost
 					return false;
 			}
 
-			string folder = string.Equals(arch, "x64", StringComparison.OrdinalIgnoreCase)
-				? Environment.GetFolderPath(Environment.SpecialFolder.System)
-				: Environment.GetFolderPath(Environment.SpecialFolder.SystemX86);
-
-			return File.Exists(Path.Combine(folder, dllName));
+			string folder = GetSystemDirectoryForArchitecture(arch);
+			return !string.IsNullOrEmpty(folder) && File.Exists(Path.Combine(folder, dllName));
 		}
 
 		private static bool IsLegacyVcSxSPresent(string version, string arch)
@@ -362,69 +392,195 @@ namespace InstallerHost
 			}
 		}
 
-		// Token: 0x06000038 RID: 56 RVA: 0x00004758 File Offset: 0x00002958
 		public static bool IsDirectXJun2010Installed()
 		{
-			string[] dllCandidates = new string[]
+			string[] dllNames = new string[] { "d3dx9_43.dll", "XInput1_3.dll" };
+			foreach (string folder in GetSystemDllSearchFolders())
 			{
-				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "d3dx9_43.dll"),
-				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.SystemX86), "d3dx9_43.dll"),
-				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "XInput1_3.dll"),
-				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.SystemX86), "XInput1_3.dll")
-			};
-
-			if (dllCandidates.Any(File.Exists))
-			{
-				return true;
-			}
-
-			try
-			{
-				using (RegistryKey registryKey = Registry.LocalMachine.OpenSubKey("SOFTWARE\\Microsoft\\DirectX", RegistryKeyPermissionCheck.ReadSubTree))
+				foreach (string dllName in dllNames)
 				{
-					if (registryKey == null)
-					{
-						return false;
-					}
-
-					object value = registryKey.GetValue("Version");
-					return !string.IsNullOrEmpty((value != null) ? value.ToString() : null);
-				}
-			}
-			catch
-			{
-				return false;
-			}
-		}
-
-		// Token: 0x06000039 RID: 57 RVA: 0x000047CC File Offset: 0x000029CC
-		public static bool IsDokanyInstalled()
-		{
-			foreach (string text in new string[] { "SYSTEM\\CurrentControlSet\\Services\\dokan1", "SYSTEM\\CurrentControlSet\\Services\\dokan2" })
-			{
-				using (RegistryKey registryKey = Registry.LocalMachine.OpenSubKey(text, RegistryKeyPermissionCheck.ReadSubTree))
-				{
-					if (registryKey != null)
+					if (File.Exists(Path.Combine(folder, dllName)))
 					{
 						return true;
 					}
 				}
 			}
+
+			foreach (RegistryView view in GetRegistryViews())
+			{
+				try
+				{
+					using (RegistryKey registryKey = OpenLocalMachineSubKey(view, @"SOFTWARE\Microsoft\DirectX"))
+					{
+						if (registryKey == null)
+						{
+							continue;
+						}
+
+						object value = registryKey.GetValue("Version");
+						if (!string.IsNullOrEmpty((value != null) ? value.ToString() : null))
+						{
+							return true;
+						}
+					}
+				}
+				catch
+				{
+				}
+			}
+
 			return false;
 		}
 
-		// Token: 0x0600003A RID: 58 RVA: 0x00004838 File Offset: 0x00002A38
-		public static bool IsWinFspInstalled()
+		public static bool IsDokanyInstalled()
 		{
-			string text = "C:\\Program Files (x86)\\WinFsp\\bin\\winfsp-x64.dll";
-			string text2 = "C:\\Program Files (x86)\\WinFsp\\bin\\winfsp-x86.dll";
-			return File.Exists(text) || File.Exists(text2);
+			string[] serviceKeys = new string[]
+			{
+				@"SYSTEM\CurrentControlSet\Services\dokan1",
+				@"SYSTEM\CurrentControlSet\Services\dokan2"
+			};
+
+			foreach (RegistryView view in GetRegistryViews())
+			{
+				foreach (string serviceKey in serviceKeys)
+				{
+					try
+					{
+						using (RegistryKey registryKey = OpenLocalMachineSubKey(view, serviceKey))
+						{
+							if (registryKey != null)
+							{
+								return true;
+							}
+						}
+					}
+					catch
+					{
+					}
+				}
+			}
+
+			return false;
 		}
 
-		// Token: 0x04000032 RID: 50
+		public static bool IsWinFspInstalled()
+		{
+			string[] candidates =
+			{
+				@"C:\Program Files (x86)\WinFsp\bin\winfsp-x64.dll",
+				@"C:\Program Files (x86)\WinFsp\bin\winfsp-x86.dll",
+				@"C:\Program Files\WinFsp\bin\winfsp-x64.dll",
+				@"C:\Program Files\WinFsp\bin\winfsp-x86.dll"
+			};
+
+			return candidates.Any(File.Exists);
+		}
+
+		private static RegistryView[] GetRegistryViews()
+		{
+			if (Environment.Is64BitOperatingSystem)
+			{
+				return new RegistryView[] { RegistryView.Registry64, RegistryView.Registry32 };
+			}
+
+			return new RegistryView[] { RegistryView.Registry32 };
+		}
+
+		private static RegistryView[] GetPreferredRegistryViews(string arch)
+		{
+			if (!Environment.Is64BitOperatingSystem)
+			{
+				return new RegistryView[] { RegistryView.Registry32 };
+			}
+
+			if (string.Equals(arch, "x64", StringComparison.OrdinalIgnoreCase))
+			{
+				return new RegistryView[] { RegistryView.Registry64, RegistryView.Registry32 };
+			}
+
+			return new RegistryView[] { RegistryView.Registry32, RegistryView.Registry64 };
+		}
+
+		private static RegistryKey OpenLocalMachineSubKey(RegistryView view, string subKeyPath)
+		{
+			RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+			return baseKey.OpenSubKey(subKeyPath, RegistryKeyPermissionCheck.ReadSubTree);
+		}
+
+		private static string GetSystemDirectoryForArchitecture(string arch)
+		{
+			string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
+			if (string.Equals(arch, "x64", StringComparison.OrdinalIgnoreCase))
+			{
+				if (Environment.Is64BitOperatingSystem)
+				{
+					if (Environment.Is64BitProcess)
+					{
+						return Environment.GetFolderPath(Environment.SpecialFolder.System);
+					}
+
+					string sysnative = Path.Combine(windows, "Sysnative");
+					if (Directory.Exists(sysnative))
+					{
+						return sysnative;
+					}
+
+					return Path.Combine(windows, "System32");
+				}
+
+				return Environment.GetFolderPath(Environment.SpecialFolder.System);
+			}
+
+			if (Environment.Is64BitOperatingSystem)
+			{
+				return Environment.GetFolderPath(Environment.SpecialFolder.SystemX86);
+			}
+
+			return Environment.GetFolderPath(Environment.SpecialFolder.System);
+		}
+
+		private static IEnumerable<string> GetSystemDllSearchFolders()
+		{
+			HashSet<string> folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+			string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+			string system32 = Path.Combine(windows, "System32");
+			string syswow64 = Path.Combine(windows, "SysWOW64");
+			string sysnative = Path.Combine(windows, "Sysnative");
+
+			if (Directory.Exists(system32))
+			{
+				folders.Add(system32);
+			}
+
+			if (Directory.Exists(syswow64))
+			{
+				folders.Add(syswow64);
+			}
+
+			if (!Environment.Is64BitProcess && Environment.Is64BitOperatingSystem && Directory.Exists(sysnative))
+			{
+				folders.Add(sysnative);
+			}
+
+			string processSystem = Environment.GetFolderPath(Environment.SpecialFolder.System);
+			if (!string.IsNullOrEmpty(processSystem))
+			{
+				folders.Add(processSystem);
+			}
+
+			string processSystemX86 = Environment.GetFolderPath(Environment.SpecialFolder.SystemX86);
+			if (!string.IsNullOrEmpty(processSystemX86))
+			{
+				folders.Add(processSystemX86);
+			}
+
+			return folders;
+		}
+
 		private static readonly string[] Architectures = new string[] { "x86", "x64" };
 
-		// Token: 0x04000033 RID: 51
 		private static readonly string[] Versions = new string[] { "2005", "2008", "2010", "2012", "2013", "2015_2022" };
 	}
 }

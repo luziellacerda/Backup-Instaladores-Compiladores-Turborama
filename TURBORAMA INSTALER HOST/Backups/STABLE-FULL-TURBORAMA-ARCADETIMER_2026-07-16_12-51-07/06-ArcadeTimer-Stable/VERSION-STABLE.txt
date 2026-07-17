@@ -1,0 +1,5 @@
+﻿Arcade Timer stable snapshot
+Version: 0.1.3-enterprise
+QA: PASS=26 FAIL=0 (INTL pack)
+Deploy product: 0.1.3-enterprise or INTL-QA-Pack\product
+Lab tests: INTL-QA-Pack\tests\RUN-ALL-TESTS.bat

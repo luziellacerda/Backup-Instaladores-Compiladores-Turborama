@@ -1,0 +1,678 @@
+<!-- Theme by pajarorrojo
+https://github.com/pajarorrojo/es-theme-PlayStation-X 
+-->
+<theme>
+   <formatVersion>7</formatVersion>
+
+
+   <!--BARRA DE INFORMACION SUPERIOR-->
+
+   <!--RELOJ-->
+   <view name="screen">
+      
+<text name="clock">
+         <fontPath>${themePath}/_theme_inc/fonts/SST Light.ttf</fontPath>
+         <alignment>right</alignment>
+         <size>0.075 0.038</size>
+         <fontSize>0.029</fontSize>
+         <fontSize tinyScreen="true">0.027</fontSize>
+         <x>0.920</x>
+         <x ifSubset="aspect-ratio:3-2|16-10|5-3|16-9">0.91 </x>
+         <x ifSubset="aspect-ratio:4-3|5-4">0.912</x>
+         <y>0.047</y>
+         <color>ffffff</color>
+         <glowColor>00000035</glowColor>
+         <glowSize>1</glowSize>
+         <glowOffset>3 2</glowOffset>
+         <backgroundColor>ff000000</backgroundColor>
+      </text>
+
+      <controllerActivity name="controllerActivity">
+         <color>FFFFFF90</color>
+         <activityColor>F3C30069</activityColor>
+         <hotkeyColor>FF000069</hotkeyColor>
+         <pos ifSubset="iconset:psx|psx-light|psx-color|psx-color-2|xbox|xbox-color|position">0.957 0.005</pos>
+         <size ifSubset="iconset:psx|psx-light|psx-color|psx-color-2|xbox|xbox-color|position">0.033</size>
+         <pos ifSubset="iconset:snes">0.962 0.005</pos>
+         <size ifSubset="iconset:snes">0.034</size>
+         <pos ifSubset="iconset:arcade">0.968 0.005</pos>
+         <size ifSubset="iconset:arcade">0.028</size>
+         <gunPath>${themePath}/_theme_inc/images/lightgun.png</gunPath>
+         <wheelPath>${themePath}/_theme_inc/images/wheel.svg</wheelPath>
+         <itemSpacing ifSubset="iconset:snes">0.013</itemSpacing>
+         <itemSpacing ifSubset="iconset:psx|psx-light|psx-color|psx-color-2|position">0.005</itemSpacing>
+         <horizontalAlignment>right</horizontalAlignment>
+      </controllerActivity>
+
+      <controllerActivity name="controllerActivity" tinyScreen="true">
+         <visible>false</visible>
+      </controllerActivity>
+
+   </view>
+
+
+   <view name="system">
+      
+ <image name="plus-picto2" extra="static">
+         <path>${themePath}/_theme_inc/images/plus-picto-batoo.svg</path>
+         <pos>0.090 0.040</pos>
+         <pos ifSubset="frontend:none">0.02 0.045</pos>
+         <maxSize>0.061</maxSize>
+         <color>ffffff</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>9999</zIndex>
+      </image>
+
+      <image name="plus-picto" extra="static">
+         <path>${themePath}/_theme_inc/images/plus-picto-bato.svg</path>
+         <pos>0.050 0.040</pos>
+         <pos ifSubset="frontend:none">0.02 0.045</pos>
+         <maxSize>0.055</maxSize>
+         <color>ffffff</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>9999</zIndex>
+      </image>
+
+      <image name="frontend-logo, plus-picto" extra="static" tinyScreen="true">
+         <visible>false</visible>
+      </image>
+
+      <image name="frontend-logo, plus-picto" extra="static"
+         ifSubset="aspect-ratio:4-3|5-4">
+         <visible>false</visible>
+      </image>
+
+<!-- INFO DE JUEGOS EN VISTA SISTEMA -->
+
+
+      <!-- CONTADORES DE JUEGOS DEL SISTEMA + EL MAS JUGADO -->
+
+      <text name="systemInfoEx" extra="static">
+         <text>''+ {system:total}  + ' ' +'${GamesNumber}' + '  •  '  +  {system:favorites}.tointeger() + ' ' + '${GamesFavs}' + '  •  '  +  {system:gamesPlayed} + ' ' +  '${NumberPlayed}' + ''</text>
+         <text tinyScreen="true">'' + {system:total}  + ' ' + '${GamesNumber}' + '  •  '  +  {system:favorites}.tointeger() + ' ' +  '${GamesFavs}' + ''</text>
+         <visible>{system:total} &gt; 0 ? 1 : 0</visible>
+      </text>
+
+      <text name="systemInfoEx2" extra="static">
+         <text>''+ '${theme.mostplayed}' + ' ' + {system:mostPlayed} ''+</text>
+         <opacity>0</opacity>
+         <visible>{system:total} &gt; 0 ? 1 : 0</visible>
+      </text>
+
+      <text name="systemInfoExNull" extra="static">
+         <text>0 ${GamesNumber}</text>
+         <visible>{system:total} == 0 ? 1 : 0</visible>
+      </text>
+
+      <control name="systemInfoEx">
+         <storyboard repeat="forever">
+            <animation property="opacity" from="1" to="0" begin="2000" duration="350" mode="easeOut" />
+            <animation property="offsetY" to="-0.02" begin="2000" duration="350" mode="easeOut" />
+            <animation property="opacity" from="0" to="1" begin="5000" duration="350" mode="easeIn" />
+            <animation property="offsetY" to="0" begin="5000" duration="350" mode="easeOut" />
+         </storyboard>
+      </control>
+
+      <control name="systemInfoEx2">
+         <storyboard repeat="forever">
+            <animation property="opacity" from="0" to="1" begin="2000" duration="350" mode="easeIn" />
+            <animation property="offsetY" from="0.02" begin="2000" duration="350" mode="easeOut" />
+            <animation property="opacity" from="1" to="0" begin="5000" duration="350" mode="easeOut" />
+            <animation property="offsetY" to="0.02" begin="5000" duration="350" mode="easeIn" />
+         </storyboard>
+      </control>
+
+      
+
+      
+      <image name="trophy-picto" extra="static" onclick="cheevos">
+         <path>${themePath}/_theme_inc/images/trophy-picto.svg</path>
+         <pos>0.827 0.045</pos>
+         <pos ifSubset="aspect-ratio:4-3">0.885 0.05</pos>
+         <pos ifSubset="aspect-ratio:5-4">0.875 0.045</pos>
+         <pos ifSubset="aspect-ratio:3-2">0.895 0.055</pos>
+         <maxSize>0.044</maxSize>
+         <maxSize ifSubset="aspect-ratio:4-3|3-2">0.034</maxSize>
+         <color>ffffff</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>99</zIndex>
+      </image>
+
+      <image name="trophy-picto" extra="static" if="{system.cheevos} == true">
+         <color>e8c820cc</color>
+      </image>
+
+      <image name="trophy-picto" extra="static" if="{global.cheevos} == false">
+         <color>bbbbbb</color>
+      </image>
+
+   </view>
+
+
+   <view name="detailed, grid">
+
+      <image name="cheevos-picto, trophy-picto" extra="static" onclick="cheevos">
+         <path>${themePath}/_theme_inc/images/trophy-picto.svg</path>
+         <pos>0.827 0.045</pos>
+         <pos ifSubset="aspect-ratio:4-3">0.885 0.05</pos>
+         <pos ifSubset="aspect-ratio:5-4">0.875 0.045</pos>
+         <pos ifSubset="aspect-ratio:3-2">0.895 0.055</pos>
+         <maxSize>0.044</maxSize>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+      </image>
+
+      <image name="cheevos-picto" if="{global.cheevos} == true">
+         <color>e8c820cc</color>
+         <zIndex>99</zIndex>
+         <origin>0 0</origin>
+         <visible>{game:cheevos}</visible>
+         <storyboard>
+				<animation property="opacity" from="0" to="1" duration="350" mode="easeInOut" autoreverse="true" repeat="forever" />
+			</storyboard>
+      </image>
+
+      <image name="trophy-picto" extra="static">
+         <color>ffffff</color>
+         <zIndex>98</zIndex>
+      </image>
+
+      <image name="trophy-picto" extra="static" if="{global.cheevos} == false">
+         <color>bbbbbb</color>
+      </image>
+
+      <image name="md_netplay" onclick="netplay">
+         <origin>0 0</origin>
+         <path>${themePath}/_theme_inc/images/users-picto.svg</path>
+         <pos>0.554 0.047</pos>
+         <pos ifSubset="aspect-ratio:4-3|5-4">0.534 0.047</pos>
+         <maxSize>0.05</maxSize>
+         <color>e8c820cc</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>99</zIndex>
+         <storyboard>
+				<animation property="opacity" from="0" to="1" duration="350" mode="easeInOut" autoreverse="true" repeat="forever" />
+			</storyboard>
+      </image>
+
+      <image name="users-picto" extra="static" onclick="netplay">
+         <path>${themePath}/_theme_inc/images/users-picto.svg</path>
+         <pos>0.554 0.047</pos>
+         <pos ifSubset="aspect-ratio:4-3|5-4">0.534 0.047</pos>
+         <maxSize>0.05</maxSize>
+         <color>ffffff</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>98</zIndex>
+      </image>
+
+
+      <image name="caratula-top" extra="true">
+         <pos>0.015 0.02</pos>
+         <origin>0 0</origin>
+         <alignment>center</alignment>
+         <verticalAlignment>bottom</verticalAlignment>
+         <maxSize>0.096</maxSize>
+         <maxSize ifSubset="aspect-ratio:3-2">0.085 0.1</maxSize>
+         <path>${themePath}/${theme.caratulasPath}/default.png</path>
+         <path ifSubset="colorset:black">${themePath}/${theme.caratulasPath}/default-b.png</path>
+         <path>${themePath}/${theme.caratulasPath}/${system.theme}.jpg</path>
+         <path>${themePath}/${theme.caratulasPath}/${system.theme}.png</path>
+         <path ifSubset="colorset:black">${themePath}/${theme.caratulasPath}/${system.theme}-b.png</path>
+         <autoFade>false</autoFade>
+         <opacity>0</opacity>
+         <zIndex>99</zIndex>
+         <roundCorners ifSubset="carousel-type:PS5">0.15</roundCorners>
+         <roundCorners ifSubset="carousel-type:PS3|PS4">0</roundCorners>
+         <linearSmooth>true</linearSmooth>
+         <storyboard>
+            <animation property="offsetX" from="-0.1" duration="600" mode="easeOutCubic" />
+            <animation property="opacity" to="1" duration="350" mode="linear" />
+          </storyboard>
+      </image>
+
+      <image name="caratula-top" extra="static" ifSubset="aspect-ratio:4-3|5-4">
+         <visible>false</visible>
+      </image>
+
+      <image name="caratula-top" extra="static" tinyScreen="true">
+         <visible>false</visible>
+      </image>
+
+      <image name="caratula-top" extra="static" region="eu" />
+      <image name="caratula-top" extra="static" region="us">
+         <path>${themePath}/${theme.caratulasPath}/us/${system.theme}.jpg</path>
+         <path>${themePath}/${theme.caratulasPath}/us/${system.theme}.png</path>
+      </image>
+
+      <image name="caratula-top" extra="static" region="jp">
+         <path>${themePath}/${theme.caratulasPath}/jp/${system.theme}.jpg</path>
+         <path>${themePath}/${theme.caratulasPath}/jp/${system.theme}.png</path>
+      </image>
+
+      
+
+
+
+      <!-- CONTADORES DE PARTIDAS Y TIEMPO DE JUEGO -->
+      <text name="gameInfoEx" extra="static">
+         <text>'' + '${theme-timesPlayedLabel}' + ' ' + {game:playcount} + '  •  ' + '${theme-gameTimeLabel}' + ' ' + {game:gametime}.expandseconds() + '' </text>
+         <visible>{game:gametime} &gt; 0 ? 1 : 0</visible>
+      </text>
+
+      <text name="gameInfoEx2" extra="static">
+         <text>'' + '${theme-lastplayedLabel}' + ': ' + {game:lastplayed}.elapsed().proper() + ''</text>
+         <opacity>0</opacity>
+         <visible>{game:gametime} &gt; 0 ? 1 : 0</visible>
+      </text>
+
+      <text name="gameInfoExNull" extra="static">
+         <text>${theme-timesPlayedLabel} 0</text>
+         <visible>{game:gametime} == 0 ? 1 : 0</visible>
+      </text>
+
+
+      <text name="theme-lastplayed" extra="static">
+         <text>{game:lastplayed}.elapsed().proper()</text>
+         <visible>{game:gametime} &gt; 0 ? 1 : 0</visible>
+         <opacity>0</opacity>
+      </text>
+      
+      <control name="gameInfoEx">
+         <storyboard repeat="forever" event="open">
+            <animation property="opacity" from="1" to="0" begin="2000" duration="350" mode="easeOut" />
+            <animation property="offsetY" to="-0.02" begin="2000" duration="350" mode="easeOut" />
+            <animation property="opacity" from="0" to="1" begin="5000" duration="350" mode="easeIn" />
+            <animation property="offsetY" to="0" begin="5000" duration="350" mode="easeIn" />
+         </storyboard>
+         <storyboard repeat="forever" event="activateNext">
+            <animation property="opacity" from="1" to="0" begin="2000" duration="350" mode="easeOut" />
+            <animation property="offsetY" to="-0.02" begin="2000" duration="350" mode="easeOut" />
+            <animation property="opacity" from="0" to="1" begin="5000" duration="350" mode="easeIn" />
+            <animation property="offsetY" to="0" begin="5000" duration="350" mode="easeIn" />
+         </storyboard>
+         <storyboard repeat="forever" event="activatePrev">
+            <animation property="opacity" from="1" to="0" begin="2000" duration="350" mode="easeOut" />
+            <animation property="offsetY" to="-0.02" begin="2000" duration="350" mode="easeOut" />
+            <animation property="opacity" from="0" to="1" begin="5000" duration="350" mode="easeIn" />
+            <animation property="offsetY" to="0" begin="5000" duration="350" mode="easeIn" />
+         </storyboard>
+         <storyboard event="deactivateNext">
+            <animation property="opacity" to="0" duration="100" mode="linear" />
+          </storyboard>
+          <storyboard event="deactivatePrev">
+            <animation property="opacity" to="0" duration="100" mode="linear" />
+          </storyboard>
+      </control>
+
+      <control name="gameInfoEx2">
+         <storyboard repeat="forever" event="open">
+            <animation property="opacity" from="0" to="1" begin="2000" duration="350" mode="easeIn" />
+            <animation property="offsetY" from="0.02" begin="2000" duration="350" mode="easeOut" />
+            <animation property="opacity" from="1" to="0" begin="5000" duration="350" mode="easeOut" />
+            <animation property="offsetY" to="0.02" begin="5000" duration="350" mode="easeIn" />
+         </storyboard>
+         <storyboard repeat="forever" event="activateNext">
+            <animation property="opacity" from="0" to="1" begin="2000" duration="350" mode="easeIn" />
+            <animation property="offsetY" from="0.02" begin="2000" duration="350" mode="easeOut" />
+            <animation property="opacity" from="1" to="0" begin="5000" duration="350" mode="easeOut" />
+            <animation property="offsetY" to="0.02" begin="5000" duration="350" mode="easeIn" />
+         </storyboard>
+         <storyboard repeat="forever" event="activatePrev">
+            <animation property="opacity" from="0" to="1" begin="2000" duration="350" mode="easeIn" />
+            <animation property="offsetY" from="0.02" begin="2000" duration="350" mode="easeOut" />
+            <animation property="opacity" from="1" to="0" begin="5000" duration="350" mode="easeOut" />
+            <animation property="offsetY" to="0.02" begin="5000" duration="350" mode="easeIn" />
+         </storyboard>
+         <storyboard event="deactivateNext">
+            <animation property="opacity" to="0" duration="100" mode="linear" />
+          </storyboard>
+          <storyboard event="deactivatePrev">
+            <animation property="opacity" to="0" duration="100" mode="linear" />
+          </storyboard>
+      </control>
+
+   </view>
+
+   <view name="detailed, grid, system">
+
+      <image name="info-picto" extra="static">
+         <path>${themePath}/_theme_inc/images/info-picto.svg</path>
+         <pos>0.125 0.047</pos>
+         <pos ifSubset="aspect-ratio:4-3|5-4">0.02 0.047</pos>
+         <maxSize>0.045</maxSize>
+         <color>ffffff</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>99</zIndex>
+      </image>
+
+
+      <image name="info-picto" extra="static" tinyScreen="true">
+         <pos>0.02 0.047</pos>
+      </image>
+
+      <text name="gameInfoEx, gameInfoExNull, gameInfoEx2, gameInfoEx_extra, systemInfoEx, systemInfoExNull, systemInfoEx2, systemInfoEx_extra, system_name_extra, folders-number, galleryInfoEx" extra="static">
+         <alignment>left</alignment>
+         <pos>0.162 0.045</pos>
+         <pos ifSubset="aspect-ratio:4-3|5-4">0.065 0.042</pos>
+         <pos tinyScreen="true">0.065 0.045</pos>
+         <size>0.387 0.05</size>
+         <size ifSubset="aspect-ratio:4-3|5-4|3-2|5-3">0.46 0.055</size>
+         <color>FFFFFF</color>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Light.ttf</fontPath>
+         <fontSize>0.029</fontSize>
+         <fontSize ifSubset="aspect-ratio:4-3|5-4" tinyScreen="true">0.04</fontSize>
+         <fontPath tinyScreen="true">${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <forceUppercase tinyScreen="true">true</forceUppercase>
+         <glowColor>00000035</glowColor>
+         <glowSize>1</glowSize>
+         <glowOffset>3 2</glowOffset>
+         <backgroundColor>ff000000</backgroundColor>
+         <zIndex>99</zIndex>
+         <singleLineScroll>true</singleLineScroll>
+         <autoScrollDelay>0</autoScrollDelay>
+      </text>
+
+                
+
+      <image name="star-picto" extra="static"  ifSubset="top-info:default">
+         <path>${themePath}/_theme_inc/images/star-picto.png</path>
+         <pos>0.750 0.054</pos>
+         <pos ifSubset="aspect-ratio:16-10|5-3">0.86 0.054</pos>
+         <maxSize>0.03</maxSize>
+         <color>ffffff</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>99</zIndex>
+         <visible ifSubset="aspect-ratio:4-3|3-2|5-4">false</visible>
+      </image>
+	  
+	  <image name="star-picto2" extra="static"  ifSubset="top-info:default">
+         <path>${themePath}/_theme_inc/images/star-picto.png</path>
+         <pos>0.730 0.054</pos>
+         <pos ifSubset="aspect-ratio:16-10|5-3">0.86 0.054</pos>
+         <maxSize>0.03</maxSize>
+         <color>ffffff</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>99</zIndex>
+         <visible ifSubset="aspect-ratio:4-3|3-2|5-4">false</visible>
+      </image>
+	   <image name="star-picto3" extra="static"  ifSubset="top-info:default">
+         <path>${themePath}/_theme_inc/images/star-picto.png</path>
+         <pos>0.710 0.054</pos>
+         <pos ifSubset="aspect-ratio:16-10|5-3">0.86 0.054</pos>
+         <maxSize>0.03</maxSize>
+         <color>ffffff</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>99</zIndex>
+         <visible ifSubset="aspect-ratio:4-3|3-2|5-4">false</visible>
+      </image>
+	   <image name="star-picto4" extra="static"  ifSubset="top-info:default">
+         <path>${themePath}/_theme_inc/images/star-picto.png</path>
+         <pos>0.690 0.054</pos>
+         <pos ifSubset="aspect-ratio:16-10|5-3">0.86 0.054</pos>
+         <maxSize>0.03</maxSize>
+         <color>ffffff</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>99</zIndex>
+         <visible ifSubset="aspect-ratio:4-3|3-2|5-4">false</visible>
+      </image>
+	  
+	  <image name="star-picto5" extra="static"  ifSubset="top-info:default">
+         <path>${themePath}/_theme_inc/images/star-picto.png</path>
+         <pos>0.670 0.054</pos>
+         <pos ifSubset="aspect-ratio:16-10|5-3">0.86 0.054</pos>
+         <maxSize>0.03</maxSize>
+         <color>ffffff</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>99</zIndex>
+         <visible ifSubset="aspect-ratio:4-3|3-2|5-4">false</visible>
+      </image>
+
+      <text name="theme-release-year" extra="static" ifSubset="top-info:default">
+   <pos>0.790 0.052</pos>
+   <size>0.200 0.035</size>
+   <color>ffffff</color>
+   <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+   <fontSize>0.022</fontSize>
+   <alignment>left</alignment>
+   <zIndex>99</zIndex>
+
+   <text>LZ GAMES 2026</text>
+
+   <storyboard repeat="forever">
+
+      <!-- 0-3s -->
+      <animation property="opacity" from="0" to="1" begin="0" duration="150"/>
+      <animation property="offsetX" from="0" to="0.02" begin="0" duration="1800" autoreverse="true"/>
+      <animation property="opacity" from="1" to="0" begin="2500" duration="150"/>
+
+      <!-- troca de conteúdo (PSX MODE) -->
+      <animation property="text" to="ASSITÊNCIA TÉCNICA" begin="3000" duration="0"/>
+
+      <!-- 3-6s -->
+      <animation property="opacity" from="0" to="1" begin="3000" duration="150"/>
+      <animation property="offsetX" from="-0.02" to="0" begin="3000" duration="1800" autoreverse="true"/>
+      <animation property="opacity" from="1" to="0" begin="5500" duration="150"/>
+
+      <!-- troca -->
+      <animation property="text" to="FONE: (82) 9-8891-6280" begin="6000" duration="0"/>
+
+      <!-- 6-9s -->
+      <animation property="opacity" from="0" to="1" begin="6000" duration="150"/>
+      <animation property="offsetX" from="0.02" to="0" begin="6000" duration="1800" autoreverse="true"/>
+      <animation property="opacity" from="1" to="0" begin="8500" duration="150"/>
+
+      <!-- volta -->
+      <animation property="text" to="TURBO RAMA" begin="9000" duration="0"/>
+
+   </storyboard>
+</text>
+
+<!-- 2 -->
+<text name="t1" extra="static">
+   <text>T</text>
+   <pos>0.730 0.935</pos>
+
+   <color>FFFFFF</color>
+   <glowColor>FF000044</glowColor>
+   <glowSize>1</glowSize>
+   <fontSize>0.045</fontSize>
+   <zIndex>999</zIndex>
+
+   <storyboard repeat="forever">
+      <animation property="scale" from="1.00" to="1.03" duration="1100" mode="easeInOut" autoreverse="true"/>
+      <animation property="offsetY" from="0" to="-0.003" duration="1100" mode="easeInOut" autoreverse="true"/>
+   </storyboard>
+</text>
+
+<!-- U -->
+<text name="t2" extra="static">
+   <text>U</text>
+   <pos>0.740 0.945</pos>
+
+   <color>FFFFFF</color>
+   <glowColor>FF000033</glowColor>
+   <glowSize>1</glowSize>
+   <fontSize>0.035</fontSize>
+
+   <zIndex>999</zIndex>
+
+   <storyboard repeat="forever">
+      <animation property="scale" from="1.00" to="1.03" duration="1200" begin="80" mode="easeInOut" autoreverse="true"/>
+      <animation property="offsetY" from="0" to="-0.003" duration="1200" begin="80" mode="easeInOut" autoreverse="true"/>
+   </storyboard>
+</text>
+
+<!-- 2 -->
+<text name="t3" extra="static">
+   <text>R</text>
+   <pos>0.751 0.945</pos>
+
+   <color>FFFFFF</color>
+   <glowColor>FF000033</glowColor>
+   <glowSize>1</glowSize>
+   <fontSize>0.035</fontSize>
+
+   <zIndex>999</zIndex>
+
+   <storyboard repeat="forever">
+      <animation property="scale" from="1.00" to="1.03" duration="1150" begin="160" mode="easeInOut" autoreverse="true"/>
+      <animation property="offsetY" from="0" to="-0.003" duration="1150" begin="160" mode="easeInOut" autoreverse="true"/>
+   </storyboard>
+</text>
+
+<!-- 6 -->
+<text name="t4" extra="static">
+   <text>B</text>
+   <pos>0.762 0.945</pos>
+
+   <color>FFFFFF</color>
+   <glowColor>FF000033</glowColor>
+   <glowSize>1</glowSize>
+   <fontSize>0.035</fontSize>
+
+   <zIndex>999</zIndex>
+
+   <storyboard repeat="forever">
+      <animation property="scale" from="1.00" to="1.03" duration="1180" begin="240" mode="easeInOut" autoreverse="true"/>
+      <animation property="offsetY" from="0" to="-0.003" duration="1180" begin="240" mode="easeInOut" autoreverse="true"/>
+   </storyboard>
+</text>
+
+<!-- O -->
+<text name="t5" extra="static">
+   <text>O</text>
+   <pos>0.772 0.945</pos>
+
+   <color>FFFFFF</color>
+   <glowColor>FF000033</glowColor>
+   <glowSize>1</glowSize>
+   <fontSize>0.035</fontSize>
+
+   <zIndex>999</zIndex>
+
+   <storyboard repeat="forever">
+      <animation property="scale" from="1.00" to="1.03" duration="1250" begin="320" mode="easeInOut" autoreverse="true"/>
+      <animation property="offsetY" from="0" to="-0.003" duration="1250" begin="320" mode="easeInOut" autoreverse="true"/>
+   </storyboard>
+</text>
+
+<!-- R -->
+
+
+<text name="t6" extra="static">
+   <text>R</text>
+   <pos>0.790 0.940</pos>
+
+   <color>FFFFFF</color>
+   <glowColor>FF000033</glowColor>
+   <glowSize>1</glowSize>
+   <fontSize>0.040</fontSize>
+
+   <zIndex>999</zIndex>
+
+   <storyboard repeat="forever">
+      <animation property="scale" from="1.00" to="1.03" duration="1250" begin="320" mode="easeInOut" autoreverse="true"/>
+      <animation property="offsetY" from="0" to="-0.003" duration="1250" begin="320" mode="easeInOut" autoreverse="true"/>
+   </storyboard>
+</text>
+
+<!-- A -->
+<text name="t7" extra="static">
+   <text>A</text>
+   <pos>0.803 0.945</pos>
+
+   <color>FFFFFF</color>
+   <glowColor>FF000033</glowColor>
+   <glowSize>1</glowSize>
+   <fontSize>0.035</fontSize>
+
+   <zIndex>999</zIndex>
+
+   <storyboard repeat="forever">
+      <animation property="scale" from="1.00" to="1.03" duration="1250" begin="320" mode="easeInOut" autoreverse="true"/>
+      <animation property="offsetY" from="0" to="-0.003" duration="1250" begin="320" mode="easeInOut" autoreverse="true"/>
+   </storyboard>
+</text>
+
+
+<!-- A -->
+<text name="t8" extra="static">
+   <text>M</text>
+   <pos>0.814 0.945</pos>
+
+   <color>FFFFFF</color>
+   <glowColor>FF000033</glowColor>
+   <glowSize>1</glowSize>
+   <fontSize>0.035</fontSize>
+
+   <zIndex>999</zIndex>
+
+   <storyboard repeat="forever">
+      <animation property="scale" from="1.00" to="1.03" duration="1250" begin="320" mode="easeInOut" autoreverse="true"/>
+      <animation property="offsetY" from="0" to="-0.003" duration="1250" begin="320" mode="easeInOut" autoreverse="true"/>
+   </storyboard>
+</text>
+
+<!-- A -->
+<text name="t9" extra="static">
+   <text>A</text>
+   <pos>0.829 0.945</pos>
+
+   <color>FFFFFF</color>
+   <glowColor>FF000033</glowColor>
+   <glowSize>1</glowSize>
+   <fontSize>0.035</fontSize>
+
+   <zIndex>999</zIndex>
+
+   <storyboard repeat="forever">
+      <animation property="scale" from="1.00" to="1.03" duration="1250" begin="320" mode="easeInOut" autoreverse="true"/>
+      <animation property="offsetY" from="0" to="-0.003" duration="1250" begin="320" mode="easeInOut" autoreverse="true"/>
+   </storyboard>
+</text>
+
+/////////////////////////// --- ////////////////////////////////
+
+      <image name="linea-guia-TEST-HOR" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0 0.35</pos>
+         <size>1 0.001</size>
+         <color>ff00ff00</color>
+         <zIndex>0</zIndex>
+         <visible>false</visible>
+      </image>
+
+      <image name="linea-guia-TEST-VERT" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.2 0</pos>
+         <size>0.002 1</size>
+         <color>FF000000</color>
+         <zIndex>0</zIndex>
+         <visible>false</visible>
+      </image>
+	  
+   </view>
+</theme>

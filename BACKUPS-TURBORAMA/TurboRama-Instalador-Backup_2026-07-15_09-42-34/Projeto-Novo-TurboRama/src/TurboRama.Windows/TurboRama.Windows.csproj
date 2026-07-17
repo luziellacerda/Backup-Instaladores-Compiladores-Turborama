@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TurboRama.Windows</RootNamespace>
+    <AssemblyName>TurboRama.Windows</AssemblyName>
+    <Description>Wrappers de Registro, contas, ACL, BCD, serviços e recursos oficiais.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TurboRama.Core\TurboRama.Core.csproj" />
+    <PackageReference Include="System.DirectoryServices.AccountManagement" Version="8.0.1" />
+  </ItemGroup>
+</Project>

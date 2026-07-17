@@ -1,0 +1,2 @@
+D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama\src\TurboRama.Launcher\LoadingScreenForm.cs
+C:\TurboRama\App\Launcher\Assets\boot.wav

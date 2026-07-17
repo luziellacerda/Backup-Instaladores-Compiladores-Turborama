@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "installationId": "00000000-0000-0000-0000-000000000000",
+  "kioskUser": "Arcade",
+  "installDirectory": "C:\\TurboRama",
+  "frontendExecutable": "C:\\TurboRama\\Frontend\\Frontend.exe",
+  "profile": "KioskBasic",
+  "enableAutoLogon": true,
+  "enableKeyboardFilter": true,
+  "enableUwf": false,
+  "enableBootBranding": false,
+  "watchdog": {
+    "enabled": true,
+    "restartDelaySeconds": 5,
+    "maximumRestarts": 5
+  },
+  "productVersion": "2.0.0-alpha"
+}

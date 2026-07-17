@@ -1,0 +1,213 @@
+<!-- Theme by LZ-RETRO-PC-2026
+https://githugam.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X 
+-->
+<theme>
+   <formatVersion>7</formatVersion>
+
+    <customView name="ps5Style" inherits="grid" displayName="${ps5StylelViewName}">
+      
+      <image name="background" extra="static">
+         <visible>false</visible>      
+      </image>
+
+      <text name="gamename-grid, gamedesc-grid">
+         <visible>false</visible>
+      </text>
+
+      <image name="overlay-front" extra="true">
+         <path>${themePath}/_theme_inc/images/overlay-single.png</path>
+         <origin>0.5 0.5</origin>
+         <pos>0.5 0.5</pos>
+         <minSize>1 1</minSize>
+         <linearSmooth>true</linearSmooth>
+         <tile>false</tile>
+         <zIndex>50</zIndex>
+         <linearSmooth>true</linearSmooth>
+      </image>
+
+
+
+
+
+
+
+      <imagegrid name="gamegrid">
+         <imageSource>${subset.grid-origin}</imageSource>
+         <imageSource ifSubset="grid-origin:fanart|default">fanart</imageSource>
+         <autoLayout>5 2</autoLayout>
+         <autoLayout ifSubset="aspect-ratio:4-3|5-4|3-2">4 2</autoLayout>
+         <autoLayout  ifSubset="aspect-ratio:21-9">7 2</autoLayout>
+         <autoLayout ifSubset="grid-origin:boxart|thumbnail">9 2</autoLayout>
+         <autoLayout ifSubset="grid-origin:boxart|thumbnail" if="{system.theme} == 'n64' || {system.theme} == 'snes' || {system.theme} == 'gameandwatch'">5 2</autoLayout>
+         <gameImage>${themePath}/_theme_inc/images/no-image-default.png</gameImage>
+         <folderImage>${themePath}/_theme_inc/images/no-image-default.png</folderImage>
+         <autoLayoutSelectedZoom>1.08</autoLayoutSelectedZoom>
+         <margin>0.01 0.013</margin>
+         <margin ifSubset="aspect-ratio:21-9">0.005 0.013</margin>
+         <size>0.85 0.6</size>
+         <h ifSubset="aspect-ratio:16-10|4-3|5-4">0.55</h>
+         <pos>0.075 0.34</pos>
+         <y ifSubset="aspect-ratio:16-10|4-3|5-4">0.35</y>
+         <zIndex>99</zIndex>
+         <opacity>0</opacity>
+         <scrollbarAlignment>outer right</scrollbarAlignment>
+         <scrollbarColor>ffffff55</scrollbarColor>
+         <scrollbarSize>0.003</scrollbarSize>
+      </imagegrid>
+
+      <gridtile name="default">
+         <padding>0 0</padding>
+         <backgroundEdgeColor>${backgroundgridSelect}</backgroundEdgeColor>
+         <backgroundCenterColor>ffffff99</backgroundCenterColor>
+         <imageSizeMode>minSize</imageSizeMode>
+         <backgroundImage>${themePath}/${theme.caratulasPath}/default-gamelist.png</backgroundImage>
+         <imageSizeMode ifSubset="grid-origin:thumbnail|boxart|cartridge">maxSize</imageSizeMode>
+         <backgroundCornerSize>0 0</backgroundCornerSize>
+         <imageColor>ffffffb0</imageColor>
+         <imageColor ifSubset="grid-origin:marquee">ffffff00</imageColor>
+      </gridtile>
+
+      <gridtile name="selected">
+         <padding>1</padding>
+         <imageColor>ffffff</imageColor>
+         <backgroundCornerSize>0</backgroundCornerSize>
+         <imageColor ifSubset="grid-origin:default">ffffff55</imageColor>
+         <imageColor ifSubset="grid-origin:marquee">ffffff00</imageColor>
+         <backgroundEdgeColor ifSubset="grid-origin:boxart|thumbnail|marquee|cartridge|default">${backgroundgridSelect}00</backgroundEdgeColor>
+      </gridtile>
+
+      <image name="gridtile.marquee" ifSubset="grid-origin:marquee|default">
+		   <pos>0.5 0.5</pos>
+		   <origin>0.5 0.5</origin>
+         <maxSize>0.6 0.6</maxSize>
+		</image>
+
+      <image name="gridtile.marquee:selected" ifSubset="grid-origin:marquee|default">
+		   <pos>0.5 0.45</pos>
+		   <origin>0.5 0.5</origin>
+         <maxSize>0.8 0.8</maxSize>
+		</image>
+
+      <image name="gridtile.marquee:videoplaying" ifSubset="grid-origin:marquee|default">
+         <pos>0.5 0.15</pos>
+         <maxSize>0.5 0.2</maxSize>
+      </image>
+
+
+
+      <ninepatch name="gridtile.background:selected">
+         <animateColor>00000000</animateColor>
+         <animateColorTime>0</animateColorTime>
+      </ninepatch>
+
+      <image name="gridtile.image">
+         <roundCorners>0</roundCorners>
+      </image>
+
+      <image name="gridtile.favorite">
+         <path>${themePath}/_theme_inc/images/favorite.png</path>
+         <pos>0.04 0.05</pos>
+         <maxSize>0.12 0.12</maxSize>
+         <horizontalAlignment>left</horizontalAlignment>
+         <verticalAlignment>top</verticalAlignment>
+         <origin>0 0</origin>
+         <color>${psx-theme-red}</color>
+      </image>
+
+      <image name="gridtile.cheevos" if="{global.cheevos} == true" extra="true">
+         <path>${themePath}/_theme_inc/images/trophy-picto.svg</path>
+         <pos>0.83 0.83</pos>
+         <maxSize>0.12 0.12</maxSize>
+         <horizontalAlignment>right</horizontalAlignment>
+         <verticalAlignment>bottom</verticalAlignment>
+         <origin>0 0</origin>
+         <color>F2BC00</color>
+         <opacity>{system:showCheevos} ? "1" : "0"</opacity>
+      </image>
+
+      <image name="gridtile.cheevos" if="{system.name} == 'retroachievements'">
+         <visible>false</visible>
+         <color>00000000</color>
+      </image>
+
+      <image name="gridtile.cheevos:selected" if="{system.name} == 'retroachievements'">
+         <visible>false</visible>
+         <color>00000000</color>
+      </image>
+
+      <image name="gridtile.favorite" if="{system.name} == 'favorites'">
+         <visible>false</visible>
+         <color>00000000</color>
+      </image>
+
+      <image name="gamegrid-console" extra="true">
+         <tile>false</tile>
+         <pos>0.92 0.135</pos>
+         <origin>1 0</origin>
+         <verticalAlignment>bottom</verticalAlignment>
+         <alignment>center</alignment>
+         <maxSize>0.125 0.14</maxSize>
+         <path region="eu">${themePath}/${theme.consolesPath}/{game:system}.png</path>
+         <path region="us">firstfile("${themePath}/${theme.consolesPath}/us/" + {game:system} + ".png", "${themePath}/${theme.consolesPath}/" + {game:system} + ".png")</path>
+         <path region="jp">firstfile("${themePath}/${theme.consolesPath}/jp/" + {game:system} + ".png", "${themePath}/${theme.consolesPath}/" + {game:system} + ".png")</path>
+         <zIndex>98</zIndex>
+         <linearSmooth>true</linearSmooth>
+      </image>
+
+      <text name="gamename-ps5Style" extra="true">
+         <text>{game:name}</text>
+         <pos>0.915 0.29</pos>
+         <size>0.4 0.08</size>
+         <size ifSubset="aspect-ratio:5-3">0.62 0.08</size>
+         <color>ffffff</color>
+         <backgroundColor>ff000000</backgroundColor>
+         <fontSize>0.032</fontSize>
+         <alignment>right</alignment>
+         <verticalAlignment>top</verticalAlignment>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <origin>1 0</origin>
+         <glowColor>00000035</glowColor>
+         <glowSize>1</glowSize>
+         <glowOffset>3 2</glowOffset>
+         <zIndex>98</zIndex>
+         <singleLineScroll>true</singleLineScroll>
+         <autoScrollDelay>0</autoScrollDelay>
+      </text>
+<!-- logo -->
+
+     
+
+   
+
+
+
+
+
+      <stackpanel name="contenedor-gamedata2">
+
+         <x>0.082</x>
+         <y>0.265</y>
+         <zIndex>98</zIndex>
+
+      </stackpanel>
+
+      <stackpanel name="contenedor-iconos">
+         <x>0.082</x>
+         <y>0.23</y>
+         <zIndex>98</zIndex>
+
+      </stackpanel>
+
+      <stackpanel name="contenedor-gamedata">
+         <pos>0.082 0.305</pos>
+         <zIndex>98</zIndex>
+
+      </stackpanel>
+
+
+      
+
+   </customView>
+
+
+</theme>

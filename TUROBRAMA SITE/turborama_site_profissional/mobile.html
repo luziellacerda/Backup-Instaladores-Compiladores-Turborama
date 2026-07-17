@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>TurboRama | Versão Mobile</title>
+  <meta name="description" content="Versão mobile da página de venda TurboRama com checkout, WhatsApp, demo e comentários.">
+  <meta name="theme-color" content="#1eff84">
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body class="mobile-page">
+  <header class="topbar">
+    <div class="container nav">
+      <a class="brand" href="index.html" aria-label="TurboRama"><img src="assets/logo.svg" alt=""><span data-brand>TurboRama</span></a>
+      <a class="btn secondary" href="index.html">Desktop</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <div class="eyebrow">📱 Versão mobile pronta para anúncio</div>
+        <h1><span class="gradient" data-brand>TurboRama</span> direto no celular.</h1>
+        <p class="lead">Página rápida para tráfego pago: oferta, vídeo, comentários, WhatsApp e checkout em poucos toques.</p>
+        <div class="actions">
+          <a class="btn primary" data-link="checkout" href="#">Comprar agora</a>
+          <a class="btn secondary" data-link="whatsapp" href="#">Chamar no WhatsApp</a>
+        </div>
+        <div class="mobile-demo-card">
+          <strong>Licença digital + suporte</strong>
+          <div class="price" data-price>R$ 197</div>
+          <span class="parcel" data-parcel>ou 12x de R$ 19,70</span>
+        </div>
+        <div class="mobile-shot">
+          <div class="fake-top"><div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div><strong data-brand>TurboRama</strong></div>
+          <div class="game-grid"><div class="game-card"></div><div class="game-card"></div><div class="game-card"></div><div class="game-card"></div></div>
+        </div>
+      </div>
+    </section>
+
+
+    <section id="slides-mobile" class="mobile-slider-section">
+      <div class="container">
+        <div class="section-head"><div><h2>Slides automáticos</h2><p>Carrossel mobile com imagens e vídeos para apresentar o sistema de forma profissional.</p></div></div>
+        <div class="mobile-media-carousel" id="mobile-media-carousel" aria-label="Apresentação TurboRama em slides">
+          <div class="mobile-media-stage" id="mobile-media-stage"></div>
+          <div class="mobile-media-caption">
+            <span id="mobile-slide-kicker">Demonstração</span>
+            <strong id="mobile-slide-title">TurboRama</strong>
+            <p id="mobile-slide-text">Slides carregando...</p>
+          </div>
+          <div class="mobile-media-controls">
+            <button type="button" id="mobile-slide-prev" aria-label="Slide anterior">‹</button>
+            <div class="mobile-media-dots" id="mobile-slide-dots" aria-label="Indicadores dos slides"></div>
+            <button type="button" id="mobile-slide-next" aria-label="Próximo slide">›</button>
+          </div>
+        </div>
+        <p class="mobile-only-note">Coloque imagens ou vídeos na pasta <strong>assets/slides/</strong> e edite a lista <strong>slidesMobile</strong> no arquivo <strong>config.js</strong>.</p>
+      </div>
+    </section>
+
+    <section id="videos">
+      <div class="container">
+        <div class="section-head"><div><h2>Vídeo e demonstração</h2><p>Coloque um vídeo curto de apresentação ou uma gravação real do sistema em funcionamento.</p></div></div>
+        <article class="video-card"><div id="video-apresentacao" class="video-placeholder"><div><div class="play">▶</div><h3>Apresentação rápida</h3><p>Ideal para celular e anúncio.</p></div></div></article>
+      </div>
+    </section>
+
+    <section id="comentarios" class="comments-section">
+      <div class="container">
+        <div class="section-head"><div><h2>Comentários</h2><p>Comentários, dúvidas e respostas em formato rápido para celular.</p></div></div>
+        <div class="comment-panel"><div id="comentarios-lista" class="comment-feed" aria-live="polite"></div></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="cta">
+          <h2>Pronto para começar?</h2>
+          <p>Tire dúvida pelo WhatsApp ou vá direto para o checkout.</p>
+          <div class="actions"><a class="btn primary" data-link="checkout" href="#">Comprar</a><a class="btn secondary" data-link="whatsapp" href="#">WhatsApp</a></div>
+          <p class="legal-note" data-legal></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer"><div class="container"><strong data-brand>TurboRama</strong><div class="legal-note">Versão mobile otimizada.</div></div></footer>
+  <div class="mobile-sticky-cta"><a class="btn secondary" data-link="whatsapp" href="#">WhatsApp</a><a class="btn primary" data-link="checkout" href="#">Comprar</a></div>
+  <script src="config.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>

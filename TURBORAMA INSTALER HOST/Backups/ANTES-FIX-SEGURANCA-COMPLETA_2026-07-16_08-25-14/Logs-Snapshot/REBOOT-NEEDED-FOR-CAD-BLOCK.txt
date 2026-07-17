@@ -1,0 +1,5 @@
+﻿REINICIE o PC para desactivar Ctrl+Alt+Del de verdade.
+Depois do reboot:
+- MsKeyboardFilter deve ficar Running
+- Ctrl+Alt+Del nao abre o menu Windows
+- Ctrl+End continua a abrir o menu TurboRama

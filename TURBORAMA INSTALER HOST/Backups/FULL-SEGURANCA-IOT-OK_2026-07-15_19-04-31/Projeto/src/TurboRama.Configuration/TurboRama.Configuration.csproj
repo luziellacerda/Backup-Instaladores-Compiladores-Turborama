@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TurboRama.Configuration</RootNamespace>
+    <AssemblyName>TurboRama.Configuration</AssemblyName>
+    <Description>Configuração versionada e caminhos do produto.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TurboRama.Core\TurboRama.Core.csproj" />
+  </ItemGroup>
+</Project>

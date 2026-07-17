@@ -1,0 +1,1 @@
+2026-07-16 12:51:19 PID=6104 User=Arcade Hot=1 Hook=1 Ctrl+End

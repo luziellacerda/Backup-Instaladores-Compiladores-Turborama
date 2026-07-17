@@ -1,0 +1,1501 @@
+Compile e revise o projeto TurboRama.ArcadeTimer em C# WinForms .NET 8.
+
+REGRAS OBRIGATÓRIAS:
+1. Não alterar o kiosk base.
+2. Não alterar teclas, atalhos, scripts ou comandos existentes.
+3. Não alterar arquivos do EmulationStation, ES-DE, RetroArch ou emuladores.
+4. O Timer apenas lê a entrada de ficha, soma crédito, monitora processos e encerra somente emuladores autorizados.
+5. Nunca encerrar EmulationStation, ES-DE, Explorer ou o próprio Timer.
+6. Preservar lista branca de emuladores e lista de processos protegidos.
+7. Publicar em win-x64, self-contained e single-file.
+8. Corrigir apenas erros reais de compilação e estabilidade.
+9. Entregar executável e código-fonte completo.
+
+
+
+# ESPECIFICAÇÃO TÉCNICA COMPLETA
+
+# TURBORAMA ARCADE TIMER
+
+## Sistema de controle de fichas e tempo para arcade
+
+**Plataforma:** Windows 10, Windows 11 ou Windows IoT Enterprise/LTSC
+**Frontend:** EmulationStation ou ES-DE
+**Tipo de máquina:** Fliperama/arcade baseado em computador
+**Função principal:** Receber fichas, transformar cada ficha em tempo de jogo, controlar o tempo durante a execução do emulador e encerrar o jogo quando o crédito terminar.
+**Regra principal:** Não alterar nenhum comando, tecla, configuração, script ou arquivo do kiosk já existente.
+
+---
+
+# 1. Finalidade do projeto
+
+O TurboRama Arcade Timer é um programa auxiliar que funciona em segundo plano no Windows.
+
+Ele deve ser instalado junto ao sistema de arcade já configurado, mas não faz parte do EmulationStation e não substitui o sistema kiosk.
+
+O programa possui quatro funções principais:
+
+1. Detectar a entrada de uma ficha física.
+2. Converter a ficha em minutos de crédito.
+3. Descontar o tempo enquanto um jogo estiver sendo executado.
+4. Encerrar somente o emulador quando o tempo terminar.
+
+Depois que o emulador for encerrado, o EmulationStation deve continuar aberto e voltar a ser apresentado ao jogador.
+
+O programa não deve controlar a navegação dentro do EmulationStation.
+
+O programa não deve escolher jogos.
+
+O programa não deve modificar o funcionamento dos controles.
+
+O programa não deve alterar o sistema kiosk já instalado.
+
+---
+
+# 2. Cenário real de utilização
+
+A máquina possui:
+
+* Um computador com Windows.
+* Um sistema kiosk já configurado.
+* EmulationStation ou ES-DE.
+* Emuladores instalados.
+* Controles arcade configurados.
+* Aceitador eletrônico de fichas ou moedas.
+* Interface USB, encoder ou microcontrolador.
+* Monitor.
+* Alto-falantes.
+* Gabinete de fliperama.
+
+O Windows inicia.
+
+O sistema kiosk existente abre o EmulationStation.
+
+O jogador vê a lista de consoles e jogos.
+
+Sem crédito, o jogador pode navegar pelo frontend, mas não pode permanecer jogando.
+
+Ao inserir uma ficha:
+
+* O aceitador gera um pulso.
+* A interface converte o pulso em uma entrada reconhecida pelo computador.
+* O TurboRama Arcade Timer recebe a entrada.
+* O programa acrescenta uma quantidade configurada de tempo.
+* O jogador inicia um jogo normalmente.
+* O programa detecta que um emulador foi aberto.
+* A contagem regressiva começa.
+* Ao terminar o tempo, o programa encerra somente o emulador.
+* O EmulationStation permanece aberto.
+* O jogador retorna à seleção de jogos.
+
+---
+
+# 3. Regra de não interferência
+
+Esta é a regra mais importante do projeto.
+
+O TurboRama Arcade Timer deve ser completamente independente do kiosk base.
+
+É proibido alterar:
+
+* Teclas já configuradas.
+* Atalhos existentes.
+* Botões dos jogadores.
+* Comandos do joystick.
+* Combinações de saída.
+* Scripts de inicialização existentes.
+* Arquivos de configuração do EmulationStation.
+* Arquivos de configuração do RetroArch.
+* Configuração individual dos emuladores.
+* Configuração de vídeo.
+* Configuração de áudio.
+* Configuração dos controles.
+* Configuração do Windows.
+* Shell do kiosk.
+* Ordem de inicialização.
+* Registro do Windows.
+* Tarefas agendadas existentes.
+* Caminhos das ROMs.
+* Caminhos dos emuladores.
+* Temas do EmulationStation.
+* Comandos administrativos do operador.
+* Forma existente de desligamento da máquina.
+
+O programa deve observar o sistema e agir somente sobre os processos de emuladores autorizados.
+
+---
+
+# 4. Relação entre os componentes
+
+```text
+Aceitador de fichas
+        │
+        │ Pulso elétrico
+        ▼
+Encoder USB / Arduino / interface
+        │
+        │ Tecla ou mensagem serial
+        ▼
+TurboRama Arcade Timer
+        │
+        ├── Adiciona crédito
+        ├── Salva crédito
+        ├── Monitora emuladores
+        ├── Desconta tempo
+        └── Encerra emulador ao zerar
+                │
+                ▼
+EmulationStation permanece aberto
+```
+
+O EmulationStation não recebe diretamente o crédito.
+
+O emulador não recebe diretamente o crédito.
+
+O Windows não administra o crédito.
+
+O TurboRama Arcade Timer é o único responsável pela contagem.
+
+---
+
+# 5. Entrada física da ficha
+
+## 5.1 Aceitador de fichas
+
+O aceitador é o componente mecânico e eletrônico que reconhece a ficha.
+
+Quando a ficha é aceita, o dispositivo gera um ou mais pulsos elétricos.
+
+Dependendo do modelo, o aceitador pode trabalhar com:
+
+* 12 volts.
+* Saída de pulso.
+* Contato seco.
+* Saída coletor aberto.
+* Quantidade configurável de pulsos por moeda.
+* Fios de alimentação, terra e sinal.
+
+O programa não deve receber diretamente um sinal elétrico de 12 volts.
+
+A porta USB do computador não pode ser conectada diretamente à saída de 12 volts do aceitador.
+
+Deve existir uma interface intermediária.
+
+## 5.2 Interfaces aceitas
+
+A forma mais simples é utilizar um encoder USB reconhecido como teclado.
+
+Também podem ser usados:
+
+* Encoder arcade USB.
+* I-PAC.
+* Arduino.
+* ESP32.
+* Placa com optoacoplador.
+* Conversor serial USB.
+* Interface HID personalizada.
+
+## 5.3 Entrada por teclado
+
+Na primeira versão, a ficha é representada por uma tecla exclusiva.
+
+Exemplo:
+
+```text
+F10 = ficha inserida
+```
+
+Quando o aceitador fecha o contato, o encoder envia `F10`.
+
+O programa utiliza um hook global de teclado para detectar essa tecla mesmo quando o emulador estiver em tela cheia.
+
+## 5.4 Escolha da tecla
+
+A tecla de ficha deve ser configurável.
+
+O programa não deve obrigar o kiosk a mudar uma tecla.
+
+A regra é:
+
+```text
+O programa deve se adaptar ao kiosk.
+O kiosk não deve se adaptar ao programa.
+```
+
+Se `F10` já for utilizada, o operador deve escolher outra entrada livre somente no `config.json` do Timer.
+
+Exemplos possíveis:
+
+* F9
+* F10
+* F11
+* F12
+* Scroll Lock
+* Pause
+* Tecla de teclado numérico não utilizada
+
+A escolha deve ser testada na máquina real.
+
+## 5.5 Controle contra repetição
+
+Uma ficha física pode gerar um pulso mais longo ou vários eventos de teclado.
+
+O programa deve possuir proteção contra múltipla contabilização acidental.
+
+Exemplo:
+
+```text
+Primeiro evento F10: ficha aceita.
+Novos eventos F10 nos próximos 300 ms: ignorados.
+Depois de 300 ms: nova ficha pode ser aceita.
+```
+
+Esse intervalo deve ser configurável.
+
+Sugestão:
+
+```json
+"coinDebounceMilliseconds": 300
+```
+
+---
+
+# 6. Unidade de crédito
+
+O crédito do sistema não representa diretamente dinheiro.
+
+Ele representa tempo.
+
+Exemplo:
+
+```text
+1 ficha = 5 minutos
+2 fichas = 10 minutos
+3 fichas = 15 minutos
+```
+
+O valor deve ser configurável:
+
+```json
+"minutesPerCoin": 5
+```
+
+O sistema deve aceitar fichas adicionais a qualquer momento.
+
+Se o jogador possui 3 minutos restantes e insere uma ficha de 5 minutos:
+
+```text
+Tempo anterior: 00:03:00
+Ficha inserida: +00:05:00
+Novo tempo: 00:08:00
+```
+
+O novo crédito nunca deve substituir o anterior.
+
+Ele deve ser somado.
+
+---
+
+# 7. Estados principais do programa
+
+O Timer deve trabalhar com estados definidos.
+
+## 7.1 Inicializando
+
+O programa está carregando:
+
+* Configuração.
+* Tempo salvo.
+* Lista de emuladores.
+* Sistema de logs.
+* Hook de teclado.
+
+Nesse estado, nenhuma ficha deve ser perdida.
+
+## 7.2 Sem crédito
+
+Condição:
+
+```text
+Tempo restante = zero
+```
+
+A interface mostra:
+
+```text
+INSIRA UMA FICHA
+00:00:00
+```
+
+## 7.3 Crédito disponível
+
+Condição:
+
+```text
+Tempo restante maior que zero
+Nenhum emulador em execução
+```
+
+A interface mostra:
+
+```text
+CRÉDITO DISPONÍVEL
+00:10:00
+ESCOLHA UM JOGO
+```
+
+O tempo fica parado enquanto o jogador navega pelo EmulationStation.
+
+## 7.4 Jogando
+
+Condição:
+
+```text
+Tempo restante maior que zero
+Emulador autorizado em execução
+```
+
+A contagem diminui a cada segundo.
+
+A interface mostra:
+
+```text
+JOGANDO
+00:09:59
+```
+
+## 7.5 Tempo terminando
+
+Condição:
+
+```text
+Tempo restante abaixo do limite de aviso
+```
+
+Exemplo de limite:
+
+```text
+60 segundos
+```
+
+A interface mostra:
+
+```text
+TEMPO TERMINANDO
+00:00:59
+```
+
+Também pode emitir som de aviso.
+
+## 7.6 Tempo encerrado
+
+Condição:
+
+```text
+Tempo restante = zero
+Emulador em execução
+```
+
+O programa:
+
+1. Salva o estado zero.
+2. Exibe mensagem de tempo encerrado.
+3. Solicita fechamento normal do emulador.
+4. Aguarda um período configurado.
+5. Se o emulador não fechar, encerra o processo.
+6. Não fecha o EmulationStation.
+7. Retorna ao estado sem crédito.
+
+## 7.7 Erro
+
+O programa encontrou um problema:
+
+* Arquivo inválido.
+* Falha ao salvar crédito.
+* Falha ao instalar hook.
+* Emulador inacessível.
+* Processo protegido.
+* Caminho inválido.
+
+A falha deve ser registrada em log.
+
+O programa deve continuar funcionando sempre que possível.
+
+---
+
+# 8. Quando o tempo deve correr
+
+O tempo não deve correr apenas porque o Windows está ligado.
+
+O tempo não deve correr durante a navegação do EmulationStation.
+
+O tempo não deve correr durante manutenção.
+
+O tempo deve correr somente quando existir um processo de emulador autorizado.
+
+Exemplo:
+
+```text
+EmulationStation aberto: tempo parado.
+RetroArch aberto: tempo rodando.
+RetroArch fechado: tempo parado.
+PCSX2 aberto: tempo rodando.
+PCSX2 fechado: tempo parado.
+```
+
+Configuração:
+
+```json
+"countOnlyWhileEmulatorIsRunning": true
+```
+
+---
+
+# 9. Detecção dos emuladores
+
+O programa deve monitorar os processos ativos do Windows.
+
+A verificação pode ocorrer uma vez por segundo.
+
+Lista inicial:
+
+```json
+"emulatorProcesses": [
+  "retroarch",
+  "mame",
+  "mame64",
+  "pcsx2",
+  "pcsx2-qt",
+  "dolphin",
+  "duckstation-qt",
+  "duckstation-qt-x64-ReleaseLTCG",
+  "ppssppwindows",
+  "ppssppwindows64",
+  "rpcs3",
+  "cemu",
+  "xenia",
+  "xenia_canary",
+  "flycast",
+  "demul",
+  "supermodel"
+]
+```
+
+Os nomes devem ser armazenados sem `.exe`.
+
+Exemplo:
+
+```text
+Correto: retroarch
+Incorreto: retroarch.exe
+```
+
+O programa deve usar uma lista branca.
+
+Somente processos dessa lista podem ser considerados jogos.
+
+Somente processos dessa lista podem ser encerrados.
+
+---
+
+# 10. Processos protegidos
+
+O programa nunca deve encerrar automaticamente:
+
+* EmulationStation.
+* ES-DE.
+* Explorer.
+* Shell do kiosk.
+* TurboRama Arcade Timer.
+* Serviços do Windows.
+* Drivers.
+* Softwares de controle.
+* Programas de iluminação.
+* Programas de áudio.
+* Gerenciadores de joystick.
+* Ferramentas de manutenção.
+* Programas não listados.
+
+Deve existir uma proteção adicional:
+
+```json
+"protectedProcesses": [
+  "emulationstation",
+  "es-de",
+  "explorer",
+  "TurboRama.ArcadeTimer"
+]
+```
+
+Mesmo que um nome protegido seja colocado por engano na lista de emuladores, ele não deve ser encerrado.
+
+---
+
+# 11. Encerramento do jogo
+
+Quando o tempo chegar a zero, o programa deve seguir uma sequência segura.
+
+## Etapa 1 — tentativa de fechamento normal
+
+```csharp
+process.CloseMainWindow();
+```
+
+Essa chamada solicita que o programa feche sua janela principal.
+
+Isso é semelhante ao fechamento normal de uma aplicação.
+
+## Etapa 2 — espera
+
+O programa aguarda, por exemplo, três segundos.
+
+```json
+"gracefulCloseTimeoutMilliseconds": 3000
+```
+
+## Etapa 3 — encerramento forçado
+
+Se o emulador continuar ativo:
+
+```csharp
+process.Kill(entireProcessTree: true);
+```
+
+O encerramento deve incluir processos filhos do emulador.
+
+## Etapa 4 — confirmação
+
+O sistema deve confirmar que o processo realmente terminou.
+
+## Etapa 5 — registro
+
+Exemplo de log:
+
+```text
+[2026-07-16 14:35:00] Tempo encerrado.
+[2026-07-16 14:35:00] Solicitando fechamento de retroarch.
+[2026-07-16 14:35:01] RetroArch encerrado normalmente.
+```
+
+Ou:
+
+```text
+[2026-07-16 14:35:03] RetroArch não respondeu.
+[2026-07-16 14:35:03] Encerramento forçado realizado.
+```
+
+---
+
+# 12. Bloqueio de jogo sem crédito
+
+O sistema deve possuir uma opção:
+
+```json
+"blockGameWithoutCredit": true
+```
+
+Quando ativada:
+
+1. O Timer está sem crédito.
+2. Um emulador autorizado é iniciado.
+3. O Timer detecta o processo.
+4. O emulador é encerrado.
+5. O EmulationStation continua aberto.
+6. A interface mostra “INSIRA UMA FICHA”.
+
+Esse bloqueio não deve impedir a navegação pelo frontend.
+
+O jogador pode olhar jogos e sistemas.
+
+O bloqueio começa somente quando um emulador é iniciado.
+
+---
+
+# 13. Persistência do tempo
+
+O crédito deve ser salvo em disco.
+
+Arquivo:
+
+```text
+credit.json
+```
+
+Exemplo:
+
+```json
+{
+  "remainingSeconds": 487,
+  "updatedAt": "2026-07-16T14:22:18-03:00",
+  "coinCountSession": 3
+}
+```
+
+O tempo deve ser salvo:
+
+* Quando uma ficha for inserida.
+* A cada alteração do contador.
+* Quando o jogo fechar.
+* Quando o tempo zerar.
+* Quando o Timer for encerrado.
+* Antes de o Windows desligar, quando possível.
+
+## Proteção contra arquivo corrompido
+
+O salvamento não deve substituir diretamente o arquivo principal.
+
+Sequência recomendada:
+
+```text
+1. Criar credit.tmp.
+2. Gravar dados.
+3. Validar JSON.
+4. Renomear credit.json para credit.backup.json.
+5. Renomear credit.tmp para credit.json.
+```
+
+Se o arquivo principal estiver danificado, usar o backup.
+
+---
+
+# 14. Política para reinicialização da máquina
+
+Deve existir configuração para definir o comportamento após queda de energia.
+
+## Modo preservar crédito
+
+```json
+"restoreCreditAfterRestart": true
+```
+
+O tempo salvo é restaurado.
+
+Exemplo:
+
+```text
+Antes da queda: 07:32
+Depois da reinicialização: 07:32
+```
+
+## Modo limpar crédito
+
+```json
+"restoreCreditAfterRestart": false
+```
+
+O sistema começa em zero.
+
+Essa opção deve ser uma decisão comercial do proprietário da máquina.
+
+---
+
+# 15. Interface visual
+
+A interface do Timer deve ser independente do EmulationStation.
+
+Características:
+
+* Sem borda.
+* Pequena.
+* Sempre no topo.
+* Baixo consumo.
+* Transparência configurável.
+* Sem botão de fechar visível.
+* Posição configurável.
+* Fonte grande.
+* Leitura rápida.
+
+Exemplo:
+
+```text
+┌──────────────────────────────┐
+│       TURBORAMA ARCADE       │
+│          00:08:42            │
+│           JOGANDO            │
+└──────────────────────────────┘
+```
+
+## Cores sugeridas
+
+* Verde: crédito normal.
+* Laranja: tempo terminando.
+* Vermelho: sem crédito.
+* Branco: mensagens.
+* Fundo preto ou escuro.
+
+## Configuração de posição
+
+```json
+"window": {
+  "width": 360,
+  "height": 110,
+  "rightMargin": 20,
+  "topMargin": 20,
+  "topMost": true,
+  "opacity": 0.94
+}
+```
+
+## Tela cheia exclusiva
+
+Alguns emuladores podem usar tela cheia exclusiva e ocultar a janela do Timer.
+
+Por isso, a interface deve ser opcional.
+
+O controle do tempo não pode depender de a janela estar visível.
+
+Mesmo que a sobreposição fique escondida, o Timer deve continuar funcionando.
+
+---
+
+# 16. Avisos sonoros
+
+O programa pode emitir sons próprios.
+
+Isso não exige modificar o áudio do emulador.
+
+Eventos possíveis:
+
+* Ficha aceita.
+* Último minuto.
+* Últimos 30 segundos.
+* Últimos 10 segundos.
+* Tempo encerrado.
+* Erro de leitura.
+
+Configuração:
+
+```json
+"sound": {
+  "enabled": true,
+  "coinAccepted": "sounds/coin.wav",
+  "warning": "sounds/warning.wav",
+  "timeEnded": "sounds/end.wav"
+}
+```
+
+O uso de som deve ser opcional.
+
+---
+
+# 17. Estrutura de arquivos do programa
+
+```text
+C:\TurboRama\ArcadeTimer\
+│
+├── TurboRama.ArcadeTimer.exe
+├── config.json
+├── credit.json
+├── credit.backup.json
+├── README.txt
+│
+├── logs\
+│   ├── arcade-timer-2026-07-16.log
+│   └── arcade-timer-2026-07-17.log
+│
+├── sounds\
+│   ├── coin.wav
+│   ├── warning.wav
+│   └── end.wav
+│
+└── backups\
+    ├── config-2026-07-16.json
+    └── credit-2026-07-16.json
+```
+
+O programa deve gravar somente dentro da própria pasta ou em uma pasta de dados especificamente autorizada.
+
+Ele não deve gravar dentro das pastas:
+
+```text
+ES-DE
+EmulationStation
+RetroArch
+Emulators
+ROMs
+Kiosk
+Windows
+Program Files
+```
+
+---
+
+# 18. Arquivo de configuração completo
+
+```json
+{
+  "minutesPerCoin": 5,
+  "coinKey": "F10",
+  "coinDebounceMilliseconds": 300,
+
+  "warningSeconds": 60,
+  "criticalWarningSeconds": 10,
+
+  "countOnlyWhileEmulatorIsRunning": true,
+  "blockGameWithoutCredit": true,
+  "closeEmulatorWhenTimeEnds": true,
+
+  "gracefulCloseTimeoutMilliseconds": 3000,
+  "forceCloseAfterTimeout": true,
+
+  "saveRemainingTime": true,
+  "restoreCreditAfterRestart": true,
+
+  "emulatorCheckIntervalMilliseconds": 1000,
+
+  "emulatorProcesses": [
+    "retroarch",
+    "mame64",
+    "pcsx2-qt",
+    "dolphin",
+    "duckstation-qt",
+    "ppssppwindows64",
+    "rpcs3",
+    "cemu",
+    "xenia"
+  ],
+
+  "protectedProcesses": [
+    "emulationstation",
+    "es-de",
+    "explorer",
+    "TurboRama.ArcadeTimer"
+  ],
+
+  "window": {
+    "enabled": true,
+    "width": 360,
+    "height": 110,
+    "rightMargin": 20,
+    "topMargin": 20,
+    "topMost": true,
+    "opacity": 0.94
+  },
+
+  "sound": {
+    "enabled": true,
+    "coinAccepted": "sounds/coin.wav",
+    "warning": "sounds/warning.wav",
+    "timeEnded": "sounds/end.wav"
+  },
+
+  "logging": {
+    "enabled": true,
+    "retentionDays": 30,
+    "includeProcessEvents": true
+  }
+}
+```
+
+---
+
+# 19. Componentes internos do código
+
+## 19.1 Program
+
+Responsável por:
+
+* Inicializar o WinForms.
+* Configurar tratamento de erros.
+* Garantir apenas uma instância.
+* Abrir o TimerForm.
+* Registrar falhas não tratadas.
+
+## 19.2 TimerForm
+
+Responsável somente pela interface.
+
+Ele deve:
+
+* Mostrar tempo.
+* Mostrar status.
+* Atualizar cores.
+* Posicionar a janela.
+* Exibir mensagens.
+
+Ele não deve possuir toda a regra de negócio em uma versão futura.
+
+## 19.3 GlobalKeyboardHook
+
+Responsável por:
+
+* Instalar hook global.
+* Detectar a tecla configurada.
+* Gerar evento de ficha.
+* Liberar o hook ao fechar.
+
+Ele não deve enviar teclas.
+
+Ele somente recebe.
+
+## 19.4 CoinInputService
+
+Responsável por:
+
+* Receber o evento físico.
+* Aplicar debounce.
+* Validar a entrada.
+* Gerar `CoinInserted`.
+
+## 19.5 CreditManager
+
+Responsável por:
+
+* Guardar o tempo restante.
+* Somar minutos.
+* Reduzir segundos.
+* Impedir valor negativo.
+* Restaurar crédito.
+* Salvar crédito.
+* Gerar eventos de alteração.
+
+## 19.6 TimerEngine
+
+Responsável por:
+
+* Executar o ciclo de um segundo.
+* Verificar se deve descontar tempo.
+* Emitir aviso.
+* Detectar zero.
+* Evitar execução duplicada do encerramento.
+
+## 19.7 EmulatorMonitor
+
+Responsável por:
+
+* Consultar processos do Windows.
+* Comparar com a lista branca.
+* Detectar início do jogo.
+* Detectar fim do jogo.
+* Informar qual emulador está ativo.
+
+## 19.8 EmulatorController
+
+Responsável por:
+
+* Encerrar somente processo autorizado.
+* Solicitar fechamento normal.
+* Esperar.
+* Aplicar encerramento forçado quando permitido.
+* Confirmar encerramento.
+* Registrar resultado.
+
+## 19.9 ConfigService
+
+Responsável por:
+
+* Ler `config.json`.
+* Criar configuração padrão.
+* Validar os valores.
+* Rejeitar configurações perigosas.
+* Preservar a última configuração válida.
+
+## 19.10 CreditStore
+
+Responsável por:
+
+* Salvar `credit.json`.
+* Criar backup.
+* Restaurar dados.
+* Tratar arquivo corrompido.
+* Garantir gravação atômica.
+
+## 19.11 LogService
+
+Responsável por:
+
+* Registrar eventos.
+* Separar logs por data.
+* Impedir falha do programa por erro de log.
+* Excluir logs antigos conforme retenção.
+
+## 19.12 SingleInstanceService
+
+Responsável por impedir duas cópias do Timer.
+
+Se duas instâncias forem executadas:
+
+* Uma única ficha poderia ser contada duas vezes.
+* Dois temporizadores poderiam descontar o crédito.
+* Dois processos poderiam tentar encerrar o emulador.
+
+O sistema deve utilizar um mutex do Windows.
+
+Exemplo de nome:
+
+```text
+Global\TurboRama.ArcadeTimer
+```
+
+---
+
+# 20. Fluxo de inicialização
+
+```text
+1. Windows inicia.
+2. Kiosk base inicia como já configurado.
+3. TurboRama Arcade Timer é iniciado pelo mecanismo existente.
+4. Timer verifica se outra instância já está aberta.
+5. Timer carrega config.json.
+6. Timer valida a configuração.
+7. Timer carrega credit.json.
+8. Timer instala o leitor de ficha.
+9. Timer inicia o monitor de emuladores.
+10. Timer apresenta o tempo.
+11. Timer aguarda ficha ou abertura de emulador.
+```
+
+O Timer não deve iniciar o EmulationStation por conta própria caso o kiosk já faça isso.
+
+A opção de inicialização automática do EmulationStation deve permanecer desativada:
+
+```json
+"startEmulationStationAutomatically": false
+```
+
+---
+
+# 21. Fluxo de ficha inserida
+
+```text
+1. Jogador insere ficha.
+2. Aceitador valida a ficha.
+3. Aceitador gera pulso.
+4. Encoder envia a tecla configurada.
+5. Hook global detecta a tecla.
+6. CoinInputService verifica debounce.
+7. CreditManager soma os minutos.
+8. CreditStore salva o novo saldo.
+9. Interface atualiza o contador.
+10. Som de ficha aceita é reproduzido.
+11. Log registra a operação.
+```
+
+Exemplo de log:
+
+```text
+[2026-07-16 10:15:22] Ficha detectada pela entrada F10.
+[2026-07-16 10:15:22] Crédito anterior: 00:02:31.
+[2026-07-16 10:15:22] Crédito adicionado: 00:05:00.
+[2026-07-16 10:15:22] Novo crédito: 00:07:31.
+```
+
+---
+
+# 22. Fluxo de início de jogo
+
+```text
+1. Jogador escolhe um jogo no EmulationStation.
+2. EmulationStation abre o emulador normalmente.
+3. EmulatorMonitor detecta o processo.
+4. Monitor confirma que o processo está na lista branca.
+5. Se existe crédito, TimerEngine inicia a contagem.
+6. Interface muda para JOGANDO.
+7. Log registra o emulador detectado.
+```
+
+Sem crédito:
+
+```text
+1. Emulador é detectado.
+2. Crédito é zero.
+3. Bloqueio sem crédito está ativado.
+4. EmulatorController encerra o emulador.
+5. EmulationStation continua aberto.
+6. Interface exibe INSIRA UMA FICHA.
+```
+
+---
+
+# 23. Fluxo durante o jogo
+
+A cada segundo:
+
+```text
+1. Verificar se o emulador continua aberto.
+2. Verificar se o tempo é maior que zero.
+3. Retirar um segundo.
+4. Salvar o novo valor.
+5. Atualizar a interface.
+6. Verificar limite de aviso.
+7. Verificar se chegou a zero.
+```
+
+O contador deve usar relógio monotônico ou calcular o tempo decorrido real.
+
+Não deve depender exclusivamente de contar eventos `Tick`, porque o Windows pode atrasar a interface.
+
+Exemplo mais seguro:
+
+```text
+Última atualização: 10:00:00
+Atualização atual: 10:00:03
+Tempo decorrido real: 3 segundos
+Desconto: 3 segundos
+```
+
+---
+
+# 24. Fluxo de saída manual do jogo
+
+```text
+1. Jogador utiliza o comando já configurado no kiosk.
+2. Emulador fecha normalmente.
+3. EmulatorMonitor detecta o fechamento.
+4. TimerEngine pausa a contagem.
+5. Crédito restante é salvo.
+6. Interface mostra ESCOLHA UM JOGO.
+```
+
+O Timer não deve alterar o comando de saída.
+
+Ele apenas detecta que o processo foi fechado.
+
+---
+
+# 25. Fluxo de término do tempo
+
+```text
+1. Tempo chega a zero.
+2. TimerEngine bloqueia nova redução.
+3. CreditStore grava zero.
+4. Interface mostra TEMPO ENCERRADO.
+5. Som final é executado.
+6. EmulatorController solicita fechamento normal.
+7. Aguarda o tempo configurado.
+8. Se necessário, encerra o processo.
+9. Confirma que não existe emulador ativo.
+10. Mantém o EmulationStation aberto.
+11. Interface retorna para INSIRA UMA FICHA.
+```
+
+---
+
+# 26. Comportamento com várias fichas
+
+O sistema deve aceitar fichas:
+
+* No frontend.
+* Durante o jogo.
+* Durante o aviso final.
+* Imediatamente após chegar a zero, se o emulador ainda não tiver fechado.
+
+Porém, deve haver uma regra para corrida entre ficha e encerramento.
+
+Exemplo:
+
+```text
+Tempo chega a zero.
+Jogador insere uma ficha no mesmo instante.
+```
+
+A solução recomendada:
+
+1. Processar a entrada de ficha primeiro se ela tiver sido recebida antes da ordem de fechamento.
+2. Cancelar o encerramento caso o crédito volte a ser maior que zero.
+3. Se o processo já estiver sendo encerrado, salvar o novo crédito para o próximo jogo.
+
+Essa decisão deve ser protegida por sincronização.
+
+---
+
+# 27. Concorrência e proteção de estado
+
+Os seguintes componentes podem agir ao mesmo tempo:
+
+* Hook do teclado.
+* Timer.
+* Monitor de processos.
+* Interface.
+* Salvamento em disco.
+
+O crédito deve ser protegido por `lock`, `SemaphoreSlim` ou outra forma segura.
+
+Nunca permitir:
+
+```text
+Ficha adiciona 300 segundos ao mesmo tempo em que o Timer retira 1 segundo
+e uma das operações sobrescreve a outra.
+```
+
+O resultado correto deve ser:
+
+```text
+Saldo anterior: 100
+Ficha: +300
+Tick: -1
+Saldo final: 399
+```
+
+---
+
+# 28. Logs de auditoria
+
+Devem ser registrados:
+
+* Inicialização.
+* Encerramento.
+* Configuração carregada.
+* Configuração inválida.
+* Ficha recebida.
+* Crédito anterior.
+* Crédito adicionado.
+* Crédito restante.
+* Emulador iniciado.
+* Emulador encerrado.
+* Tempo pausado.
+* Tempo retomado.
+* Aviso de término.
+* Tempo encerrado.
+* Fechamento normal.
+* Fechamento forçado.
+* Falhas de arquivo.
+* Falhas de processo.
+* Falhas de hardware.
+
+Nunca registrar:
+
+* Senhas.
+* Dados pessoais.
+* Informações desnecessárias do Windows.
+
+---
+
+# 29. Integração com Windows kiosk
+
+O sistema kiosk existente é o responsável por transformar o computador em uma máquina dedicada.
+
+O Timer deve ser acrescentado ao mecanismo existente pelo técnico da máquina.
+
+Possibilidades:
+
+* Script já utilizado pelo kiosk.
+* Inicialização automática existente.
+* Shell personalizado existente.
+* Aplicativo supervisor existente.
+
+O Timer não deve criar um novo método sem autorização.
+
+No Windows IoT/Enterprise, aplicações de kiosk podem ser configuradas para restringir acesso ao sistema e manter uma experiência dedicada. O Arcade Timer deve operar como processo auxiliar permitido pela configuração já existente, e não substituir o aplicativo principal do kiosk.
+
+---
+
+# 30. Requisitos mínimos de estabilidade
+
+O programa deve:
+
+* Permanecer aberto por longos períodos.
+* Consumir pouca CPU.
+* Consumir pouca memória.
+* Não travar o EmulationStation.
+* Não travar o emulador.
+* Não depender de internet.
+* Funcionar offline.
+* Recuperar arquivos após falha.
+* Não perder fichas.
+* Não duplicar fichas.
+* Não permitir tempo negativo.
+* Não fechar processos desconhecidos.
+* Não abrir janelas administrativas para o jogador.
+
+Meta sugerida:
+
+```text
+CPU em espera: inferior a 1% na maior parte do tempo.
+Memória: inferior a 100 MB.
+Intervalo de monitoramento: 1 segundo.
+Inicialização: inferior a 5 segundos.
+```
+
+Esses valores devem ser verificados na máquina real.
+
+---
+
+# 31. Requisitos de segurança operacional
+
+O programa deve possuir:
+
+* Lista branca de emuladores.
+* Lista de processos protegidos.
+* Configuração validada.
+* Instância única.
+* Logs.
+* Backup de crédito.
+* Tratamento de exceções.
+* Encerramento seguro.
+* Proteção contra múltiplos pulsos.
+* Proteção contra crédito negativo.
+
+O programa não deve tentar bloquear:
+
+* Ctrl+Alt+Del.
+* Gerenciador de Tarefas.
+* Explorer.
+* Teclas do Windows.
+
+Esses bloqueios pertencem ao kiosk base.
+
+O Timer não deve assumir essa responsabilidade.
+
+---
+
+# 32. Testes obrigatórios
+
+## Teste 1 — ficha simples
+
+* Iniciar sem crédito.
+* Inserir uma ficha.
+* Confirmar adição correta.
+
+## Teste 2 — várias fichas
+
+* Inserir três fichas.
+* Confirmar soma total.
+
+## Teste 3 — pulso longo
+
+* Manter entrada ativa.
+* Confirmar apenas uma ficha dentro do debounce.
+
+## Teste 4 — navegação
+
+* Possuir crédito.
+* Navegar no EmulationStation por dois minutos.
+* Confirmar que o tempo não diminuiu.
+
+## Teste 5 — início de jogo
+
+* Abrir RetroArch.
+* Confirmar início da contagem.
+
+## Teste 6 — saída manual
+
+* Fechar o jogo usando o comando já configurado.
+* Confirmar pausa do tempo.
+
+## Teste 7 — término
+
+* Deixar o tempo zerar.
+* Confirmar fechamento do emulador.
+* Confirmar que o EmulationStation permaneceu aberto.
+
+## Teste 8 — sem crédito
+
+* Abrir um jogo com crédito zero.
+* Confirmar encerramento somente do emulador.
+
+## Teste 9 — queda de energia
+
+* Possuir crédito.
+* Desligar a máquina.
+* Reiniciar.
+* Confirmar restauração conforme configuração.
+
+## Teste 10 — arquivo corrompido
+
+* Danificar `credit.json`.
+* Confirmar recuperação pelo backup.
+
+## Teste 11 — processo protegido
+
+* Colocar acidentalmente `es-de` na lista de emuladores.
+* Confirmar que ele não é encerrado.
+
+## Teste 12 — kiosk
+
+* Validar todos os comandos existentes antes e depois da instalação.
+* Confirmar que nenhum comando foi alterado.
+
+---
+
+# 33. Critério de aprovação
+
+O projeto somente pode ser aprovado quando:
+
+* A ficha física for reconhecida corretamente.
+* O crédito for somado corretamente.
+* O tempo correr somente durante o jogo.
+* O tempo parar no EmulationStation.
+* O emulador fechar ao zerar.
+* O EmulationStation permanecer aberto.
+* O crédito sobreviver à reinicialização, quando configurado.
+* Nenhum comando do kiosk tiver sido modificado.
+* Nenhum arquivo externo tiver sido alterado.
+* Nenhum processo protegido puder ser encerrado.
+* Os testes forem executados na máquina real.
+
+---
+
+# 34. Entrega para outro programador ou IA
+
+A pessoa responsável por continuar o projeto deve receber:
+
+```text
+Código-fonte completo
+Arquivo .csproj
+config.json comentado
+Executável compilado
+README de instalação
+Documento de arquitetura
+Lista dos emuladores reais
+Nome da tecla física da ficha
+Fotos ou esquema da ligação elétrica
+Logs de teste
+Relatório de validação do kiosk
+```
+
+Ela deve receber esta instrução obrigatória:
+
+```text
+Não modificar o kiosk base.
+
+Não alterar comandos, teclas, scripts, atalhos, configurações,
+mapeamentos, arquivos ou comportamento já existente.
+
+O programa deve se adaptar ao sistema instalado.
+
+Somente os arquivos do TurboRama Arcade Timer podem ser modificados.
+
+Somente processos de emuladores presentes na lista branca podem
+ser monitorados ou encerrados.
+```
+
+---
+
+# 35. Resultado final esperado
+
+Depois de instalado, o comportamento deve ser exatamente este:
+
+```text
+A máquina liga.
+O kiosk abre normalmente.
+O EmulationStation aparece.
+O jogador navega normalmente.
+O jogador insere uma ficha.
+O Timer adiciona minutos.
+O jogador abre um jogo.
+O tempo começa a diminuir.
+O jogador pode inserir mais fichas.
+Ao sair do jogo, o tempo pausa.
+Ao abrir outro jogo, o tempo continua.
+Ao zerar, somente o emulador fecha.
+O EmulationStation permanece aberto.
+O sistema solicita uma nova ficha.
+```
+
+O TurboRama Arcade Timer não substitui o kiosk.
+
+Ele não comanda o EmulationStation.
+
+Ele não modifica os controles.
+
+Ele não interfere no funcionamento já aprovado da máquina.
+
+Ele somente adiciona ao sistema existente o controle comercial de:
+
+* Ficha.
+* Crédito.
+* Tempo.
+* Detecção do jogo.
+* Encerramento do emulador.
+* Retorno ao frontend.

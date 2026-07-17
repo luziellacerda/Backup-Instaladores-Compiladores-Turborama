@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1680" viewBox="0 0 1080 1680">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#05100b"/><stop offset=".55" stop-color="#081a24"/><stop offset="1" stop-color="#18071b"/></linearGradient>
+    <radialGradient id="r" cx="50%" cy="18%" r="70%"><stop stop-color="#1eff84" stop-opacity=".38"/><stop offset="1" stop-color="#1eff84" stop-opacity="0"/></radialGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="10" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1080" height="1680" fill="url(#g)"/><rect width="1080" height="1680" fill="url(#r)"/>
+  <circle cx="170" cy="170" r="80" fill="#1eff84" opacity=".18"/><circle cx="930" cy="320" r="110" fill="#00d0ff" opacity=".13"/><circle cx="850" cy="1320" r="145" fill="#ff3b8d" opacity=".12"/>
+  <text x="70" y="150" fill="#1eff84" font-family="Arial Black,Arial" font-size="48" font-weight="900">TURBORAMA</text>
+  <text x="70" y="245" fill="#ffffff" font-family="Arial Black,Arial" font-size="78" font-weight="900">Biblioteca</text>
+  <text x="70" y="330" fill="#ffffff" font-family="Arial Black,Arial" font-size="78" font-weight="900">organizada</text>
+  <text x="74" y="398" fill="#b9cfc4" font-family="Arial" font-size="34">Visual premium para mostrar capas,</text>
+  <text x="74" y="442" fill="#b9cfc4" font-family="Arial" font-size="34">categorias e navegação.</text>
+  <g transform="translate(70 560)">
+    <rect x="0" y="0" width="940" height="790" rx="46" fill="#05080d" stroke="#ffffff" stroke-opacity=".12"/>
+    <rect x="36" y="38" width="868" height="82" rx="24" fill="#ffffff" opacity=".06"/>
+    <circle cx="75" cy="80" r="14" fill="#1eff84"/><circle cx="117" cy="80" r="14" fill="#00d0ff"/><circle cx="159" cy="80" r="14" fill="#ff3b8d"/>
+    <text x="690" y="94" fill="#dfffee" font-family="Arial Black,Arial" font-size="30">Start</text>
+    <g transform="translate(38 158)">
+      <rect width="200" height="570" rx="24" fill="#1eff84" opacity=".07" stroke="#1eff84" stroke-opacity=".15"/>
+      <rect x="24" y="34" width="150" height="36" rx="18" fill="#1eff84" opacity=".34"/>
+      <rect x="24" y="96" width="128" height="30" rx="15" fill="#fff" opacity=".10"/>
+      <rect x="24" y="150" width="145" height="30" rx="15" fill="#fff" opacity=".10"/>
+      <rect x="24" y="204" width="108" height="30" rx="15" fill="#fff" opacity=".10"/>
+    </g>
+    <g transform="translate(280 158)">
+      <g fill-opacity=".9">
+        <rect x="0" y="0" width="180" height="250" rx="28" fill="#0c2a28" stroke="#1eff84" stroke-opacity=".24"/>
+        <rect x="214" y="0" width="180" height="250" rx="28" fill="#142742" stroke="#00d0ff" stroke-opacity=".24"/>
+        <rect x="428" y="0" width="180" height="250" rx="28" fill="#2a1435" stroke="#ff3b8d" stroke-opacity=".24"/>
+        <rect x="0" y="300" width="180" height="250" rx="28" fill="#142742" stroke="#00d0ff" stroke-opacity=".24"/>
+        <rect x="214" y="300" width="180" height="250" rx="28" fill="#2a1435" stroke="#ff3b8d" stroke-opacity=".24"/>
+        <rect x="428" y="300" width="180" height="250" rx="28" fill="#0c2a28" stroke="#1eff84" stroke-opacity=".24"/>
+      </g>
+      <g fill="#fff" opacity=".18"><rect x="24" y="205" width="130" height="22" rx="11"/><rect x="238" y="205" width="130" height="22" rx="11"/><rect x="452" y="205" width="130" height="22" rx="11"/><rect x="24" y="505" width="130" height="22" rx="11"/><rect x="238" y="505" width="130" height="22" rx="11"/><rect x="452" y="505" width="130" height="22" rx="11"/></g>
+    </g>
+  </g>
+  <rect x="70" y="1440" width="940" height="120" rx="42" fill="#1eff84" filter="url(#glow)"/>
+  <text x="235" y="1518" fill="#00140a" font-family="Arial Black,Arial" font-size="46" font-weight="900">COMPRAR AGORA</text>
+</svg>

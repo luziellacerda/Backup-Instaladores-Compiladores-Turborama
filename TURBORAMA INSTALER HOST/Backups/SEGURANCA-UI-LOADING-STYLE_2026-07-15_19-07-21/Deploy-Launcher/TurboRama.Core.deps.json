@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "TurboRama.Core/2.0.0-alpha": {
+        "runtime": {
+          "TurboRama.Core.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "TurboRama.Core/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

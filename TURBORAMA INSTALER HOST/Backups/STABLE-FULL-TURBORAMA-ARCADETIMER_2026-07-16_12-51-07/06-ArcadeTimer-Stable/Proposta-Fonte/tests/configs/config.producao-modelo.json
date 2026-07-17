@@ -1,0 +1,67 @@
+{
+  "minutesPerCoin": 5,
+  "coinKey": "F10",
+  "coinDebounceMilliseconds": 350,
+  "maxRemainingSeconds": 28800,
+  "warningSeconds": 60,
+  "criticalWarningSeconds": 10,
+  "countOnlyWhileEmulatorIsRunning": true,
+  "blockGameWithoutCredit": true,
+  "closeEmulatorWhenTimeEnds": true,
+  "emulatorCheckIntervalMilliseconds": 1000,
+  "gracefulCloseTimeoutMilliseconds": 3000,
+  "forceCloseAfterTimeout": true,
+  "saveRemainingTime": true,
+  "restoreCreditAfterRestart": true,
+  "window": {
+    "enabled": true,
+    "width": 168,
+    "height": 64,
+    "rightMargin": 12,
+    "topMargin": 12,
+    "topMost": true,
+    "opacity": 0.85,
+    "allowClose": false,
+    "compact": true
+  },
+  "sound": {
+    "enabled": true,
+    "coinAccepted": "sounds/coin.wav",
+    "warning": "sounds/warning.wav",
+    "timeEnded": "sounds/end.wav"
+  },
+  "logging": {
+    "enabled": true,
+    "retentionDays": 30,
+    "includeProcessEvents": true
+  },
+  "emulatorProcesses": [
+    "retroarch",
+    "mame",
+    "mame64",
+    "pcsx2",
+    "pcsx2-qt",
+    "dolphin",
+    "duckstation-qt",
+    "ppssppwindows",
+    "ppssppwindows64",
+    "rpcs3",
+    "cemu",
+    "flycast",
+    "supermodel"
+  ],
+  "protectedProcesses": [
+    "emulationstation",
+    "es-de",
+    "explorer",
+    "TurboRama.ArcadeTimer",
+    "TurboRama.Launcher",
+    "TurboRama.Watchdog",
+    "TurboRama.Maintenance"
+  ],
+  "_producaoNotes": {
+    "coinKey": "Ajustar à tecla real do encoder. Validar que Keyboard Filter NÃO bloqueia essa tecla.",
+    "emulatorProcesses": "Completar com nomes REAIS dos EXEs da máquina (sem .exe).",
+    "pathSugerido": "C:\\TurboRama\\ArcadeTimer\\"
+  }
+}

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slides de Venda | TurboRama</title>
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml"><link rel="stylesheet" href="assets/styles.css">
+  <style>
+    body{overflow:hidden}.deck{height:100vh;display:grid;place-items:center;padding:24px}.deck-slide{display:none;width:min(1100px,94vw);min-height:min(650px,86vh);border:1px solid var(--border);border-radius:38px;background:radial-gradient(circle at 75% 18%,rgba(30,255,132,.22),transparent 28rem),linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.03));box-shadow:var(--shadow);padding:56px;align-content:center}.deck-slide.active{display:grid}.deck-slide h1{font-size:clamp(46px,7vw,92px);max-width:960px}.deck-slide p{font-size:clamp(20px,3vw,32px);line-height:1.35;color:#d5eee2;max-width:900px}.deck-controls{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);display:flex;gap:12px}.deck-controls button,.deck-controls a{border:1px solid var(--border);background:rgba(0,0,0,.4);color:#fff;border-radius:999px;padding:14px 20px;font-weight:800;cursor:pointer}.big-emoji{font-size:110px;margin-bottom:18px}
+  </style>
+</head>
+<body>
+  <main class="deck">
+    <section class="deck-slide active"><div class="big-emoji">🚀</div><h1>TurboRama</h1><p>Sistema premium para apresentar uma experiência retrô organizada, bonita e vendável.</p></section>
+    <section class="deck-slide"><div class="big-emoji">❌</div><h1>O problema</h1><p>Produto sem apresentação parece improvisado. Cliente não entende valor, fica inseguro e abandona a compra.</p></section>
+    <section class="deck-slide"><div class="big-emoji">✅</div><h1>A solução</h1><p>Uma interface profissional, explicação clara, suporte e caminho direto para compra ou atendimento.</p></section>
+    <section class="deck-slide"><div class="big-emoji">🎮</div><h1>O que o cliente recebe</h1><p>Licença digital, orientação de instalação, material de apresentação e suporte conforme o plano adquirido.</p></section>
+    <section class="deck-slide"><div class="big-emoji">🛡️</div><h1>Venda com segurança</h1><p>Sem prometer conteúdo de terceiros. Use apenas arquivos autorizados e mantenha termos claros.</p></section>
+    <section class="deck-slide"><div class="big-emoji">💬</div><h1>Próximo passo</h1><p>Comprar no checkout, chamar no WhatsApp ou assistir à demonstração antes de fechar.</p><div class="actions"><a class="btn primary" data-link="whatsapp" href="#">WhatsApp</a><a class="btn secondary" data-link="checkout" href="#">Checkout</a></div></section>
+  </main>
+  <div class="deck-controls"><button id="prev">Anterior</button><button id="next">Próximo</button><a href="index.html">Site</a></div>
+  <script src="config.js"></script><script src="assets/app.js"></script>
+  <script>
+    const slides=[...document.querySelectorAll('.deck-slide')]; let i=0;
+    function show(n){i=(n+slides.length)%slides.length;slides.forEach((s,idx)=>s.classList.toggle('active',idx===i));}
+    document.getElementById('next').onclick=()=>show(i+1);document.getElementById('prev').onclick=()=>show(i-1);
+    addEventListener('keydown',e=>{if(e.key==='ArrowRight')show(i+1); if(e.key==='ArrowLeft')show(i-1);});
+  </script>
+</body>
+</html>

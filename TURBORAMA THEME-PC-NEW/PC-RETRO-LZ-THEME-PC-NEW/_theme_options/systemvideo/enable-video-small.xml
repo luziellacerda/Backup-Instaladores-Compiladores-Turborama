@@ -1,0 +1,226 @@
+<!-- Theme by LZRetroGames
+-->
+<theme>
+     <formatVersion>7</formatVersion>
+
+     <!-- CONFIGURAÇÃO BASE DOS VÍDEOS -->
+     <view name="system">
+
+          <!-- VÍDEO 1 PRINCIPAL -->
+          <video name="system_video" extra="true">
+               <maxSize>0.240 0.338</maxSize>
+               <effect>none</effect>
+               <roundCorners>5</roundCorners>
+               <showSnapshotNoVideo>false</showSnapshotNoVideo>
+               <showSnapshotDelay>false</showSnapshotDelay>
+               <path>${themePath}/_theme_inc/videos/tela1/${system.theme}.mp4</path>
+               <zIndex>95</zIndex>
+               <audio>false</audio>
+               <default>${themePath}/_theme_inc/videos/no-video.mp4</default>
+          </video>
+
+          <!-- VÍDEO 2 -->
+          <video name="system_video_2" extra="true">
+               <maxSize>0.240 0.338</maxSize>
+               <effect>none</effect>
+               <roundCorners>5</roundCorners>
+               <showSnapshotNoVideo>false</showSnapshotNoVideo>
+               <showSnapshotDelay>false</showSnapshotDelay>
+               <path>${themePath}/_theme_inc/videos/tela2/${system.theme}.mp4</path>
+               <zIndex>95</zIndex>
+               <audio>false</audio>
+               <default>${themePath}/_theme_inc/videos/no-video.mp4</default>
+          </video>
+
+          <!-- VÍDEO 3 -->
+          <video name="system_video_3" extra="true">
+               <maxSize>0.240 0.338</maxSize>
+               <effect>none</effect>
+               <roundCorners>5</roundCorners>
+               <showSnapshotNoVideo>false</showSnapshotNoVideo>
+               <showSnapshotDelay>false</showSnapshotDelay>
+               <path>${themePath}/_theme_inc/videos/tela3/${system.theme}.mp4</path>
+               <zIndex>95</zIndex>
+               <audio>false</audio>
+               <default>${themePath}/_theme_inc/videos/no-video.mp4</default>
+          </video>
+
+          <!-- GRID NO FUNDO -->
+          <image name="grid_lines_effect" extra="true">
+               <pos>0 0</pos>
+               <size>1 1</size>
+               <path>${themePath}/_theme_inc/effects/grid-lines.png</path>
+               <opacity>0.35</opacity>
+               <zIndex>90</zIndex>
+          </image>
+
+          <!-- BORDA DO VÍDEO 1 -->
+          <image name="loading_border_1" extra="true">
+               <path>${themePath}/_theme_inc/effects/video-border.png</path>
+               <opacity>1</opacity>
+               <zIndex>96</zIndex>
+          </image>
+
+          <!-- BORDA DO VÍDEO 2 -->
+          <image name="loading_border_2" extra="true">
+               <path>${themePath}/_theme_inc/effects/video-border.png</path>
+               <opacity>1</opacity>
+               <zIndex>96</zIndex>
+          </image>
+
+          <!-- BORDA DO VÍDEO 3 -->
+          <image name="loading_border_3" extra="true">
+               <path>${themePath}/_theme_inc/effects/video-border.png</path>
+               <opacity>1</opacity>
+               <zIndex>96</zIndex>
+          </image>
+
+     </view>
+
+
+     <!-- ======================================================= -->
+     <!-- GRANDE -->
+     <!-- ======================================================= -->
+     <view name="system" ifSubset="carousel:big">
+
+          <video name="system_video" extra="true">
+               <pos>0.020 0.608</pos>
+               <maxSize>0.195 0.270</maxSize>
+          </video>
+
+          <video name="system_video_2" extra="true">
+               <pos>0.775 0.520</pos>
+               <maxSize>0.190 0.145</maxSize>
+          </video>
+
+          <video name="system_video_3" extra="true">
+               <pos>0.775 0.710</pos>
+               <maxSize>0.190 0.145</maxSize>
+          </video>
+
+          <image name="loading_border_1" extra="true">
+               <pos>0.015 0.600</pos>
+               <size>0.205 0.285</size>
+          </image>
+
+          <image name="loading_border_2" extra="true">
+               <pos>0.770 0.512</pos>
+               <size>0.200 0.160</size>
+          </image>
+
+          <image name="loading_border_3" extra="true">
+               <pos>0.770 0.702</pos>
+               <size>0.200 0.160</size>
+          </image>
+
+          <stackpanel name="contenedor-systemdata" extra="true">
+               <pos>0.240 0.608</pos>
+          </stackpanel>
+
+          <text name="system_description" extra="true">
+               <pos>0.999 0.999</pos>
+          </text>
+
+     </view>
+
+
+     <!-- ======================================================= -->
+     <!-- MÉDIO / LZ CONFIG -->
+     <!-- ======================================================= -->
+     <view name="system" ifSubset="carousel:medium">
+
+          <!-- VÍDEO 1 -->
+          <video name="system_video" extra="true">
+               <pos>0.680 0.740</pos>
+               <maxSize>0.190 0.150</maxSize>
+          </video>
+
+          <!-- VÍDEO 2 -->
+          <video name="system_video_2" extra="true">
+               <pos>0.540 0.740</pos>
+               <maxSize>0.190 0.150</maxSize>
+          </video>
+
+          <!-- VÍDEO 3 -->
+          <video name="system_video_3" extra="true">
+               <pos>0.820 0.740</pos>
+               <maxSize>0.170 0.150</maxSize>
+          </video>
+
+          <!-- BORDA VÍDEO 1 -->
+          <image name="loading_border_1" extra="true">
+               <pos>0.675 0.735</pos>
+               <size>0.200 0.160</size>
+          </image>
+
+          <!-- BORDA VÍDEO 2 -->
+          <image name="loading_border_2" extra="true">
+               <pos>0.535 0.735</pos>
+               <size>0.200 0.160</size>
+          </image>
+
+          <!-- BORDA VÍDEO 3 -->
+          <image name="loading_border_3" extra="true">
+               <pos>0.815 0.735</pos>
+               <size>0.180 0.160</size>
+          </image>
+
+          <stackpanel name="contenedor-systemdata" extra="true">
+               <pos>0.048 0.700</pos>
+          </stackpanel>
+
+          <text name="system_description" extra="true">
+               <pos>0.048 0.750</pos>
+          </text>
+
+     </view>
+
+
+     <!-- ======================================================= -->
+     <!-- PEQUENO -->
+     <!-- ======================================================= -->
+     <view name="system" ifSubset="carousel:small">
+
+          <!-- CUIDADO: não use 0.900 com vídeo grande, porque sai da tela -->
+
+          <video name="system_video" extra="true">
+               <pos>0.650 0.520</pos>
+               <maxSize>0.220 0.300</maxSize>
+          </video>
+
+          <video name="system_video_2" extra="true">
+               <pos>0.725 0.510</pos>
+               <maxSize>0.210 0.145</maxSize>
+          </video>
+
+          <video name="system_video_3" extra="true">
+               <pos>0.725 0.690</pos>
+               <maxSize>0.210 0.145</maxSize>
+          </video>
+
+          <image name="loading_border_1" extra="true">
+               <pos>0.645 0.510</pos>
+               <size>0.235 0.320</size>
+          </image>
+
+          <image name="loading_border_2" extra="true">
+               <pos>0.715 0.500</pos>
+               <size>0.230 0.165</size>
+          </image>
+
+          <image name="loading_border_3" extra="true">
+               <pos>0.715 0.680</pos>
+               <size>0.230 0.165</size>
+          </image>
+
+          <stackpanel name="contenedor-systemdata" extra="true">
+               <pos>0.260 0.520</pos>
+          </stackpanel>
+
+          <text name="system_description" extra="true">
+               <pos>0.260 0.560</pos>
+          </text>
+
+     </view>
+
+</theme>

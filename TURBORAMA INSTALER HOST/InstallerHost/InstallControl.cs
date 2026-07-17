@@ -139,7 +139,7 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 				Exception ex3 = completeArgs.Result as Exception;
 				if (ex3 != null)
 				{
-					MessageBox.Show(this, "Falha na instalação: " + ex3.Message, null, MessageBoxButtons.OK, MessageBoxIcon.Hand);
+					MessageBox.Show(this, "Falha na instalação: " + DownloadDisplayMask.Apply(ex3.Message), null, MessageBoxButtons.OK, MessageBoxIcon.Hand);
 					return;
 				}
 				Logger.Log("Installation successful, showing finish screen.");
@@ -429,6 +429,7 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			{
 				throw new FileNotFoundException("TurboRama.exe was not created. The installer archive does not contain RetroBat.exe, retrobat.exe, Turborama.exe or TurboRama.exe.", turboRamaExe);
 			}
+
 		}
 
 
@@ -438,7 +439,7 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 
 			if (!File.Exists(turboRamaExe))
 			{
-				throw new FileNotFoundException("Cannot create shortcuts because TurboRama.exe was not found.", turboRamaExe);
+				throw new FileNotFoundException("Cannot create shortcuts because TurboRama2026.exe was not found.", turboRamaExe);
 			}
 
 			try
@@ -446,9 +447,16 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 				string desktopFolder = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
 				if (!string.IsNullOrWhiteSpace(desktopFolder))
 				{
-					string desktopShortcut = Path.Combine(desktopFolder, "TurboRama.lnk");
-					this.CreateShortcut(desktopShortcut, turboRamaExe, destinationFolder, "Abrir TurboRama", turboRamaExe);
+					string desktopShortcut = Path.Combine(desktopFolder, "TurboRama2026.lnk");
+					this.CreateShortcut(desktopShortcut, turboRamaExe, destinationFolder, "Abrir TurboRama 2026", turboRamaExe);
 					Logger.Log("Desktop shortcut created: " + desktopShortcut);
+				}
+
+				string driveRootShortcut = Path.Combine(Path.GetPathRoot(destinationFolder) ?? "D:\\", "TurboRama2026.lnk");
+				if (!string.IsNullOrWhiteSpace(driveRootShortcut))
+				{
+					this.CreateShortcut(driveRootShortcut, turboRamaExe, destinationFolder, "Abrir TurboRama 2026", turboRamaExe);
+					Logger.Log("Drive shortcut created: " + driveRootShortcut);
 				}
 
 				string programsFolder = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
@@ -456,8 +464,8 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 				{
 					string startMenuFolder = Path.Combine(programsFolder, "TurboRama");
 					Directory.CreateDirectory(startMenuFolder);
-					string startMenuShortcut = Path.Combine(startMenuFolder, "TurboRama.lnk");
-					this.CreateShortcut(startMenuShortcut, turboRamaExe, destinationFolder, "Abrir TurboRama", turboRamaExe);
+					string startMenuShortcut = Path.Combine(startMenuFolder, "TurboRama2026.lnk");
+					this.CreateShortcut(startMenuShortcut, turboRamaExe, destinationFolder, "Abrir TurboRama 2026", turboRamaExe);
 					Logger.Log("Start Menu shortcut created: " + startMenuShortcut);
 				}
 			}

@@ -1,0 +1,8 @@
+﻿TESTE RAPIDO (sem reboot):
+1) Ctrl+End  -> deve abrir menu TurboRama
+2) Ctrl+Alt+Del -> ainda pode abrir ate reiniciar (filtro carrega no boot)
+
+TESTE APOS REINICIAR:
+1) Ctrl+Alt+Del -> NAO deve abrir (Blocked)
+2) Ctrl+End -> menu TurboRama
+3) Win / Alt+Tab / Shift+Ctrl+Esc -> bloqueados

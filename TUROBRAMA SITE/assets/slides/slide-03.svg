@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1680" viewBox="0 0 1080 1680">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#06100b"/><stop offset=".58" stop-color="#101728"/><stop offset="1" stop-color="#06070c"/></linearGradient><radialGradient id="r" cx="30%" cy="25%" r="72%"><stop stop-color="#1eff84" stop-opacity=".28"/><stop offset="1" stop-color="#1eff84" stop-opacity="0"/></radialGradient></defs>
+  <rect width="1080" height="1680" fill="url(#g)"/><rect width="1080" height="1680" fill="url(#r)"/>
+  <text x="70" y="150" fill="#1eff84" font-family="Arial Black,Arial" font-size="48">TURBORAMA</text>
+  <text x="70" y="260" fill="#fff" font-family="Arial Black,Arial" font-size="80">Compra com</text>
+  <text x="70" y="350" fill="#fff" font-family="Arial Black,Arial" font-size="80">atendimento</text>
+  <text x="74" y="424" fill="#b9cfc4" font-family="Arial" font-size="34">Use este slide para reforçar suporte,</text><text x="74" y="468" fill="#b9cfc4" font-family="Arial" font-size="34">instalação e processo simples.</text>
+  <g transform="translate(70 585)">
+    <rect width="940" height="830" rx="54" fill="#05080d" stroke="#fff" stroke-opacity=".12"/>
+    <g transform="translate(70 85)">
+      <rect width="800" height="120" rx="36" fill="#1eff84" opacity=".10" stroke="#1eff84" stroke-opacity=".22"/>
+      <circle cx="65" cy="60" r="32" fill="#1eff84"/><text x="54" y="73" fill="#00140a" font-family="Arial Black" font-size="34">1</text><text x="125" y="54" fill="#fff" font-family="Arial Black,Arial" font-size="32">Cliente vê a oferta</text><text x="125" y="92" fill="#b9cfc4" font-family="Arial" font-size="26">Página direta para anúncio mobile</text>
+    </g>
+    <g transform="translate(70 280)">
+      <rect width="800" height="120" rx="36" fill="#00d0ff" opacity=".10" stroke="#00d0ff" stroke-opacity=".22"/>
+      <circle cx="65" cy="60" r="32" fill="#00d0ff"/><text x="54" y="73" fill="#00140a" font-family="Arial Black" font-size="34">2</text><text x="125" y="54" fill="#fff" font-family="Arial Black,Arial" font-size="32">Tira dúvida no WhatsApp</text><text x="125" y="92" fill="#b9cfc4" font-family="Arial" font-size="26">Mensagem pronta e rastreamento UTM</text>
+    </g>
+    <g transform="translate(70 475)">
+      <rect width="800" height="120" rx="36" fill="#ff3b8d" opacity=".10" stroke="#ff3b8d" stroke-opacity=".22"/>
+      <circle cx="65" cy="60" r="32" fill="#ff3b8d"/><text x="54" y="73" fill="#fff" font-family="Arial Black" font-size="34">3</text><text x="125" y="54" fill="#fff" font-family="Arial Black,Arial" font-size="32">Vai para o checkout</text><text x="125" y="92" fill="#b9cfc4" font-family="Arial" font-size="26">Botão de compra sempre visível</text>
+    </g>
+    <rect x="170" y="680" width="600" height="90" rx="45" fill="#1eff84"/><text x="285" y="738" fill="#00140a" font-family="Arial Black,Arial" font-size="34">COMEÇAR AGORA</text>
+  </g>
+</svg>

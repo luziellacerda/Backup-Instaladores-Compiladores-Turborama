@@ -1,0 +1,31 @@
+﻿
+2026-07-16 10:22:32  === BACKUP-SEGURANCA-PANE START ===
+2026-07-16 10:22:33  Dest=D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\FASE-FINAL-ANTI-PANE_2026-07-16_10-22-32
+2026-07-16 10:22:33  Project=D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama
+2026-07-16 10:22:33  [1/7] Codigo fonte do projecto...
+2026-07-16 10:22:33  OK robocopy exit=1  D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\FASE-FINAL-ANTI-PANE_2026-07-16_10-22-32\01-Projeto-Fonte
+2026-07-16 10:22:33  [2/7] publish\ (UI/Installer build)...
+2026-07-16 10:22:33  OK robocopy exit=1  D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama\publish -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\FASE-FINAL-ANTI-PANE_2026-07-16_10-22-32\02-Publish
+2026-07-16 10:22:33  [3/7] C:\TurboRama (deploy live)...
+2026-07-16 10:22:33  OK robocopy exit=1  C:\TurboRama -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\FASE-FINAL-ANTI-PANE_2026-07-16_10-22-32\03-TurboRama-Live
+2026-07-16 10:22:33  [4/7] Factory Pack...
+2026-07-16 10:22:33  OK robocopy exit=1  D:\tr-factory-pack\TurboRama-Factory-Pack -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\FASE-FINAL-ANTI-PANE_2026-07-16_10-22-32\04-Factory-Pack
+2026-07-16 10:22:33  OK zip factory pack copiado
+2026-07-16 10:22:33  [5/7] Snapshot registo/servicos...
+2026-07-16 10:22:33  OK security snapshot
+2026-07-16 10:22:33  [6/7] SHA256 dos executaveis criticos...
+2026-07-16 10:22:39  OK hashes -> SHA256-CRITICAL.txt (70 linhas)
+2026-07-16 10:22:39  [7/7] Instrucoes + auto-teste de integridade...
+2026-07-16 10:22:39  TEST OK  01-Projeto-Fonte\src\TurboRama.Launcher\Program.cs
+2026-07-16 10:22:39  TEST OK  01-Projeto-Fonte\src\TurboRama.Launcher\SystemSecurityForm.cs
+2026-07-16 10:22:39  TEST OK  01-Projeto-Fonte\src\TurboRama.Launcher\SecurityAgentHost.cs
+2026-07-16 10:22:39  TEST OK  01-Projeto-Fonte\src\TurboRama.Configuration\FactoryDefaults.cs
+2026-07-16 10:22:39  TEST OK  01-Projeto-Fonte\scripts\Build-FactoryPack.ps1
+2026-07-16 10:22:39  TEST OK  RESTAURAR-INSTRUCOES.txt
+2026-07-16 10:22:39  TEST OK  SHA256-CRITICAL.txt
+2026-07-16 10:22:39  TEST OK  BACKUP-LOG.txt
+2026-07-16 10:22:39  TEST OK  Factory Launcher.exe
+2026-07-16 10:22:39  TEST OK  Live Launcher.exe
+2026-07-16 10:22:39  SIZE_MB=40.4
+2026-07-16 10:22:39  COPY_OK=6 COPY_WARN=0 TEST_OK=10 TEST_FAIL=0
+2026-07-16 10:22:39  === BACKUP END Dest=D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\FASE-FINAL-ANTI-PANE_2026-07-16_10-22-32 ===

@@ -1,0 +1,66 @@
+{
+  "minutesPerCoin": 5,
+  "coinKey": "F10",
+  "coinDebounceMilliseconds": 300,
+  "warningSeconds": 60,
+  "criticalWarningSeconds": 10,
+  "countOnlyWhileEmulatorIsRunning": true,
+  "blockGameWithoutCredit": true,
+  "closeEmulatorWhenTimeEnds": true,
+  "emulatorCheckIntervalMilliseconds": 1000,
+  "gracefulCloseTimeoutMilliseconds": 3000,
+  "forceCloseAfterTimeout": true,
+  "saveRemainingTime": true,
+  "restoreCreditAfterRestart": true,
+  "window": {
+    "enabled": true,
+    "width": 168,
+    "height": 64,
+    "rightMargin": 10,
+    "topMargin": 10,
+    "topMost": true,
+    "opacity": 0.82,
+    "allowClose": true,
+    "compact": true
+  },
+  "sound": {
+    "enabled": false,
+    "coinAccepted": "sounds/coin.wav",
+    "warning": "sounds/warning.wav",
+    "timeEnded": "sounds/end.wav"
+  },
+  "logging": {
+    "enabled": true,
+    "retentionDays": 14,
+    "includeProcessEvents": true
+  },
+  "emulatorProcesses": [
+    "retroarch",
+    "mame",
+    "mame64",
+    "pcsx2",
+    "pcsx2-qt",
+    "dolphin",
+    "duckstation-qt",
+    "duckstation-qt-x64-ReleaseLTCG",
+    "ppssppwindows",
+    "ppssppwindows64",
+    "rpcs3",
+    "cemu",
+    "xenia",
+    "xenia_canary",
+    "flycast",
+    "demul",
+    "supermodel",
+    "notepad"
+  ],
+  "protectedProcesses": [
+    "emulationstation",
+    "es-de",
+    "explorer",
+    "TurboRama.ArcadeTimer",
+    "TurboRama.Launcher",
+    "TurboRama.Watchdog",
+    "TurboRama.Maintenance"
+  ]
+}

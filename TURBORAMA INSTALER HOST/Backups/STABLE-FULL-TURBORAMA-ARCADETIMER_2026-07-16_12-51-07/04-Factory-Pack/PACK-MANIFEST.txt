@@ -1,0 +1,12 @@
+TurboRama-Factory-Pack
+Built: 2026-07-16 10:00:33
+Project: D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama
+
+EXEs:
+  TurboRama.Setup.exe (148.5 KB)
+  TurboRama.UI.exe (148.5 KB)
+  App\Launcher\TurboRama.Launcher.exe (148.5 KB)
+  App\Maintenance\TurboRama.Maintenance.exe (148.5 KB)
+  App\Tools\Autologon64.exe (430.9 KB)
+  App\Watchdog\TurboRama.Watchdog.exe (148.5 KB)
+  Installer\TurboRama.UI.exe (148.5 KB)

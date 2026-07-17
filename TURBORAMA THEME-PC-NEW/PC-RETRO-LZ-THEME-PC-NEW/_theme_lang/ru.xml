@@ -1,0 +1,125 @@
+﻿<!-- Theme by LZ-RETRO-PC-2026
+https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X 
+-->
+<theme>
+  <formatVersion>7</formatVersion>
+  
+  <variables lang="ru">
+<theme.welcome>Добро пожаловать в Playstation X для</theme.welcome>
+    <theme.start>Пуск</theme.start>
+    <theme.mostplayed>Самая запускаемая:</theme.mostplayed>
+    <theme.items>Элементы:</theme.items>
+    <theme.collections>Коллекции</theme.collections>
+    <GamesNumber>Игр</GamesNumber>
+    <GamesFavs>Избранных</GamesFavs>
+    <NumberPlayed>Сыгранных</NumberPlayed>
+    <blue>Синий</blue>
+    <black>Черный</black>
+    <red>Красный</red>
+    <yellow>Желтый</yellow>
+    <green>Зеленый</green>
+    <purple>Фиолетовый</purple>
+    <orange>Оранжевый</orange>
+    <pink>Розовый</pink>cus
+    <default>По умолчанию</default>
+    <big>Большой</big>
+    <medium>Средний</medium>
+    <small>Маленький</small>
+    <yes>Да</yes>
+    <no>Нет</no>
+    <none>Нет</none>
+    <never>Никогда</never>
+    <always>Всегда</always>
+    <iconset>Набор кнопок и иконок</iconset>
+    <theme.frontend>Используемый фронтенд (оболочка)</theme.frontend>
+    <gameBar>Показать информацию об игре</gameBar>
+    <CarouselImageSize>Размер списка систем</CarouselImageSize>
+    <theme.videoBackground>Показать видео в списке систем</theme.videoBackground>
+    <theme.system-description>Показать описания систем</theme.system-description>
+    <theme.animated-background>Анимированный фон (волны)</theme.animated-background>
+    <theme.backgroundVideoOption>В качестве фона</theme.backgroundVideoOption>
+    <theme.windowVideoOption>В маленьком окне</theme.windowVideoOption>
+    <theme.insideVideoOption>Внутри тайла (плитки)</theme.insideVideoOption>
+    <theme.smallScreenOption>В маленьком окне</theme.smallScreenOption>
+    <theme.videoaudio>Включить звук в системных видео</theme.videoaudio>
+    <theme.videoRandom>Показать случайный видеофрагмент</theme.videoRandom>
+    <ifnospot>Если системного видео нет</ifnospot>
+    <theme.Avatar>Отображаемый аватар</theme.Avatar>
+    <theme.username>Отображаемый псевдоним (Ник)</theme.username>
+    <custom>Персональный</custom>
+    <theme.videoGamelistDelay>Задержка видео в списке игр</theme.videoGamelistDelay>
+    <VideoOff>Не отображать</VideoOff>
+    <theme.systemConsole>Показывать логотип и консоли в списке систем</theme.systemConsole>
+    <randomGame>Случайная игра</randomGame>
+    <theme.colorset>Основной цвет темы</theme.colorset>
+    <theme.secondaryColorset>Дополнительный цвет темы</theme.secondaryColorset>
+    <theme.gridvideo>Отображать видеофрагмент игры</theme.gridvideo>
+    <theme.videoSnapAudio>Включить звук в видеофрагментах</theme.videoSnapAudio>
+    <theme.animatedList>Анимированные переходы в списке игр</theme.animatedList>
+    <theme.animatedSystem>Анимированные переходы в списке систем</theme.animatedSystem>
+    <theme.aspect-ratio>Соотношение Сторон Экрана</theme.aspect-ratio>
+    <theme.oversizeVideoOption>В большом окне</theme.oversizeVideoOption>
+    <theme.bato35compatilble>Совместимо только с Batocera 35 или выше</theme.bato35compatilble>
+    <theme.netplay-required>Пожалуйста, включите сетевую игру, чтобы показать свое имя пользователя или выберите другой ник в настройках темы</theme.netplay-required>
+    <theme.ra-required>Пожалуйста, включите Retroachievements, чтобы показать свое имя пользователя или выберите другой ник в настройках темы</theme.ra-required>
+    <theme.hotkey>Справка по горячим клавишам на экране приветствия</theme.hotkey>
+    <theme.hotkey-x86>Показать справку по горячим клавишам</theme.hotkey-x86>
+    <theme.hotkey.gamesplash>Только на экране загрузки игры</theme.hotkey.gamesplash>
+    <theme.hotkey.splash>Только на экране приветствия</theme.hotkey.splash>
+    <theme.hotkey.both>На обоих экранах</theme.hotkey.both>
+    <theme.detected>обнаружено</theme.detected>
+    <theme.detailedorigin>Изображение в детальном просмотре</theme.detailedorigin>
+    <theme.gridMainorigin>Главное изображение в виде сетки</theme.gridMainorigin>
+    <theme.gridorigin>Изображения в сетке</theme.gridorigin>
+    <theme.carouselMainOrigin>Главное изображение в виде карусели</theme.carouselMainOrigin>
+    <theme.carouselOrigin>Изображения в карусели</theme.carouselOrigin>
+    <theme.systemBackground>Фон в списке систем</theme.systemBackground>
+    <randomFanart>Случайный фанарт</randomFanart>
+    <theme.gamelistBackground>Фоновое изображение в списке игр</theme.gamelistBackground>
+    <theme.forced>Принудительно</theme.forced>
+    <theme.gameDescription>Показать описание игры</theme.gameDescription>
+    <carouselViewName>Горизонтальная карусель</carouselViewName>
+    <ps4StylelViewName>В стиле PS4</ps4StylelViewName>
+    <ps5StylelViewName>В стиле PS5</ps5StylelViewName>
+    <classiclViewName>Классическая карусель</classiclViewName>
+    <theme.mainImage>Главное изображение (Обложка)</theme.mainImage>
+    <theme.gridImage>Изображение внутри тайла (плитки)</theme.gridImage>
+    <fullGridlViewName>Полноразмерная сетка</fullGridlViewName>
+    <theme.gamesplash-type>Экран загрузки игры</theme.gamesplash-type>
+    <image-full-size>Изображение на весь экран</image-full-size>
+    <theme.nav-sounds>Звуки навигации</theme.nav-sounds>
+    <singlelViewName>Игра за игрой</singlelViewName>
+    <theme.box>коробка</theme.box>
+    <theme.logo>логотип</theme.logo>
+    <theme.romFolder>Показать информацию о папке с ROMами</theme.romFolder>
+    <dim>Затемненный</dim>
+    <theme-lastplayedLabel>Последний запуск</theme-lastplayedLabel>
+    <theme-timesPlayedLabel>Запусков:</theme-timesPlayedLabel>
+    <theme-gameTimeLabel>Время игры:</theme-gameTimeLabel>
+    <theme.dummydata>Показать версию и год в верхней части</theme.dummydata>
+    <dummydata.showversion>Только версия</dummydata.showversion>
+    <dummydata.showyear>Только год</dummydata.showyear>    
+    <theme.hardwareType if="${system.hardwareType} == 'console'">Консоль</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'computer'">Компьютер</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'custom collection'">Пользовательская коллекция</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'portable'">Портативная консоль</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'system'">Cистема</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'auto collection'">Автоматическая коллекция</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'port'">Порт</theme.hardwareType>
+    <theme.thumbnail-type>Тип коробки игры (приоритет)</theme.thumbnail-type>
+    <theme.showlogo>Показать логотип игры</theme.showlogo>
+    <theme.topinfoarea>Вид верхней инфо-области</theme.topinfoarea>
+    <theme.clean>Чистая/минимальная</theme.clean>
+    <theme.region>Регион</theme.region>
+    <theme.europe>Европа</theme.europe>
+    <theme.usa>США</theme.usa>
+    <theme.japan>Япония</theme.japan>
+    <theme.overlayExtra>Показать картинки-наложения в списке систем</theme.overlayExtra>
+    <theme.gamelistOverlayExtra>Показать картинки-наложения в списке игр</theme.gamelistOverlayExtra>
+    <theme.nonumbers>Без номера версии и года</theme.nonumbers>
+    <theme.highVramRequired>(требуется много VRAM)</theme.highVramRequired>
+    <CarouselType>Стиль карусели систем</CarouselType>
+    <theme.SystemConsole>Показать мини-системы в списке систем</theme.SystemConsole>
+    <theme.SystemLogo>Показать логотипы систем в списке систем</theme.SystemLogo>    
+  </variables>
+</theme>

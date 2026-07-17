@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1680" viewBox="0 0 1080 1680">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#04060a"/><stop offset=".5" stop-color="#0d1524"/><stop offset="1" stop-color="#071a10"/></linearGradient><radialGradient id="r" cx="65%" cy="35%" r="80%"><stop stop-color="#00d0ff" stop-opacity=".30"/><stop offset="1" stop-color="#00d0ff" stop-opacity="0"/></radialGradient></defs>
+  <rect width="1080" height="1680" fill="url(#g)"/><rect width="1080" height="1680" fill="url(#r)"/>
+  <text x="70" y="150" fill="#1eff84" font-family="Arial Black,Arial" font-size="48">TURBORAMA</text>
+  <text x="70" y="260" fill="#fff" font-family="Arial Black,Arial" font-size="80">Página feita</text>
+  <text x="70" y="350" fill="#fff" font-family="Arial Black,Arial" font-size="80">para vender</text>
+  <text x="74" y="424" fill="#b9cfc4" font-family="Arial" font-size="34">Oferta, botões, prova visual e</text><text x="74" y="468" fill="#b9cfc4" font-family="Arial" font-size="34">redirecionamento rastreável.</text>
+  <g transform="translate(70 600)">
+    <rect width="940" height="780" rx="54" fill="#071019" stroke="#fff" stroke-opacity=".12"/>
+    <circle cx="470" cy="260" r="190" fill="#1eff84" opacity=".08"/><circle cx="470" cy="260" r="130" fill="#00d0ff" opacity=".08"/>
+    <polygon points="430,170 430,350 585,260" fill="#1eff84"/>
+    <rect x="80" y="510" width="780" height="56" rx="28" fill="#fff" opacity=".10"/>
+    <rect x="80" y="598" width="620" height="44" rx="22" fill="#fff" opacity=".08"/>
+    <rect x="80" y="685" width="360" height="74" rx="37" fill="#1eff84"/>
+    <rect x="470" y="685" width="300" height="74" rx="37" fill="#fff" opacity=".08" stroke="#fff" stroke-opacity=".15"/>
+    <text x="152" y="735" fill="#00140a" font-family="Arial Black,Arial" font-size="30">CHECKOUT</text>
+    <text x="545" y="735" fill="#fff" font-family="Arial Black,Arial" font-size="30">WHATSAPP</text>
+  </g>
+  <g transform="translate(70 1440)"><rect width="292" height="94" rx="28" fill="#1eff84" opacity=".18" stroke="#1eff84" stroke-opacity=".32"/><rect x="324" width="292" height="94" rx="28" fill="#00d0ff" opacity=".14" stroke="#00d0ff" stroke-opacity=".28"/><rect x="648" width="292" height="94" rx="28" fill="#ff3b8d" opacity=".14" stroke="#ff3b8d" stroke-opacity=".28"/><text x="45" y="60" fill="#dfffee" font-family="Arial Black,Arial" font-size="24">ANÚNCIO</text><text x="376" y="60" fill="#dfffee" font-family="Arial Black,Arial" font-size="24">DEMO</text><text x="700" y="60" fill="#dfffee" font-family="Arial Black,Arial" font-size="24">SUPORTE</text></g>
+</svg>

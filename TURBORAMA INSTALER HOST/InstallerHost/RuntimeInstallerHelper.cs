@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Security.Principal;
 
@@ -51,11 +52,14 @@ namespace InstallerHost
 				return;
 			}
 
-			progressCallback("Instalando .NET Framework 3.5", "Necessario para jogos e emuladores antigos...");
-			RunCommand("dism.exe", "/Online /Enable-Feature /FeatureName:NetFx3 /All /NoRestart", false, ".NET Framework 3.5");
+			progressCallback("Instalando .NET Framework 3.5", "Pacote offline para jogos e emuladores antigos...");
+			string installerPath = PrerequisiteBundle.ExtractBundledFile("dotNetFx35_WX_10_x86_x64.exe");
+			RunInstaller(installerPath, "/y /q /norestart", true, ".NET Framework 3.5");
+
 			if (!PrerequisiteDetector.IsDotNet35Installed())
 			{
-				Logger.Log("[AVISO] .NET Framework 3.5 nao confirmado. Em PC offline pode exigir Windows Update na primeira vez.");
+				Logger.Log("[AVISO] .NET Framework 3.5 nao confirmado apos instalador offline. Tentando DISM...");
+				RunCommand("dism.exe", "/Online /Enable-Feature /FeatureName:NetFx3 /All /NoRestart", false, ".NET Framework 3.5 (DISM)");
 			}
 		}
 
@@ -67,8 +71,8 @@ namespace InstallerHost
 				return;
 			}
 
-			progressCallback("Instalando .NET Framework 4.8", "Runtime principal do TurboRama...");
-			string installerPath = PrerequisiteBundle.ExtractBundledFile("NDP48-Web.exe");
+			progressCallback("Instalando .NET Framework 4.8", "Instalador offline completo do TurboRama...");
+			string installerPath = PrerequisiteBundle.ExtractBundledFile("NDP48-x86-x64-AllOS-ENU.exe");
 			RunInstaller(installerPath, "/q /norestart", true, ".NET Framework 4.8");
 
 			if (!IsDotNet48Installed())
@@ -184,7 +188,7 @@ namespace InstallerHost
 						RunInstaller(installerExe, args, false, packageName + " " + args);
 					}
 
-					if (!PrerequisiteDetector.IsLegacyVcRedistInstalled(legacyVersion, legacyArch))
+					if (!PrerequisiteDetector.WaitForLegacyVcRedistInstalled(legacyVersion, legacyArch, 15000))
 					{
 						throw new Exception("Visual C++ " + legacyVersion + " " + legacyArch + " nao foi confirmado apos a instalacao.");
 					}
@@ -284,8 +288,8 @@ namespace InstallerHost
 				return;
 			}
 
-			progressCallback("Instalando WebView2", "Runtime usado por launchers e interfaces modernas...");
-			string installerPath = PrerequisiteBundle.ExtractBundledFile("MicrosoftEdgeWebview2Setup.exe");
+			progressCallback("Instalando WebView2", "Instalador offline Evergreen x64...");
+			string installerPath = PrerequisiteBundle.ExtractBundledFile("MicrosoftEdgeWebView2RuntimeInstallerX64.exe");
 			RunInstaller(installerPath, "/silent /install", false, "WebView2 Runtime");
 		}
 
@@ -310,15 +314,73 @@ namespace InstallerHost
 				return;
 			}
 
-			string installerPath = PrerequisiteBundle.TryExtractBundledFile("oalinst.exe");
-			if (string.IsNullOrEmpty(installerPath))
+			progressCallback("Instalando OpenAL", "Implantando DLLs offline para jogos e emuladores...");
+			string zipPath = PrerequisiteBundle.ExtractBundledFile("openal-offline.zip");
+			string workDir = Path.Combine(Path.GetTempPath(), "TurboramaOpenAL");
+			Directory.CreateDirectory(workDir);
+
+			try
 			{
-				Logger.Log("[INFO] OpenAL installer not bundled, skipping.");
+				string extractDir = Path.Combine(workDir, "extract");
+				Directory.CreateDirectory(extractDir);
+				ZipFile.ExtractToDirectory(zipPath, extractDir);
+
+				string x86Dll = Directory.GetFiles(extractDir, "OpenAL32.dll", SearchOption.AllDirectories)
+					.FirstOrDefault(path => path.IndexOf("Win32", StringComparison.OrdinalIgnoreCase) >= 0 || path.IndexOf("x86", StringComparison.OrdinalIgnoreCase) >= 0);
+				string x64Dll = Directory.GetFiles(extractDir, "OpenAL32.dll", SearchOption.AllDirectories)
+					.FirstOrDefault(path => path.IndexOf("Win64", StringComparison.OrdinalIgnoreCase) >= 0 || path.IndexOf("x64", StringComparison.OrdinalIgnoreCase) >= 0);
+
+				if (string.IsNullOrEmpty(x86Dll) || string.IsNullOrEmpty(x64Dll))
+				{
+					string[] allDlls = Directory.GetFiles(extractDir, "OpenAL32.dll", SearchOption.AllDirectories);
+					if (allDlls.Length >= 2)
+					{
+						x86Dll = allDlls.OrderBy(path => new FileInfo(path).Length).First();
+						x64Dll = allDlls.OrderBy(path => new FileInfo(path).Length).Last();
+					}
+				}
+
+				if (string.IsNullOrEmpty(x86Dll) || string.IsNullOrEmpty(x64Dll))
+				{
+					throw new FileNotFoundException("OpenAL32.dll x86/x64 nao encontrado em openal-offline.zip.");
+				}
+
+				DeployOpenAlDll(x86Dll, Environment.GetFolderPath(Environment.SpecialFolder.SystemX86));
+				DeployOpenAlDll(x64Dll, GetNativeSystemDirectory());
+				Logger.Log("OpenAL offline deployed successfully.");
+			}
+			finally
+			{
+				TryDeleteDirectory(workDir);
+			}
+		}
+
+		private static void DeployOpenAlDll(string sourceDll, string destinationFolder)
+		{
+			if (string.IsNullOrEmpty(sourceDll) || string.IsNullOrEmpty(destinationFolder))
+			{
 				return;
 			}
 
-			progressCallback("Instalando OpenAL", "Audio usado por varios jogos e emuladores...");
-			RunInstaller(installerPath, "/S", false, "OpenAL");
+			Directory.CreateDirectory(destinationFolder);
+			string destinationPath = Path.Combine(destinationFolder, "OpenAL32.dll");
+			File.Copy(sourceDll, destinationPath, true);
+			Logger.Log("Deployed OpenAL32.dll to " + destinationPath);
+		}
+
+		private static string GetNativeSystemDirectory()
+		{
+			string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+			if (Environment.Is64BitOperatingSystem && !Environment.Is64BitProcess)
+			{
+				string sysnative = Path.Combine(windows, "Sysnative");
+				if (Directory.Exists(sysnative))
+				{
+					return sysnative;
+				}
+			}
+
+			return Environment.GetFolderPath(Environment.SpecialFolder.System);
 		}
 
 		public static void VerifyCompleteGamingRuntimeStack()

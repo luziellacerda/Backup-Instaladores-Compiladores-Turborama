@@ -1,0 +1,43 @@
+﻿
+2026-07-16 12:51:07  === BACKUP-SEGURANCA-PANE START ===
+2026-07-16 12:51:07  Dest=D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\STABLE-FULL-TURBORAMA-ARCADETIMER_2026-07-16_12-51-07
+2026-07-16 12:51:07  Project=D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama
+2026-07-16 12:51:07  [1/7] Codigo fonte do projecto...
+2026-07-16 12:51:07  OK robocopy exit=1  D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\STABLE-FULL-TURBORAMA-ARCADETIMER_2026-07-16_12-51-07\01-Projeto-Fonte
+2026-07-16 12:51:07  [2/7] publish\ (UI/Installer build)...
+2026-07-16 12:51:07  OK robocopy exit=1  D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama\publish -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\STABLE-FULL-TURBORAMA-ARCADETIMER_2026-07-16_12-51-07\02-Publish
+2026-07-16 12:51:07  [3/7] C:\TurboRama (deploy live)...
+2026-07-16 12:51:16  WARN robocopy exit=9  C:\TurboRama -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\STABLE-FULL-TURBORAMA-ARCADETIMER_2026-07-16_12-51-07\03-TurboRama-Live
+2026-07-16 12:51:16  [4/7] Factory Pack...
+2026-07-16 12:51:16  OK robocopy exit=1  D:\tr-factory-pack\TurboRama-Factory-Pack -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\STABLE-FULL-TURBORAMA-ARCADETIMER_2026-07-16_12-51-07\04-Factory-Pack
+2026-07-16 12:51:16  OK zip factory pack copiado
+2026-07-16 12:51:16  [4b] Arcade Timer (estavel + INTL QA pack)...
+2026-07-16 12:51:18  OK robocopy exit=1  D:\Backup-Instaladores-Compiladores-Turborama\TurboRamaArcadeTimer_Proposta -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\STABLE-FULL-TURBORAMA-ARCADETIMER_2026-07-16_12-51-07\06-ArcadeTimer-Stable\Proposta-Fonte
+2026-07-16 12:51:18  OK robocopy exit=1  D:\Backup-Instaladores-Compiladores-Turborama\TurboRamaArcadeTimer_Proposta\dist\TurboRama-ArcadeTimer-INTL-QA-Pack -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\STABLE-FULL-TURBORAMA-ARCADETIMER_2026-07-16_12-51-07\06-ArcadeTimer-Stable\INTL-QA-Pack
+2026-07-16 12:51:19  OK robocopy exit=1  D:\Backup-Instaladores-Compiladores-Turborama\TurboRamaArcadeTimer_Proposta\dist\TurboRama-ArcadeTimer-0.1.3-enterprise -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\STABLE-FULL-TURBORAMA-ARCADETIMER_2026-07-16_12-51-07\06-ArcadeTimer-Stable\0.1.3-enterprise
+2026-07-16 12:51:19  OK zip timer: TurboRama-ArcadeTimer-INTL-QA-Pack.zip
+2026-07-16 12:51:19  OK zip timer: TurboRama-ArcadeTimer-0.1.3-enterprise.zip
+2026-07-16 12:51:19  [5/8] Snapshot registo/servicos...
+2026-07-16 12:51:19  OK security snapshot
+2026-07-16 12:51:19  [6/7] SHA256 dos executaveis criticos...
+2026-07-16 12:51:25  OK hashes -> SHA256-CRITICAL.txt (70 linhas)
+2026-07-16 12:51:25  [7/7] Instrucoes + auto-teste de integridade...
+2026-07-16 12:51:25  TEST OK  01-Projeto-Fonte\src\TurboRama.Launcher\Program.cs
+2026-07-16 12:51:25  TEST OK  01-Projeto-Fonte\src\TurboRama.Launcher\SystemSecurityForm.cs
+2026-07-16 12:51:25  TEST OK  01-Projeto-Fonte\src\TurboRama.Launcher\SecurityAgentHost.cs
+2026-07-16 12:51:25  TEST OK  01-Projeto-Fonte\src\TurboRama.Configuration\FactoryDefaults.cs
+2026-07-16 12:51:25  TEST OK  01-Projeto-Fonte\scripts\Build-FactoryPack.ps1
+2026-07-16 12:51:25  TEST OK  RESTAURAR-INSTRUCOES.txt
+2026-07-16 12:51:25  TEST OK  SHA256-CRITICAL.txt
+2026-07-16 12:51:25  TEST OK  BACKUP-LOG.txt
+2026-07-16 12:51:25  TEST OK  Factory Launcher.exe
+2026-07-16 12:51:25  TEST OK  Live Launcher.exe
+2026-07-16 12:51:26  SIZE_MB=2299.4
+2026-07-16 12:51:26  COPY_OK=8 COPY_WARN=1 TEST_OK=10 TEST_FAIL=0
+2026-07-16 12:51:26  [8/8] Atualizar LATEST-STABLE / sistema...
+2026-07-16 12:51:26  OK robocopy exit=1  C:\TurboRama\App -> C:\TurboRama\Backup\STABLE-SNAPSHOT_2026-07-16_12-51-07\App
+2026-07-16 12:51:30  WARN robocopy exit=9  C:\TurboRama\Config -> C:\TurboRama\Backup\STABLE-SNAPSHOT_2026-07-16_12-51-07\Config
+2026-07-16 12:51:30  OK robocopy exit=1  C:\TurboRama\Launcher -> C:\TurboRama\Backup\STABLE-SNAPSHOT_2026-07-16_12-51-07\Launcher
+2026-07-16 12:51:30  OK sistema C:\TurboRama\Backup atualizado
+2026-07-16 12:51:30  OK LATEST-STABLE-FULL.txt
+2026-07-16 12:51:30  === BACKUP END Dest=D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Backups\STABLE-FULL-TURBORAMA-ARCADETIMER_2026-07-16_12-51-07 ===

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TurboRama.Core</RootNamespace>
+    <AssemblyName>TurboRama.Core</AssemblyName>
+    <Description>Modelos, resultados, etapas, logs e contratos comuns.</Description>
+  </PropertyGroup>
+</Project>

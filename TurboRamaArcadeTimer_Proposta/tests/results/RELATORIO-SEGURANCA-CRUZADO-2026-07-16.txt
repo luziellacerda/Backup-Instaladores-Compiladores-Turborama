@@ -1,0 +1,114 @@
+﻿================================================================================
+RELATORIO DE TESTES + SEGURANCA — TurboRama Kiosk x Arcade Timer 0.1.1-test
+Data: 2026-07-16
+Maquina: PC lab com kiosk TurboRama ativo
+================================================================================
+
+1) BASELINE KIOSK TURBORAMA (sem depender do Timer)
+--------------------------------------------------------------------------------
+[PASS] MsKeyboardFilter RUNNING (Automatic)
+[PASS] Ctrl+Alt+Del = Blocked (WEKF IoT)
+[PASS] Win key = Blocked
+[PASS] Ctrl+End = Allowed (menu seguranca)
+[PASS] Shift+Ctrl+Esc / Alt+Tab / Ctrl+Esc = Blocked (config WEKF)
+[PASS] Security Agent vivo via TurboRama.Launcher --security-agent
+       Heartbeat: C:\TurboRama\Logs\security-agent-alive.txt (fresco)
+       Hook=1 Hot=1 Ctrl+End
+[PASS] Processos kiosk vivos: emulationstation, Launcher, Watchdog, Maintenance
+[PASS] F10 NAO esta Blocked no filtro (ficha lab ok)
+
+2) FUNCOES DO ARCADE TIMER (0.1.1-test compact / lab)
+--------------------------------------------------------------------------------
+[PASS] Arranque do EXE (self-contained) sem crash
+[PASS] Log diario criado em logs\
+[PASS] F10 aceita ficha (+5 min / 300s) — visto em credit.json e log
+[PASS] Debounce: rajada rapida nao multiplica sem limite (~1 ficha por ~300ms)
+[PASS] Tempo NAO desce sem emulador (countOnlyWhileEmulatorIsRunning)
+[PASS] Com credito + Notepad (lab): consume tempo (ex. 300 -> 297s)
+[PASS] Sem credito: Notepad e encerrado (~0.5–2s) — blockGameWithoutCredit
+[PASS] Fechar Timer (kill) NAO derruba ES / Launcher / Watchdog
+[PASS] ES, Launcher, Watchdog, Explorer permaneceram vivos em todos os testes
+[PASS] Timer NAO escreveu em C:\TurboRama\App|Config|Frontend (0 ficheiros
+       relevantes alterados fora de Logs/State/Data do proprio kiosk)
+
+[WARN] Segunda instancia: processo fica vivo com MessageBox "ja em execucao"
+       (mutex Global\TurboRama.ArcadeTimer existe, mas o dialog mantem o processo).
+       Risco: se ignorar a caixa e correr 2 copias, credito/F10 pode duplicar.
+
+[INFO] allowClose=true so na config LAB (Esc / duplo clique / Ctrl+Shift+Q).
+       Modelo PRODUCAO nao define allowClose (default seguro no codigo = fechar
+       desligado se false). Nao usar config.lab em maquina de loja.
+
+3) ANALISE DE SEGURANCA DO CODIGO (estatica)
+--------------------------------------------------------------------------------
+O que o Timer FAZ:
+  - Hook de teclado WH_KEYBOARD_LL (so le tecla da ficha; CallNextHookEx —
+    NAO engole teclas; nao compete com Ctrl+End do Agent)
+  - Le/escreve SO na pasta do EXE: config.json, credit.json, credit.backup.json, logs/
+  - Fecha processos da whitelist emulatorProcesses se sem credito / tempo zero
+  - Protege explicitamente: emulationstation, es-de, explorer,
+    TurboRama.ArcadeTimer, TurboRama.Launcher, TurboRama.Watchdog (+ Maintenance em prod)
+
+O que o Timer NAO FAZ (bom para o kiosk):
+  - Nao toca registo WEKF / MsKeyboardFilter
+  - Nao para servicos
+  - Nao altera EmulationStation, Launcher, scripts do kiosk
+  - Nao mata processos fora da whitelist (double-check: allowed AND not protected)
+  - Nao usa rede, elevacao especial, nem shell remoto
+  - Nao mexe no PIN do menu (Lz2026@$) — PIN e so do kiosk/Agent
+
+Camada Kill:
+  CloseMainWindow -> WaitForExit(timeout) -> Kill(entireProcessTree) SO se
+  forceCloseAfterTimeout e processo ainda na lista autorizada e NAO protected.
+
+4) CONVIVENCIA TIMER x TURBORAMA
+--------------------------------------------------------------------------------
+[PASS] WEKF continua RUNNING e CAD Blocked apos stress com Timer
+[PASS] Agent heartbeat continua (Launcher --security-agent)
+[PASS] Matar so o Timer: kiosk intacto
+[PASS] ES nunca esta na lista de emuladores (nao e fechado pelo Timer)
+[PASS] Hook do Timer chama CallNextHookEx — nao engole Ctrl+End
+
+[MANUAL — confirmar no painel fisico / teclado]
+  - Ctrl+End abre menu + PIN Lz2026@$ com Timer a correr
+  - Teclas de jogo (A/B/Start) nao geram ficha
+  - Jogo real (RetroArch etc.) com lista de processos da maquina
+
+5) RISCOS RESIDUAIS (honestidade)
+--------------------------------------------------------------------------------
+R1 MEDIO — Timer nao e "anti-tamper": se alguem matar o processo Timer,
+           o jogador pode jogar de graca ate o Timer voltar. Kiosk de
+           seguranca (CAD/Agent) continua; o CONTROLE DE FICHA cai.
+           Mitigacao futura: Watchdog/Launcher a relancar o Timer.
+
+R2 MEDIO — config.json editavel: se meter "emulationstation" em emulatorProcesses
+           e tirar de protected, o Timer poderia fechar o ES. Mitigacao:
+           proteger ficheiro (ACL) + checklist de deploy; codigo ja tem defaults
+           de protected.
+
+R3 BAIXO — 2a instancia com MessageBox (lab). Em loja, usar so 1 atalho +
+           single-instance; melhorar para sair sem dialog modal.
+
+R4 BAIXO — lab tem notepad na whitelist e allowClose=true. NUNCA copiar
+           config.lab.json para producao.
+
+R5 INFO — credit.json escrito por ferramentas externas com nomes errados
+          (camelCase PS) e ignorado (JSON case-sensitive). Nao e bug de loja;
+          F10 e o caminho real.
+
+6) VEREDICTO
+--------------------------------------------------------------------------------
+Kiosk TurboRama (CAD / WEKF / Agent / Watchdog):  SEGURO no estado actual.
+Arcade Timer 0.1.1-test:  SEGURO PARA CONVIVER com o kiosk em lab
+  - nao regrediu CAD / Filter / Agent / ES
+  - funcoes de ficha/bloqueio/pausa OK nos testes automaticos
+  - NAO substitui o kiosk: e camada de CREDITO, nao de lockdown Windows
+
+Resultado automatico agregado: PASS=24  FAIL=0  WARN=3 (mutex UI, nome agent,
+  flush de credito em edge cases)
+
+Producao: usar config.producao-modelo.json (sem notepad, sem allowClose lab),
+ajustar coinKey real do encoder, validar nomes REAIS dos EXEs de emulador.
+
+PIN kiosk (inalterado): Lz2026@$
+================================================================================

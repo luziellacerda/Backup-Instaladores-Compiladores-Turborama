@@ -1,0 +1,28 @@
+TurboRama Instalador - Backup de seguranca
+==========================================
+Data/Hora: 2026-07-15 09:42:34
+Pasta: D:\Backup-Instaladores-Compiladores-Turborama\BACKUPS-TURBORAMA\TurboRama-Instalador-Backup_2026-07-15_09-42-34
+
+Conteudo:
+- Projeto-Novo-TurboRama\  = codigo-fonte (src, scripts, docs, tests) sem bin/obj
+- TurboRama-Factory-Pack\  = pack de fabrica (Setup, App Launcher/Watchdog/Maintenance, Assets, hashes)
+- Publish-Loading\         = ultimo publish do Launcher com loading (se existir)
+
+Origens:
+- Projeto: D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama
+- Pack:    D:\tr-factory-pack\TurboRama-Factory-Pack
+- Publish: D:\tr-publish-loading
+
+Inclui nesta versao:
+- Tela de loading pos-logon Arcade (LoadingScreenForm)
+- Som boot.wav (pack estavel) + logo.png + suporte boot-up.mp3
+- BootSoundPlayer (WAV SoundPlayer + MP3 MCI)
+- Config showLoadingScreen / loadingSoundFile / loadingMinDisplayMs
+- Fix reinicio frontend (espera EmulationStation)
+- Watchdog CreateProcessAsUser sessao interativa
+
+NAO inclui runtime C:\TurboRama (instalacao do PC de teste).Projeto-Novo-TurboRama                 0,73 MB     119 arquivos
+Publish-Loading                        0,54 MB      13 arquivos
+TurboRama-Factory-Pack                  9,2 MB     164 arquivos
+TOTAL: 10.48 MB (297 arquivos)
+

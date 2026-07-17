@@ -1,0 +1,10 @@
+Som padrão já incluído:
+  boot.wav  (pack estável — funciona sem MP3)
+  logo.png
+
+Para usar MP3 em vez do WAV:
+  Coloque neste pasta o ficheiro:  boot-up.mp3
+  (tem prioridade sobre boot.wav)
+
+Tutorial:
+  TUTORIAL-SOM-LOADING.txt

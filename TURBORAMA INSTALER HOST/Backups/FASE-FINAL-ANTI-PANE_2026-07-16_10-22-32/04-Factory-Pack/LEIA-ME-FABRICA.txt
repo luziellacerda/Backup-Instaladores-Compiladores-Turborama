@@ -1,0 +1,52 @@
+TurboRama Secure - Factory Pack (Phases 5-6)
+Built: 2026-07-16 10:00:33
+Version: 2.0.0-alpha
+
+======== START HERE (outro PC) ========
+1. Copie a pasta INTEIRA (ou o ZIP) para o PC alvo.
+2. Opcional: coloque o jogo em Frontend\
+3. Clique direito em INSTALAR-COMPLETO.bat (ou SETUP.bat)
+   -> Executar como administrador
+   OU clique duas vezes em TurboRama.Setup.exe (Admin)
+4. Aguarde a mensagem de sucesso.
+5. REINICIE o PC -> autologon Arcade + Launcher.
+6. Senha kiosk se login manual: Lz2026@$
+7. Conta Admin = manutencao (Explorer).
+
+Alternativas:
+- INSTALAR.bat = so abre a UI
+- INSTALAR-AUTOMATICO.bat = Fase2+3 quiet
+- VALIDAR-ACEITE.bat = so testa
+
+Keep an Administrator recovery account (e.g. Admin).
+
+======== STRUCTURE ========
+TurboRama.Setup.exe  << INSTALADOR PRINCIPAL (1 clique)
+INSTALAR-COMPLETO.bat / SETUP.bat
+Installer\TurboRama.UI.exe
+App\Launcher\ Watchdog\ Maintenance\ Tools\
+Config\ Frontend\
+PACK-HASHES.sha256
+CHECAR-DOTNET.bat
+VALIDAR-ACEITE.bat
+
+======== PROJECT PHASES ========
+0 Foundation
+1 Baseline (via installer)
+2 Kiosk (Arcade, shell, autologon, policies)
+3 Services (Watchdog + Maintenance)
+4 Optional UWF/KeyboardFilter/branding (default OFF)
+5 This factory pack
+6 Post-install accept / security validation
+
+======== REQUIREMENTS ========
+- Windows 10/11 x64
+- .NET 8 Desktop Runtime
+  https://dotnet.microsoft.com/download/dotnet/8.0
+- Administrator account
+- Do NOT install while logged in as Arcade
+
+======== PHASE 4 ========
+In UI, only check modules you accept the risk for.
+UWF needs IoT/Enterprise. Keyboard Filter needs Embedded lockdown.
+Safe default: nothing checked.

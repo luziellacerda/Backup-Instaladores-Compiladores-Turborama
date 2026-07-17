@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>TurboRama.Maintenance</RootNamespace>
+    <AssemblyName>TurboRama.Maintenance</AssemblyName>
+    <Description>Serviço de manutenção + named pipe.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TurboRama.Core\TurboRama.Core.csproj" />
+    <ProjectReference Include="..\TurboRama.Configuration\TurboRama.Configuration.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+  </ItemGroup>
+</Project>

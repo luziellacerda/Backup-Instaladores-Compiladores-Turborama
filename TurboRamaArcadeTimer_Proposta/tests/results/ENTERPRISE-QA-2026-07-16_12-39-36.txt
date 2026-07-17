@@ -1,0 +1,7 @@
+﻿ENTERPRISE QA - TurboRama Arcade Timer
+Data=2026-07-16T12:39:36.6894029-03:00
+Package=D:\Backup-Instaladores-Compiladores-Turborama\TurboRamaArcadeTimer_Proposta\dist\TurboRama-ArcadeTimer-0.1.3-enterprise
+PASS=0 FAIL=0 WARN=0
+
+
+VEREDICTO: PASS enterprise automatico (confirmar manual Ctrl+End+PIN e tecla ficha real).

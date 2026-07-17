@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>TurboRama.Launcher</RootNamespace>
+    <AssemblyName>TurboRama.Launcher</AssemblyName>
+    <Description>Inicia frontend, loading e modo técnico — sem alterar o sistema no boot.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TurboRama.Core\TurboRama.Core.csproj" />
+    <ProjectReference Include="..\TurboRama.Configuration\TurboRama.Configuration.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Assets\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

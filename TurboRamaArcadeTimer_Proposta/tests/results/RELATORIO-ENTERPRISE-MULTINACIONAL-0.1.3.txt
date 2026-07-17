@@ -1,0 +1,91 @@
+﻿================================================================================
+RELATORIO ENTERPRISE QA — TurboRama Arcade Timer 0.1.3-enterprise
+Data: 2026-07-16
+Ambito: contador de fichas, timer, seguranca do Timer (TurboRama kiosk nao alterado)
+================================================================================
+
+RESULTADO AUTOMATICO: PASS=22  FAIL=0  WARN=1
+VEREDICTO QA AUTOMATICO: APROVADO (com condicoes de deploy)
+
+--------------------------------------------------------------------------------
+1) CONTADOR DE FICHAS (CRITICO)
+--------------------------------------------------------------------------------
+[PASS] 1 ficha  => exatamente 300s + TotalCoinsAccepted=1
+[PASS] 3 fichas => exatamente 900s + coins=3
+[PASS] 4 fichas => 1200s (single instance)
+[PASS] Sem tecla => credito 0 (sem ficha gratis)
+[PASS] Teto maxRemainingSeconds (28800 = 8h) respeitado
+[PASS] Ficha a meio do jogo soma tempo (mid-play ~326s)
+[WARN] Bounce: rajada com spacing que ultrapassa a janela de debounce pode
+       contar 2 fichas — ESPERADO. Aceitador real gera bounce <50ms; debounce
+       lab/prod = 350ms. Nao e bug de contagem, e janela de tempo.
+
+--------------------------------------------------------------------------------
+2) TIMER / PRECISAO
+--------------------------------------------------------------------------------
+[PASS] Idle 10s: tempo NAO desce sem emulador
+[PASS] 15s de parede com Notepad: drenou 15s (erro 0s)
+[PASS] Pausa ao fechar emulador
+[PASS] Fim de tempo fecha emulador (~1.3s)
+[PASS] 0 credito fecha emulador (~213ms)
+Relogio monotónico (Stopwatch + TickCount64) — imune a mudanca de hora Windows.
+
+--------------------------------------------------------------------------------
+3) SEGURANCA / VULNERABILIDADES TESTADAS
+--------------------------------------------------------------------------------
+[PASS] Single-instance (2a instancia sai; sem inflar credito)
+[PASS] Race dual-process bloqueada
+[PASS] ES protegido
+[PASS] Config maliciosa (protected vazio + ES na whitelist) NAO matou ES/Launcher
+       — hard-protected em codigo
+[PASS] credit.json adulterado (999999999) limitado ao teto
+[PASS] camelCase credit lido corretamente
+[PASS] Guard --guard relanca Timer se morto
+[PASS] Kiosk TurboRama (WEKF+CAD+ES+Launcher+Watchdog) intacto apos bateria
+
+--------------------------------------------------------------------------------
+4) HARDENING NESTA VERSAO (0.1.3)
+--------------------------------------------------------------------------------
+- Debounce monotónico (TickCount64)
+- Consumo de tempo monotónico (Stopwatch)
+- maxRemainingSeconds (default 8h)
+- minutesPerCoin limitado 1..60
+- HardProtectedProcesses inamoviveis (config nao remove)
+- Emulators nao podem incluir processos hard-protected
+- Path/name sanitize na lista de processos
+- credit lock + backup + case-insensitive
+- Kill so whitelist e nunca PID de sistema
+
+--------------------------------------------------------------------------------
+5) CONDICOES PARA MULTINACIONAL / LOJA
+--------------------------------------------------------------------------------
+OBRIGATORIO no deploy:
+1. Usar config.producao-modelo.json (allowClose=false, sem notepad)
+2. Completar emulatorProcesses com EXEs REAIS da maquina
+3. coinKey = tecla real do aceitador; WEKF NAO bloqueia essa tecla
+4. Arranque: Timer + --guard (INICIAR-TESTES.bat ou equivalente)
+5. ACL: pasta do Timer so escrita por SYSTEM/Admin (impede editar credit.json)
+6. Teste de aceitacao em maquina real (hardware ficha + 1 jogo real)
+7. Assinatura digital do EXE (recomendado corporate) — ainda nao incluido
+8. Confirmacao manual: Ctrl+End + PIN kiosk com Timer a correr
+
+RISCOS RESIDUAIS (aceites / operacionais, nao bugs de contador):
+- Se Timer+Guard forem ambos mortos e ha shell aberto: jogo gratis ate relancar
+  (mitigado pelo kiosk TurboRama que limita acesso)
+- EXE de emulador fora da lista: nao drena/bloqueia (config de deploy)
+- Sem code signing: politica de empresa pode bloquear EXE nao assinado
+
+--------------------------------------------------------------------------------
+6) PACOTE
+--------------------------------------------------------------------------------
+Pasta: D:\Backup-Instaladores-Compiladores-Turborama\TurboRamaArcadeTimer_Proposta\dist\TurboRama-ArcadeTimer-0.1.3-enterprise\
+Zip:   ...\TurboRama-ArcadeTimer-0.1.3-enterprise.zip
+Script QA: tests\lab\ENTERPRISE-QA.ps1
+Relatorio run: tests\results\ENTERPRISE-QA-2026-07-16_12-41-59.txt
+
+================================================================================
+CONCLUSAO: Contador de fichas e timer APROVADOS em QA automatico enterprise
+(FAIL=0). Produto apto a piloto multinacional apos checklist de deploy acima.
+Nao se afirma "zero vulnerabilidade em absoluto" — o kiosk OS + ACL + config
+de loja fazem parte do modelo de seguranca.
+================================================================================

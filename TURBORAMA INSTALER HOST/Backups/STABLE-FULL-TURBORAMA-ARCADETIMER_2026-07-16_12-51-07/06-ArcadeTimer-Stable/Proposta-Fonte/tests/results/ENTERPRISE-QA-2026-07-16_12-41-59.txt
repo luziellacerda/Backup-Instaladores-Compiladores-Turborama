@@ -1,0 +1,30 @@
+﻿ENTERPRISE QA - TurboRama Arcade Timer
+Data=2026-07-16T12:41:59.4388354-03:00
+Package=D:\Backup-Instaladores-Compiladores-Turborama\TurboRamaArcadeTimer_Proposta\dist\TurboRama-ArcadeTimer-0.1.3-enterprise
+PASS=22 FAIL=0 WARN=1
+
+[PASS][CRITICO][KIOSK] E0.FILTER - MsKeyboardFilter RUNNING
+[PASS][CRITICO][KIOSK] E0.CAD - CAD Blocked
+[PASS][ALTO][KIOSK] E0.ES - ES alive
+[PASS][CRITICO][FICHAS] C1.ONE_COIN - 1 ficha => 300s coins=1
+[PASS][CRITICO][FICHAS] C2.THREE_COINS - 3 fichas => 900s coins=3
+[WARN][ALTO][FICHAS] C3.BOUNCE - bounce coins=2 rem=600 (aceitavel se edge)
+[PASS][CRITICO][FICHAS] C4.NO_FREE - sem tecla = 0 credito
+[PASS][ALTO][FICHAS] C5.CAP - teto credito rem=28800 (<=28800)
+[PASS][CRITICO][TIMER] T1.IDLE - idle 10s rem=600 (nao drena)
+[PASS][CRITICO][TIMER] T2.RATE_15S - 15s wall drained=15s err=0s
+[PASS][CRITICO][TIMER] T3.PAUSE - pause 86->86
+[PASS][CRITICO][TIMER] T4.END - fim tempo kill em 1315ms
+[PASS][CRITICO][TIMER] T5.BLOCK0 - 0 credito kill 213ms
+[PASS][ALTO][FICHAS] T6.COIN_MID - ficha mid-play rem=326
+[PASS][CRITICO][SEG] S1.SINGLE - 1 instancia 2a exit
+[PASS][CRITICO][SEG] S2.RACE - n=1 coins=4 rem=1200
+[PASS][CRITICO][SEG] S3.ES - ES vivo 3460
+[PASS][CRITICO][SEG] S4.HARD_PROT - config maliciosa nao matou ES/Launcher
+[PASS][ALTO][SEG] S5.NOTEPAD_BLOCK - 0 credit still blocks notepad
+[PASS][ALTO][SEG] S6.TAMPER_CAP - tamper capped rem=28800
+[PASS][MEDIO][SEG] S7.CAMEL - camel credit OK rem=397
+[PASS][ALTO][SEG] S8.GUARD - Guard relancou Timer
+[PASS][CRITICO][KIOSK] S9.KIOSK_FINAL - kiosk intacto pos-QA
+
+VEREDICTO: PASS enterprise automatico (confirmar manual Ctrl+End+PIN e tecla ficha real).

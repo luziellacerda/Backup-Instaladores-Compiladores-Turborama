@@ -1,0 +1,109 @@
+# ============================================================
+# TurboRama Backup - SO FONTES / COMPILADORES (sem builds)
+# ============================================================
+
+# --- Pastas de build / saida compilada ---
+**/bin/
+**/obj/
+**/dist/
+**/build/
+**/out/
+**/saida/
+**/intermediario/
+**/Debug/
+**/Release/
+**/x64/
+**/x86/
+**/Win32/
+**/packages/
+**/node_modules/
+**/.vs/
+**/.idea/
+**/__pycache__/
+**/*.egg-info/
+**/.venv/
+**/venv/
+**/TestResults/
+**/publish/
+
+# --- Nested git (nao versionar como submodule) ---
+**/.git/
+**/.git.nested.bak/
+
+# --- Binarios e pacotes compilados ---
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.exp
+*.o
+*.a
+*.so
+*.dylib
+*.msi
+*.msix
+*.appx
+*.nupkg
+*.zip
+*.7z
+*.rar
+*.tar
+*.gz
+*.iso
+*.img
+*.pkg
+*.pkg.*
+*.cab
+*.apk
+*.ipa
+
+# --- Logs / cache / temporarios ---
+*.log
+*.cache
+*.tmp
+*.temp
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.db-*
+*.opendb
+*.vsidx
+*.db-shm
+*.db-wal
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# --- Instaladores / prerequisites embutidos (grandes) ---
+**/prerequisites/
+**/resources/prerequisites/
+
+# --- Pastas que sao so binario / pack final ---
+TURBORAMA BINARIOS EXE/
+TURBORAMA BINARIOS/
+
+# --- Backups cheios de binarios (manter so fontes nos projetos) ---
+**/Backups/**/product/
+**/Backups/**/lab/
+**/Backups/**/*-enterprise/
+**/Backups/**/*-test/
+**/Backups/**/INTL-QA-Pack/
+**/Backups/**/Factory-Pack/
+**/Backups/**/*.exe
+**/Backups/**/*.zip
+
+# --- Themes com assets pesados opcionalmente mantidos se forem fonte ---
+# (imagens/xml do tema ficam; builds nao)
+
+# --- Lista antiga de ficheiros >100MB (redundante com regras acima) ---
+LARGE-FILES-SKIPPED-GITHUB.txt
+
+# Snapshots de sistema / live (nao sao codigo)
+**/TurboRama-Live/
+**/bcd-backup*
+**/*.LOG1
+**/*.LOG2

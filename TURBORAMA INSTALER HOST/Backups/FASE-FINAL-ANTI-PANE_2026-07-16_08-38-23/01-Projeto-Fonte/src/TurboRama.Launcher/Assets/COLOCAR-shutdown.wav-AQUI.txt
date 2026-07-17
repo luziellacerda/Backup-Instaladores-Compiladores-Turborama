@@ -1,0 +1,2 @@
+﻿Coloque aqui: shutdown.wav
+Som OPCIONAL da tela de DESLIGAR (ficheiro separado de boot.wav).

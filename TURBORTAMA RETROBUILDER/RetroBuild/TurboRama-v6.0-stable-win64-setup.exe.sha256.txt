@@ -1,0 +1,3 @@
+bc7de6b6ff3849e03be3846beb66a041f2ecde266749013ad5d27ed63bd2d761  TurboRama-v6.0-stable-win64-setup.exe
+4a36d2e65c9c4b47d75babbf12bc6d6605d65832894b6bccac2ed413dfc9caba  TurboRama-v6.0-stable-win64-setup.exe.pkg.001
+4a36d2e65c9c4b47d75babbf12bc6d6605d65832894b6bccac2ed413dfc9caba  turborama-v6.0-stable-win64.zip

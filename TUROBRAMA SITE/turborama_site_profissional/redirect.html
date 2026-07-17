@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Redirecionando | TurboRama</title>
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml"><link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <main class="container">
+    <section class="redirect-card card">
+      <div class="spinner"></div>
+      <h1 style="font-size:34px;letter-spacing:-1px">Redirecionando...</h1>
+      <p id="msg">Estamos abrindo o destino solicitado com rastreamento de campanha.</p>
+      <div class="actions" style="justify-content:center"><a id="manual" class="btn primary" href="#">Continuar agora</a><a class="btn secondary" href="index.html">Voltar ao site</a></div>
+      <p class="legal-note">Se o redirecionamento não abrir automaticamente, clique em “Continuar agora”.</p>
+    </section>
+  </main>
+  <script src="config.js"></script>
+  <script src="assets/app.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const raw = params.get('url') || '#';
+    const label = params.get('to') || 'destino';
+    const url = window.TurboRamaUtils ? window.TurboRamaUtils.withUtm(raw) : raw;
+    document.getElementById('manual').href = url;
+    document.getElementById('msg').textContent = 'Abrindo: ' + label + '.';
+    try { if(window.fbq) fbq('trackCustom', 'TurboRamaRedirect', { destino: label }); } catch(e) {}
+    try { if(window.gtag) gtag('event', 'redirect_click', { destino: label }); } catch(e) {}
+    setTimeout(() => { if(url && url !== '#') location.href = url; }, 900);
+  </script>
+</body>
+</html>

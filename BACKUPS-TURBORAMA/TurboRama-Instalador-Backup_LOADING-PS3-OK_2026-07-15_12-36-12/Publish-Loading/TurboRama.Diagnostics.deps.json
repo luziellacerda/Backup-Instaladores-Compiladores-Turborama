@@ -1,0 +1,56 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "TurboRama.Diagnostics/2.0.0-alpha": {
+        "dependencies": {
+          "TurboRama.Configuration": "2.0.0-alpha",
+          "TurboRama.Core": "2.0.0-alpha"
+        },
+        "runtime": {
+          "TurboRama.Diagnostics.dll": {}
+        }
+      },
+      "TurboRama.Configuration/2.0.0-alpha": {
+        "dependencies": {
+          "TurboRama.Core": "2.0.0-alpha"
+        },
+        "runtime": {
+          "TurboRama.Configuration.dll": {
+            "assemblyVersion": "2.0.0-alpha",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      },
+      "TurboRama.Core/2.0.0-alpha": {
+        "runtime": {
+          "TurboRama.Core.dll": {
+            "assemblyVersion": "2.0.0-alpha",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "TurboRama.Diagnostics/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TurboRama.Configuration/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TurboRama.Core/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

@@ -1,0 +1,48 @@
+﻿PENTE FINO - TurboRama x Arcade Timer 0.1.1-test
+Data=2026-07-16T12:15:01.0247747-03:00
+PASS=25 FAIL=2 WARN=11 BUG=6
+
+[BUG][CRITICO] CODE.TIME_FAST - Consume Max(1,Floor): intervalo 250ms drena ~4x tempo real
+[BUG][ALTO] CODE.COUNT_ALWAYS - CountOnlyWhileEmulatorIsRunning=false: tempo nunca desce
+[BUG][MEDIO] CODE.DEFAULT_PROT - Defaults ProtectedProcesses sem Launcher/Watchdog
+[WARN][MEDIO] CODE.HOOK_UI - KeyPressed->UI sem Invoke: risco cross-thread
+[BUG][BAIXO] CODE.CREDIT_CASE - CreditStore case-sensitive: camelCase = credito 0
+[WARN][BAIXO] CODE.MUTEX_MSG - 2a instancia MessageBox fica viva ate clicar
+[WARN][MEDIO] CODE.KILL_TREE - Kill(entireProcessTree) se whitelist errada
+[WARN][BAIXO] CODE.LOOP_TRY - LoopTick sem try: excecao pode parar timer UI
+[PASS][CRITICO] K0.FILTER - MsKeyboardFilter RUNNING
+[PASS][CRITICO] K0.CAD - CAD Blocked
+[PASS][ALTO] K0.AGENT - Agent heartbeat existe
+[PASS][ALTO] K0.ES - ES running
+[PASS][ALTO] T1.START - pid=1864
+[FAIL][MEDIO] T1.SINGLE - 2 processos (2a com dialog)
+[PASS][ALTO] T2.F10 - remaining=300
+[WARN][MEDIO] T3.DEBOUNCE - rapid +600s
+[PASS][ALTO] T4.NO_DRAIN - 600->600 sem emulador
+[PASS][ALTO] T5.DRAIN_RATE - 10s wall drained 10s (~1:1)
+[PASS][ALTO] T6.PAUSE - pause 86->86
+[PASS][CRITICO] T7.BLOCK0 - kill sem credito em 261ms
+[PASS][CRITICO] T8.ES_SAFE - ES vivo id=3460 antes=3460
+[PASS][ALTO] T9.BAD_CONFIG - arranca com config invalida
+[PASS][MEDIO] T10.BAD_CREDIT - sobrevive credit corrompido rem=-1
+[PASS][MEDIO] T11.BACKUP - backup 777 + ficha => 1077
+[PASS][MEDIO] T12.KILL_PERSIST - Kill: credit manteve 444 em disco
+[PASS][MEDIO] T13.GRACEFUL_SAVE - WM_CLOSE gravou rem=300 antes=300
+[FAIL][ALTO] T14.DUAL_RACE - 2+ inst credito inflado rem=1500 n=2
+[PASS][CRITICO] T15.ES_IN_EMU_PROT - ES na whitelist+protected vivo id=3460
+[PASS][MEDIO] T16.EMPTY_EMU - lista vazia inerte
+[PASS][ALTO] T18.TIMER_DIE_GAME - Timer morto: jogo CONTINUA (risco jogo gratis)
+[PASS][CRITICO] T19.KIOSK_LIVE - Launcher+Watchdog+ES vivos
+[PASS][CRITICO] T19.WEKF - WEKF/CAD intactos
+[PASS][ALTO] T20.AGENT_HB - heartbeat age=7.8384643s
+[PASS][BAIXO] T21.HUGE_CREDIT - huge credit ok rem=999999999
+[PASS][MEDIO] T22.NEG_CREDIT - credito negativo = 0 (bloqueia)
+[BUG][BAIXO] T23.CAMEL_CREDIT - camelCase credit lido como 0 (bloqueou com 500s no ficheiro)
+[PASS][ALTO] T24.TIME_END - fim tempo fechou notepad em 2568ms rem=0
+[WARN][ALTO] MATRIX.POWER_LOSS - Queda luz: Kill sem OnFormClosing perde ticks em memoria
+[WARN][MEDIO] MATRIX.F10_WEKF - Se WEKF bloquear tecla da ficha, fichas param
+[WARN][MEDIO] MATRIX.ELEVATION - Elevacao/UIPI pode fazer hook falhar
+[WARN][BAIXO] MATRIX.CLOCK_JUMP - Salto de relogio drena varios segundos num tick
+[BUG][ALTO] MATRIX.NO_WATCHDOG_TIMER - Ninguem relanca Timer se morrer = jogo gratis
+[WARN][ALTO] MATRIX.CTRL_END_MANUAL - Ctrl+End+PIN Lz2026@$ com Timer: confirmar manual
+[WARN][ALTO] MATRIX.REAL_EMU - EXE real tem de bater com whitelist ou nao drena/bloqueia

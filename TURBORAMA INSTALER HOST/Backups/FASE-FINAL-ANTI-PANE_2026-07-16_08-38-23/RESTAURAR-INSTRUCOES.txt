@@ -1,0 +1,45 @@
+============================================================
+  RESTAURAR TURBORAMA APOS PANE
+  Backup: FASE-FINAL-ANTI-PANE_2026-07-16_08-38-23
+============================================================
+
+CONTEUDO DESTE BACKUP
+  01-Projeto-Fonte     Codigo fonte completo (sem bin/obj)
+  02-Publish           Builds publish se existiam
+  03-TurboRama-Live    Copia de C:\TurboRama no momento do backup
+  04-Factory-Pack      Pack de fabrica (pasta)
+  04-TurboRama-Factory-Pack.zip
+  05-Security-State    Registos, servicos, config, WEKF
+  SHA256-CRITICAL.txt  Hashes
+  BACKUP-LOG.txt       Log desta corrida
+
+RESTAURAR CODIGO (PC de desenvolvimento)
+  1. Feche Visual Studio / Grok / processos.
+  2. Renomeie o projecto actual para ...\Projeto Novo TurboRama-BROKEN
+  3. Copie 01-Projeto-Fonte para:
+     D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama
+  4. Abra TurboRama.sln e compile (ou GERAR-PACK-FABRICA.bat)
+
+RESTAURAR KIOSK (PC arcade)
+  1. Conta Admin, Explorer.
+  2. Pare servicos: sc stop TurboRamaWatchdog & sc stop TurboRamaMaintenance
+  3. taskkill /F /IM TurboRama.Launcher.exe
+  4. Copie 03-TurboRama-Live\* para C:\TurboRama\  (ou use o Factory Pack)
+  5. Melhor: copie 04-Factory-Pack e execute INSTALAR-COMPLETO.bat como Admin
+  6. Reinicie o PC
+  7. PIN/senha kiosk: Lz2026@$
+  8. Ctrl+End = menu seguranca
+
+RESTAURAR SO FILTRO TECLADO
+  1. Importar 05-Security-State\KeyboardFilter.reg (Admin)
+  2. sc config MsKeyboardFilter start= auto
+  3. Reiniciar PC
+  4. Ou: C:\TurboRama\App\Launcher\INSTALAR-SEGURANCA.bat (Admin)
+
+VERIFICAR INTEGRIDADE
+  powershell -NoProfile -Command "Get-FileHash '...\\App\\Launcher\\TurboRama.Launcher.exe' -Algorithm SHA256"
+  Compare com SHA256-CRITICAL.txt
+
+CONTACTO / NOTAS
+  Pack ZIP e a forma mais rapida de repor instalador limpo.
+  Mantenha este backup em D: E num USB externo.

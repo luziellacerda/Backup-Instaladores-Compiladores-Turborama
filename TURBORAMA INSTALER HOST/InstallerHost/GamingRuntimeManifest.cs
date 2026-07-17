@@ -8,7 +8,8 @@ namespace InstallerHost
 		{
 			"vc_redist.x64.exe",
 			"vc_redist.x86.exe",
-			"NDP48-Web.exe",
+			"NDP48-x86-x64-AllOS-ENU.exe",
+			"dotNetFx35_WX_10_x86_x64.exe",
 			"directx_Jun2010_redist.exe",
 			"vcredist2005_x64.zip",
 			"vcredist2005_x86.zip",
@@ -22,15 +23,21 @@ namespace InstallerHost
 			"vcredist2013_x86.zip",
 			"DokanSetup.zip",
 			"winfsp.zip",
-			"MicrosoftEdgeWebview2Setup.exe",
+			"MicrosoftEdgeWebView2RuntimeInstallerX64.exe",
 			"windowsdesktop-runtime-8.0-win-x64.exe",
 			"windowsdesktop-runtime-8.0-win-x86.exe",
-			"xnafx40_redist.msi"
+			"xnafx40_redist.msi",
+			"openal-offline.zip"
 		};
 
 		public static readonly string[] OptionalBundleFiles =
 		{
-			"oalinst.exe"
+		};
+
+		public static readonly string[][] BundleFileAliases =
+		{
+			new string[] { "NDP48-x86-x64-AllOS-ENU.exe", "NDP48-Web.exe" },
+			new string[] { "MicrosoftEdgeWebView2RuntimeInstallerX64.exe", "MicrosoftEdgeWebview2Setup.exe" }
 		};
 
 		public static Dictionary<string, InstallerInfo> GetLegacyVcRedistPackages()

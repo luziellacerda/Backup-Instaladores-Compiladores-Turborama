@@ -1,0 +1,72 @@
+================================================================================
+  TURBORAMA — TUTORIAL: tela de loading + som (pós-logon Arcade)
+================================================================================
+
+O QUE É
+-------
+Depois do logon da conta Arcade (shell kiosk), aparece a tela de loading
+TurboRama (logo + barra) e toca o som de boot.
+
+NÃO mexe na tela de bolinhas do Windows (boot do SO).
+
+
+FICHEIROS (no PC instalado)
+---------------------------
+  C:\TurboRama\App\Launcher\Assets\boot.wav     ← som padrão (pack estável)
+  C:\TurboRama\App\Launcher\Assets\logo.png     ← logo na tela
+  C:\TurboRama\App\Launcher\Assets\boot-up.mp3  ← OPCIONAL (se existir, tem prioridade)
+
+
+TROCAR O SOM (sem recompilar)
+-----------------------------
+Opção A — WAV (recomendado, igual pack estável):
+  1. Substitua:  C:\TurboRama\App\Launcher\Assets\boot.wav
+  2. Reinicie o PC ou faça logon na conta Arcade
+
+Opção B — MP3 (fácil de editar noutro programa):
+  1. Coloque o ficheiro:  C:\TurboRama\App\Launcher\Assets\boot-up.mp3
+  2. Se boot-up.mp3 existir, ELE é tocado em vez do boot.wav
+  3. Reinicie / logon Arcade
+
+
+TROCAR O LOGO
+-------------
+  Substitua:  C:\TurboRama\App\Launcher\Assets\logo.png
+  (PNG, preferência ~256x256 ou maior)
+
+
+CONFIG (opcional) — C:\TurboRama\Config\turborama.json
+------------------------------------------------------
+  "showLoadingScreen": true,
+  "loadingSoundFile": "",
+  "loadingMinDisplayMs": 4500
+
+  showLoadingScreen = false  → desliga tela e som
+  loadingSoundFile          → caminho completo de outro .wav ou .mp3
+  loadingMinDisplayMs       → tempo mínimo da tela (ms)
+
+
+ORDEM DE ESCOLHA DO SOM
+-----------------------
+  1) loadingSoundFile (se preenchido e o ficheiro existir)
+  2) boot-up.mp3
+  3) boot.wav
+  4) assets ao lado do EXE / pack antigo Launcher\assets\
+
+
+LOG
+---
+  C:\TurboRama\Logs\Launcher\launcher.log
+  Procure: BootSound  |  Loading  |  Exibindo loading
+
+
+TESTE
+-----
+  Logon na conta Arcade (não Admin).
+  Admin NÃO mostra loading (modo manutenção).
+
+
+NOTA DIREITOS DE AUTOR
+----------------------
+  Use som/logo próprios ou licenciados.
+================================================================================

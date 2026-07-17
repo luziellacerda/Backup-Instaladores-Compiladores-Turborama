@@ -1,0 +1,1156 @@
+# Proposta de reconstrução segura do TurboRama
+
+## 1. Objetivo do sistema
+
+O TurboRama deve transformar uma instalação compatível do Windows em uma máquina arcade dedicada, oferecendo:
+
+* inicialização direta no frontend;
+* conta exclusiva para operação em modo kiosk;
+* login automático seguro;
+* bloqueio de acesso às configurações do Windows;
+* inicialização e recuperação automática do frontend;
+* modo técnico protegido;
+* proteção de dados e configurações;
+* restauração completa do Windows ao estado anterior;
+* diagnóstico claro de qualquer falha.
+
+O programa não deve depender da substituição de arquivos nativos do Windows. A configuração deve ser feita somente por APIs suportadas, Registro, políticas, tarefas agendadas, serviços e recursos oficiais do Windows.
+
+---
+
+# 2. Princípio principal da nova arquitetura
+
+A regra fundamental deve ser:
+
+> Nenhuma alteração pode ser aplicada sem antes registrar exatamente o estado original e definir como restaurá-lo.
+
+Cada operação deve possuir quatro etapas:
+
+1. detectar o estado atual;
+2. salvar o estado original;
+3. aplicar a alteração;
+4. validar o resultado.
+
+Também deve existir uma quinta etapa obrigatória:
+
+5. restaurar exatamente o estado original quando solicitado ou quando ocorrer uma falha.
+
+A instalação não deve ser tratada como um único processo longo. Ela deve ser dividida em pequenas operações transacionais e reversíveis.
+
+---
+
+# 3. Arquitetura recomendada
+
+A solução pode ser dividida nos seguintes projetos:
+
+```text
+TurboRama.sln
+
+TurboRama.Core
+TurboRama.Configuration
+TurboRama.Installation
+TurboRama.Rollback
+TurboRama.Windows
+TurboRama.Security
+TurboRama.Launcher
+TurboRama.Watchdog
+TurboRama.Maintenance
+TurboRama.Diagnostics
+TurboRama.UI
+TurboRama.Tests
+```
+
+## 3.1 TurboRama.Core
+
+Deve conter apenas estruturas comuns:
+
+* interfaces;
+* modelos;
+* enumerações;
+* resultado das operações;
+* sistema de logs;
+* sistema de etapas;
+* controle de cancelamento;
+* validação;
+* tratamento padronizado de erros.
+
+Exemplo de resultado:
+
+```csharp
+public sealed class OperationResult
+{
+    public bool Success { get; init; }
+    public string Message { get; init; } = string.Empty;
+    public string? ErrorCode { get; init; }
+    public Exception? Exception { get; init; }
+}
+```
+
+Nenhum módulo deve ocultar erros. Toda falha precisa retornar:
+
+* nome da operação;
+* comando ou API utilizada;
+* código de saída;
+* mensagem;
+* estado anterior;
+* estado atual;
+* possibilidade de rollback.
+
+---
+
+## 3.2 TurboRama.Configuration
+
+Responsável por armazenar a configuração desejada do equipamento.
+
+Exemplo:
+
+```json
+{
+  "schemaVersion": 1,
+  "installationId": "GUID",
+  "kioskUser": "Arcade",
+  "installDirectory": "C:\\TurboRama",
+  "frontendExecutable": "C:\\TurboRama\\Frontend\\Frontend.exe",
+  "enableAutoLogon": true,
+  "enableKeyboardFilter": false,
+  "enableUwf": false,
+  "enableBootBranding": false,
+  "watchdog": {
+    "enabled": true,
+    "restartDelaySeconds": 5,
+    "maximumRestarts": 5
+  }
+}
+```
+
+Essa configuração deve usar versionamento. O programa precisa saber qual versão da estrutura está lendo.
+
+Senhas, PINs e códigos de recuperação não devem ser armazenados em arquivos de texto simples.
+
+Devem ser protegidos por:
+
+* Windows Credential Manager;
+* DPAPI;
+* LSA Secrets, quando realmente necessário;
+* hash com salt para PINs que não precisem ser recuperados.
+
+---
+
+# 4. Instalador baseado em etapas
+
+O instalador deve funcionar como uma máquina de estados.
+
+Exemplo:
+
+```text
+Não iniciado
+↓
+Pré-validação
+↓
+Backup criado
+↓
+Arquivos instalados
+↓
+Conta criada
+↓
+Shell configurado
+↓
+Segurança aplicada
+↓
+Watchdog instalado
+↓
+Validação final
+↓
+Instalado
+```
+
+Cada etapa deve ser persistida em disco.
+
+Exemplo:
+
+```json
+{
+  "installationId": "GUID",
+  "currentStage": "ShellConfigured",
+  "completedStages": [
+    "PreflightValidated",
+    "BaselineCaptured",
+    "FilesInstalled",
+    "KioskUserCreated",
+    "ShellConfigured"
+  ],
+  "failedStage": null
+}
+```
+
+Se houver queda de energia, travamento ou reinicialização, o instalador deve continuar a partir da última etapa segura ou executar rollback.
+
+Nunca deve repetir cegamente toda a instalação.
+
+---
+
+# 5. Pré-validação obrigatória
+
+Antes de modificar o Windows, o sistema deve verificar:
+
+* edição e versão do Windows;
+* arquitetura x64 ou x86;
+* espaço disponível;
+* privilégio administrativo;
+* existência de outra conta administrativa funcional;
+* estado do BitLocker;
+* estado do UWF;
+* disponibilidade dos recursos Device Lockdown;
+* disponibilidade do Keyboard Filter;
+* existência do frontend;
+* integridade dos arquivos do pacote;
+* disponibilidade de ponto de restauração ou imagem de recuperação;
+* existência de instalações anteriores;
+* permissões da pasta de destino;
+* estado atual do BCD;
+* shell atual;
+* configuração de autologon;
+* tarefas e serviços já existentes com o nome TurboRama.
+
+A instalação deve ser interrompida caso não exista uma conta administrativa de recuperação.
+
+---
+
+# 6. Baseline completo do Windows
+
+A auditoria mostrou que o backup antigo cobria principalmente Winlogon, usuários e alguns valores da LSA. Isso é insuficiente.
+
+O novo baseline deve registrar:
+
+## 6.1 Registro
+
+Para cada valor:
+
+* caminho;
+* nome;
+* tipo;
+* existência anterior;
+* valor anterior;
+* visão de Registro, 32 ou 64 bits.
+
+Exemplo:
+
+```json
+{
+  "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
+  "name": "Shell",
+  "registryView": "Registry64",
+  "existed": true,
+  "kind": "String",
+  "value": "explorer.exe"
+}
+```
+
+Isso é importante porque restaurar um valor inexistente não é igual a gravar um valor vazio.
+
+Quando o valor não existia originalmente, o rollback deve removê-lo.
+
+## 6.2 BCD
+
+Antes de qualquer comando `bcdedit`, salvar:
+
+```cmd
+bcdedit /export C:\TurboRama\Backup\bcd-backup
+bcdedit /enum all /v
+```
+
+O arquivo exportado deve ser acompanhado de:
+
+* hash SHA-256;
+* data;
+* versão do Windows;
+* identificadores encontrados;
+* saída textual do BCD.
+
+Alterações no BCD devem ser opcionais e separadas do modo kiosk principal.
+
+## 6.3 Recursos opcionais
+
+Registrar o estado de cada recurso:
+
+* `Client-DeviceLockdown`;
+* `Client-EmbeddedBootExp`;
+* `Client-EmbeddedLogon`;
+* `Client-UnifiedWriteFilter`.
+
+O programa deve saber se o recurso:
+
+* já estava habilitado;
+* foi habilitado pelo TurboRama;
+* estava desabilitado;
+* não existe naquela edição do Windows.
+
+No rollback, somente recursos habilitados pelo TurboRama devem ser desabilitados.
+
+## 6.4 Serviços
+
+Registrar:
+
+* existência do serviço;
+* tipo de inicialização;
+* estado de execução;
+* caminho do binário;
+* conta de execução;
+* dependências relevantes.
+
+Isso é especialmente importante para o `MsKeyboardFilter`.
+
+## 6.5 Tarefas agendadas
+
+Salvar a definição XML de qualquer tarefa alterada ou substituída.
+
+Tarefas novas devem receber um identificador exclusivo, por exemplo:
+
+```text
+\TurboRama\Watchdog
+\TurboRama\SecurityAgent
+\TurboRama\ProfileBootstrap
+```
+
+Não usar nomes genéricos na raiz do Agendador.
+
+## 6.6 ACLs
+
+Antes de modificar permissões:
+
+```cmd
+icacls C:\TurboRama /save C:\TurboRama\Backup\acl-turborama.txt /t /c
+```
+
+Para perfis e outras pastas externas, gerar backups separados.
+
+Além da saída do `icacls`, registrar:
+
+* proprietário;
+* herança;
+* permissões explícitas;
+* SID dos usuários e grupos.
+
+## 6.7 Contas e perfis
+
+Registrar:
+
+* nome da conta;
+* SID;
+* grupos;
+* estado ativo;
+* existência anterior;
+* caminho do perfil;
+* existência do perfil;
+* tipo de conta;
+* data de criação conhecida;
+* conteúdo que precisa ser preservado.
+
+O programa nunca deve apagar automaticamente um perfil que contenha dados não reconhecidos.
+
+---
+
+# 7. Diretório de instalação
+
+A estrutura pode ser mantida em `C:\TurboRama`, mas organizada por função:
+
+```text
+C:\TurboRama
+├── App
+│   ├── Launcher
+│   ├── Watchdog
+│   ├── Maintenance
+│   └── SecurityAgent
+├── Frontend
+├── Config
+├── Data
+├── Saves
+├── Logs
+├── State
+├── Backup
+│   └── <InstallationId>
+├── Recovery
+└── Updates
+```
+
+Arquivos executáveis não devem ficar misturados com dados graváveis.
+
+Recomendação de permissões:
+
+* `App`: leitura e execução para kiosk;
+* `Frontend`: leitura e execução;
+* `Config`: leitura para kiosk, gravação apenas quando necessário;
+* `Data` e `Saves`: leitura e gravação para kiosk;
+* `Backup`: acesso exclusivo de Administradores e SYSTEM;
+* `Recovery`: acesso exclusivo de Administradores e SYSTEM;
+* `Logs`: escrita limitada e com rotação.
+
+---
+
+# 8. Instalação de arquivos
+
+A cópia dos arquivos deve usar implantação atômica.
+
+Fluxo:
+
+1. copiar para uma pasta temporária;
+2. verificar hashes;
+3. validar assinaturas digitais;
+4. renomear a versão atual para backup;
+5. ativar a nova versão;
+6. validar a execução;
+7. excluir a antiga somente após confirmação.
+
+Exemplo:
+
+```text
+C:\TurboRama\App\.staging
+C:\TurboRama\App\current
+C:\TurboRama\App\previous
+```
+
+Isso também facilita atualização e retorno para a versão anterior.
+
+Não é recomendável copiar arquivos diretamente sobre uma instalação em execução.
+
+---
+
+# 9. Conta kiosk
+
+A conta kiosk deve ser criada exclusivamente para o TurboRama.
+
+Recomendações:
+
+* nome configurável, com padrão `Arcade`;
+* usuário padrão, sem privilégios administrativos;
+* não adicionar ao grupo Administradores;
+* limitar acesso a arquivos pessoais de outros usuários;
+* não usar senha vazia;
+* gerar uma senha aleatória forte;
+* armazenar o segredo de autologon por mecanismo seguro;
+* registrar se a conta já existia;
+* não reutilizar automaticamente uma conta existente sem autorização.
+
+O perfil deve ser criado por logon controlado, evitando copiar perfis completos com `robocopy` sempre que possível.
+
+Configurações específicas do usuário devem ser aplicadas diretamente em seu hive.
+
+---
+
+# 10. Login automático
+
+O login automático deve ser opcional.
+
+A opção preferencial é usar o mecanismo Sysinternals Autologon ou segredo LSA, evitando senha em texto simples no valor `DefaultPassword`.
+
+A rotina deve:
+
+1. salvar todos os valores originais;
+2. configurar autologon;
+3. validar a conta;
+4. testar o login;
+5. possuir um mecanismo técnico para impedir temporariamente o autologon.
+
+O programa não deve alterar globalmente:
+
+```text
+LimitBlankPasswordUse
+DevicePasswordLessBuildVersion
+```
+
+quando isso puder ser evitado.
+
+Essas alterações reduzem a segurança geral do Windows e não são necessárias quando a conta possui senha válida e o autologon é configurado corretamente.
+
+---
+
+# 11. Shell do Windows
+
+A melhor abordagem é aplicar shell personalizado somente ao usuário kiosk, e não globalmente em `HKLM`.
+
+Prioridade recomendada:
+
+1. Shell Launcher oficial do Windows, quando disponível;
+2. Assigned Access, quando compatível;
+3. shell por usuário no hive específico;
+4. alteração global do Winlogon apenas como último recurso.
+
+O shell global deve permanecer como `explorer.exe` para contas administrativas.
+
+Fluxo esperado:
+
+```text
+Conta administrativa
+→ explorer.exe
+
+Conta kiosk
+→ TurboRamaLauncher.exe
+```
+
+Isso reduz muito o risco de o computador iniciar sem área de trabalho para todos os usuários.
+
+O launcher deve validar que está rodando no usuário correto. Caso seja iniciado por administrador, deve abrir em modo manutenção ou encerrar sem aplicar bloqueios.
+
+---
+
+# 12. Launcher
+
+O launcher deve ter responsabilidades limitadas:
+
+* iniciar o frontend;
+* exibir interface de carregamento;
+* controlar reinicialização do frontend;
+* registrar falhas;
+* permitir acesso técnico autenticado;
+* solicitar desligamento ou reinicialização;
+* comunicar-se com o serviço de manutenção.
+
+Ele não deve modificar Registro, BCD, serviços ou usuários durante cada inicialização.
+
+Mudanças de sistema devem ficar exclusivamente no instalador ou no serviço de manutenção.
+
+O launcher também não deve executar constantemente como administrador.
+
+---
+
+# 13. Watchdog
+
+O watchdog deve funcionar como um serviço do Windows, não apenas como processo iniciado pelo shell.
+
+Responsabilidades:
+
+* verificar se o launcher está respondendo;
+* reiniciar apenas quando necessário;
+* detectar loop de falhas;
+* interromper reinicializações após limite;
+* entrar em modo de recuperação;
+* registrar motivo, código de saída e horário;
+* permitir desativação pelo modo técnico.
+
+Exemplo de política:
+
+```text
+1ª falha: reiniciar após 5 segundos
+2ª falha: reiniciar após 15 segundos
+3ª falha: reiniciar após 30 segundos
+4ª falha em 10 minutos: abrir modo de recuperação
+```
+
+O watchdog não deve reiniciar indefinidamente um executável corrompido.
+
+Também deve existir um arquivo ou chave de manutenção, protegido por ACL, que impeça temporariamente a reinicialização:
+
+```text
+C:\TurboRama\State\maintenance.lock
+```
+
+---
+
+# 14. Serviço de manutenção
+
+Operações privilegiadas devem ser executadas por um serviço pequeno e restrito.
+
+Exemplos:
+
+* reiniciar;
+* desligar;
+* instalar atualização;
+* alterar configuração protegida;
+* entrar ou sair do modo kiosk;
+* executar rollback;
+* controlar UWF.
+
+O launcher envia comandos ao serviço por um canal autenticado, como named pipes com ACL.
+
+O serviço deve aceitar apenas comandos predefinidos. Não deve oferecer execução genérica de CMD ou PowerShell.
+
+---
+
+# 15. Bloqueios do kiosk
+
+Os bloqueios devem ser aplicados em camadas.
+
+## Camada 1 — usuário sem privilégios
+
+Essa é a principal proteção.
+
+## Camada 2 — políticas por usuário
+
+Aplicar somente ao SID da conta kiosk:
+
+* desabilitar Task Manager;
+* ocultar Painel de Controle;
+* desabilitar Executar;
+* impedir troca de usuário;
+* impedir bloqueio da estação;
+* impedir acesso ao Registro;
+* ocultar opções de logoff.
+
+Todo valor deve ser salvo antes da alteração.
+
+## Camada 3 — bloqueio de atalhos no launcher
+
+Um keyboard hook pode bloquear:
+
+* tecla Windows;
+* Alt+Tab;
+* Alt+F4;
+* Ctrl+Esc.
+
+Mas esse bloqueio deve existir somente enquanto o launcher estiver ativo.
+
+## Camada 4 — Keyboard Filter
+
+Usar somente quando:
+
+* a edição do Windows suportar oficialmente;
+* existir conta administrativa de recuperação;
+* a máquina for realmente dedicada;
+* houver rollback testado;
+* o usuário aceitar explicitamente.
+
+O Keyboard Filter não deve ser habilitado por padrão.
+
+Ctrl+Alt+Del não deve ser tratado como requisito básico do kiosk. O bloqueio completo desse atalho aumenta significativamente o risco de manutenção.
+
+---
+
+# 16. UWF
+
+O UWF deve ser um módulo opcional e independente.
+
+Antes de habilitar, o sistema deve validar:
+
+* edição suportada;
+* espaço do overlay;
+* exclusões necessárias;
+* local dos saves;
+* banco de dados;
+* logs;
+* atualizações;
+* cache do frontend;
+* estado atual do filtro.
+
+Pastas com gravação devem ficar fora da proteção ou em exclusões explícitas:
+
+```text
+C:\TurboRama\Data
+C:\TurboRama\Saves
+C:\TurboRama\Logs
+C:\TurboRama\Config
+```
+
+O painel técnico deve exibir claramente:
+
+* UWF instalado;
+* UWF habilitado agora;
+* UWF habilitado para o próximo boot;
+* uso do overlay;
+* necessidade de reinicialização.
+
+Nenhuma atualização deve ser aplicada sem verificar o estado do UWF.
+
+---
+
+# 17. Boot e branding
+
+Alterações no BCD e Embedded Boot devem ser opcionais.
+
+O modo arcade pode funcionar perfeitamente sem ocultar completamente a inicialização do Windows.
+
+O módulo de branding deve:
+
+1. exportar o BCD;
+2. registrar cada valor alterado;
+3. aplicar uma alteração por vez;
+4. validar o retorno do comando;
+5. permitir restauração independente;
+6. não impedir acesso às opções avançadas de recuperação.
+
+Não é recomendável ocultar simultaneamente:
+
+* mensagens de boot;
+* opções avançadas;
+* edição de opções;
+* indicadores de erro;
+* animações;
+* interface de recuperação.
+
+Isso torna o diagnóstico mais difícil e pode deixar o equipamento sem rota de recuperação.
+
+O ideal é ocultar somente elementos estéticos, preservando as funções de recuperação.
+
+---
+
+# 18. Timeouts do Windows
+
+Não é recomendável reduzir os seguintes valores para 1 segundo:
+
+```text
+WaitToKillServiceTimeout
+WaitToKillAppTimeout
+HungAppTimeout
+```
+
+Isso pode causar perda de dados, corrupção do banco e desligamento incompleto.
+
+O frontend deve encerrar corretamente mediante solicitação.
+
+Fluxo recomendado:
+
+1. solicitar encerramento ao frontend;
+2. aguardar entre 10 e 30 segundos;
+3. salvar estado;
+4. encerrar o processo somente se ele não responder;
+5. solicitar desligamento ao Windows.
+
+Os valores globais do Windows devem permanecer inalterados, salvo necessidade técnica documentada.
+
+---
+
+# 19. Modo de manutenção
+
+O modo técnico deve ser projetado antes dos bloqueios.
+
+Formas seguras de acesso:
+
+* combinação secreta configurável;
+* dispositivo USB técnico com certificado;
+* código de recuperação de uso único;
+* botão físico;
+* login separado de administrador;
+* inicialização em modo de manutenção pelo painel.
+
+O PIN não deve ser a única forma de recuperação.
+
+Deve existir um conjunto de códigos offline gerados durante a instalação.
+
+Ao entrar em manutenção:
+
+1. criar `maintenance.lock`;
+2. suspender watchdog;
+3. encerrar frontend;
+4. iniciar Explorer somente para o administrador;
+5. manter conta kiosk desconectada;
+6. exibir estado de UWF e alterações pendentes;
+7. permitir diagnóstico, atualização ou rollback.
+
+---
+
+# 20. Rollback transacional
+
+O rollback deve executar as operações na ordem inversa da instalação.
+
+Exemplo:
+
+```text
+Instalação:
+1. arquivos
+2. conta
+3. políticas
+4. autologon
+5. shell
+6. watchdog
+7. UWF
+8. branding
+
+Rollback:
+1. branding
+2. UWF
+3. watchdog
+4. shell
+5. autologon
+6. políticas
+7. conta
+8. arquivos
+```
+
+Cada etapa deve possuir uma implementação explícita:
+
+```csharp
+public interface IInstallationStep
+{
+    string Name { get; }
+
+    Task<OperationResult> CaptureAsync(
+        InstallationContext context,
+        CancellationToken cancellationToken);
+
+    Task<OperationResult> ApplyAsync(
+        InstallationContext context,
+        CancellationToken cancellationToken);
+
+    Task<OperationResult> ValidateAsync(
+        InstallationContext context,
+        CancellationToken cancellationToken);
+
+    Task<OperationResult> RollbackAsync(
+        InstallationContext context,
+        CancellationToken cancellationToken);
+}
+```
+
+Não deve existir uma função genérica que simplesmente grave valores “padrão” do Windows.
+
+Rollback significa restaurar os valores capturados na máquina, não aplicar valores presumidos.
+
+---
+
+# 21. Manifesto das alterações
+
+A instalação deve gerar um manifesto legível:
+
+```json
+{
+  "installationId": "GUID",
+  "productVersion": "2.0.0",
+  "startedAt": "2026-07-14T10:00:00-03:00",
+  "completedAt": "2026-07-14T10:08:00-03:00",
+  "changes": [
+    {
+      "type": "RegistryValue",
+      "target": "HKU\\SID\\...\\Winlogon\\Shell",
+      "originalValue": null,
+      "newValue": "C:\\TurboRama\\App\\Launcher\\TurboRamaLauncher.exe",
+      "status": "Applied",
+      "rollbackStatus": "Pending"
+    }
+  ]
+}
+```
+
+Esse manifesto deve listar:
+
+* arquivos;
+* Registro;
+* BCD;
+* serviços;
+* tarefas;
+* usuários;
+* grupos;
+* permissões;
+* recursos opcionais;
+* políticas;
+* UWF;
+* processos executados.
+
+Ele deve ser usado pela interface de auditoria e pelo rollback.
+
+---
+
+# 22. Logs
+
+Os logs devem ser estruturados e separados por componente:
+
+```text
+Logs\Installer
+Logs\Launcher
+Logs\Watchdog
+Logs\Maintenance
+Logs\Rollback
+Logs\Security
+```
+
+Cada registro deve incluir:
+
+* data e hora;
+* nível;
+* componente;
+* etapa;
+* instalação;
+* usuário;
+* operação;
+* resultado;
+* código de erro;
+* duração.
+
+Não registrar:
+
+* senha;
+* PIN;
+* segredo de autologon;
+* token;
+* código de recuperação completo.
+
+Os logs devem possuir rotação e limite de tamanho.
+
+---
+
+# 23. Validação pós-instalação
+
+A instalação somente deve ser declarada concluída após verificar:
+
+* conta kiosk existente;
+* conta kiosk sem privilégios administrativos;
+* frontend íntegro;
+* launcher íntegro;
+* serviço do watchdog em execução;
+* autologon configurado;
+* shell aplicado somente ao kiosk;
+* Explorer preservado para administrador;
+* modo técnico funcional;
+* PIN ou recuperação funcional;
+* políticas aplicadas;
+* saves graváveis;
+* logs graváveis;
+* UWF configurado corretamente, quando utilizado;
+* rollback disponível;
+* baseline íntegro;
+* hashes dos backups válidos.
+
+O ideal é executar um teste de reinicialização controlada e confirmar o funcionamento após o boot.
+
+---
+
+# 24. Validação pós-rollback
+
+A restauração só pode ser considerada concluída após verificar:
+
+* Explorer aberto normalmente;
+* shell original restaurado;
+* autologon removido ou restaurado ao valor anterior;
+* Ctrl+Alt+Del funcional;
+* Task Manager funcional;
+* Regedit funcional;
+* troca de usuário funcional;
+* Keyboard Filter restaurado;
+* BCD restaurado;
+* serviços restaurados;
+* tarefas restauradas;
+* recursos opcionais restaurados;
+* UWF restaurado;
+* ACLs restauradas;
+* políticas restauradas;
+* contas e perfis preservados corretamente;
+* nenhuma tarefa ou serviço TurboRama restante;
+* arquivos pessoais preservados.
+
+O sistema deve apresentar diferenças remanescentes, em vez de afirmar genericamente que tudo foi restaurado.
+
+---
+
+# 25. Interface recomendada
+
+O programa deve ter quatro áreas principais:
+
+## Instalação
+
+* diagnóstico inicial;
+* escolha dos módulos;
+* resumo das mudanças;
+* criação do baseline;
+* progresso por etapas;
+* resultado detalhado.
+
+## Estado da máquina
+
+* kiosk ativo;
+* usuário configurado;
+* shell atual;
+* autologon;
+* watchdog;
+* Keyboard Filter;
+* UWF;
+* branding;
+* tarefas;
+* serviços;
+* integridade dos arquivos.
+
+## Manutenção
+
+* iniciar Explorer;
+* parar watchdog;
+* atualizar frontend;
+* exportar logs;
+* testar launcher;
+* testar rollback;
+* alterar PIN;
+* criar novo código de recuperação.
+
+## Restauração
+
+* restauração parcial por módulo;
+* restauração completa;
+* comparação com baseline;
+* preservação de saves;
+* relatório final.
+
+---
+
+# 26. Perfis de instalação
+
+O instalador pode oferecer três perfis.
+
+## Kiosk básico
+
+* conta kiosk;
+* frontend;
+* shell por usuário;
+* autologon;
+* políticas por usuário;
+* watchdog.
+
+É o perfil recomendado.
+
+## Kiosk reforçado
+
+Inclui o perfil básico e:
+
+* bloqueios adicionais;
+* hook de teclado;
+* serviço de manutenção;
+* restrições mais fortes.
+
+## Arcade dedicado
+
+Inclui os anteriores e, opcionalmente:
+
+* UWF;
+* Embedded Logon;
+* Embedded Boot;
+* Keyboard Filter;
+* branding de boot.
+
+Esse perfil deve mostrar aviso de risco e exigir baseline completo.
+
+---
+
+# 27. Tecnologias recomendadas
+
+Para uma nova versão em Windows:
+
+* .NET 8 ou versão LTS disponível;
+* Windows Service para watchdog e manutenção;
+* WinUI 3, WPF ou Windows Forms para interface;
+* `Microsoft.Win32.RegistryKey` para Registro;
+* APIs de serviço do Windows em vez de depender apenas de `sc.exe`;
+* Task Scheduler API para tarefas;
+* WMI ou CIM somente onde necessário;
+* JSON versionado para manifesto;
+* Serilog ou logging estruturado equivalente;
+* assinatura digital dos executáveis;
+* MSIX, MSI ou bootstrapper próprio para implantação;
+* testes automatizados em máquinas virtuais.
+
+Comandos externos ainda podem ser usados para DISM, BCDEdit e UWF, mas devem ser encapsulados em classes próprias, com captura completa de saída e código de retorno.
+
+---
+
+# 28. Estratégia de testes
+
+A reconstrução deve ser testada em máquinas virtuais descartáveis.
+
+Cenários mínimos:
+
+* Windows 10 e 11 compatíveis;
+* conta kiosk já existente;
+* conta kiosk inexistente;
+* instalação interrompida;
+* reinicialização no meio do processo;
+* frontend ausente;
+* frontend corrompido;
+* senha inválida;
+* falha no autologon;
+* falha no shell;
+* watchdog em loop;
+* UWF habilitado;
+* BCD diferente do padrão;
+* ACL alterada;
+* rollback completo;
+* rollback parcial;
+* atualização de versão;
+* falta de energia simulada;
+* pouco espaço em disco;
+* antivírus bloqueando arquivo;
+* usuário técnico perdido.
+
+Cada versão só deve ser liberada após teste automático de instalação e restauração.
+
+---
+
+# 29. Ordem recomendada de desenvolvimento
+
+## Fase 1 — fundação
+
+* configuração;
+* logs;
+* manifesto;
+* máquina de estados;
+* baseline;
+* rollback;
+* validação.
+
+## Fase 2 — kiosk básico
+
+* instalação de arquivos;
+* conta kiosk;
+* shell por usuário;
+* autologon seguro;
+* políticas por usuário;
+* launcher.
+
+## Fase 3 — confiabilidade
+
+* serviço watchdog;
+* modo de manutenção;
+* recuperação;
+* atualização atômica;
+* diagnóstico.
+
+## Fase 4 — proteção avançada
+
+* UWF;
+* Keyboard Filter;
+* Embedded Logon;
+* Embedded Boot;
+* branding.
+
+## Fase 5 — qualidade
+
+* testes em máquinas virtuais;
+* assinatura digital;
+* instalador final;
+* documentação técnica;
+* manual de recuperação offline.
+
+---
+
+# 30. Mudanças mais importantes em relação ao projeto atual
+
+A nova construção deve fazer principalmente estas correções:
+
+1. Não alterar o shell global quando o shell por usuário for suficiente.
+2. Não usar conta kiosk com senha vazia.
+3. Não relaxar políticas globais de senha sem necessidade.
+4. Não habilitar Keyboard Filter por padrão.
+5. Não alterar BCD sem exportação e rollback explícitos.
+6. Não alterar timeouts globais para um segundo.
+7. Não ativar UWF sem configuração completa de exclusões.
+8. Não apagar conta ou perfil sem validação de dados.
+9. Não aplicar alteração sem capturar o valor anterior.
+10. Não considerar a restauração concluída apenas porque o Explorer voltou.
+11. Não deixar watchdog ou agente de segurança recriar configurações durante o rollback.
+12. Não misturar launcher, instalador, segurança e recuperação em um único executável.
+13. Não executar o frontend permanentemente como administrador.
+14. Não depender apenas de scripts BAT e PowerShell para operações críticas.
+15. Não apresentar “estado original restaurado” sem comparação real com o baseline.
+
+---
+
+# 31. Resultado esperado
+
+Com essa arquitetura, o TurboRama continuará oferecendo uma experiência de máquina arcade dedicada, mas terá:
+
+* menor risco de bloquear o Windows;
+* manutenção mais simples;
+* instalação retomável;
+* rollback realmente confiável;
+* logs claros;
+* segurança de credenciais;
+* isolamento entre usuário kiosk e administrador;
+* atualizações seguras;
+* diagnóstico completo;
+* compatibilidade melhor entre versões do Windows;
+* recuperação mesmo quando o frontend não inicia.
+
+A principal evolução não é adicionar mais bloqueios. É tornar cada alteração conhecida, auditável, validada e totalmente reversível.

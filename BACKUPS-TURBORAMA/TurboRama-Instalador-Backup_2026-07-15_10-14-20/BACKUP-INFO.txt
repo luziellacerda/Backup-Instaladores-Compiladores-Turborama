@@ -1,0 +1,26 @@
+TurboRama Instalador - Backup de seguranca
+==========================================
+Data/Hora: 2026-07-15 10:14:20
+Pasta: D:\Backup-Instaladores-Compiladores-Turborama\BACKUPS-TURBORAMA\TurboRama-Instalador-Backup_2026-07-15_10-14-20
+
+MARCO: loading TURBORAMA FUNCIONANDO
+------------------------------------
+- Tela de marca ~5s ANTES do jogo (ShowBrandHold)
+- Texto TURBORAMA / ARCADE + logo + barra + TopMost
+- Som boot.wav (pack estavel) + opcional boot-up.mp3
+- Jogo so inicia depois da marca (nao tapa a loading)
+- Bolinhas Windows: nao removidas
+
+Conteudo:
+- Projeto-Novo-TurboRama\  = codigo-fonte (sem bin/obj)
+- TurboRama-Factory-Pack\  = pack fabrica com Launcher + Assets
+- Publish-Loading\         = publish Release do Launcher
+
+Origens:
+- Projeto: D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama
+- Pack:    D:\tr-factory-pack\TurboRama-Factory-Pack
+- Publish: D:\tr-publish-loadingProjeto-Novo-TurboRama                 0,73 MB     119 arquivos
+Publish-Loading                        0,54 MB      13 arquivos
+TurboRama-Factory-Pack                  9,2 MB     164 arquivos
+TOTAL: 10.48 MB (297 arquivos)
+

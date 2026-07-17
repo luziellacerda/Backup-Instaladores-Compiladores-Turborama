@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TurboRama.Diagnostics</RootNamespace>
+    <AssemblyName>TurboRama.Diagnostics</AssemblyName>
+    <Description>Preflight, validação pós-install e pós-rollback.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TurboRama.Core\TurboRama.Core.csproj" />
+    <ProjectReference Include="..\TurboRama.Configuration\TurboRama.Configuration.csproj" />
+    <ProjectReference Include="..\TurboRama.Windows\TurboRama.Windows.csproj" />
+  </ItemGroup>
+</Project>

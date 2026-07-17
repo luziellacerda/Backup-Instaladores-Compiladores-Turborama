@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TurboRama.Rollback</RootNamespace>
+    <AssemblyName>TurboRama.Rollback</AssemblyName>
+    <Description>Restauração na ordem inversa usando baseline capturado.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TurboRama.Core\TurboRama.Core.csproj" />
+    <ProjectReference Include="..\TurboRama.Installation\TurboRama.Installation.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <Version>2.0.0-alpha</Version>
+    <Authors>TurboRama</Authors>
+    <Company>TurboRama</Company>
+    <Product>TurboRama Secure Kiosk</Product>
+    <Description>Reconstrução segura do TurboRama Arcade Kiosk — alterações auditáveis e reversíveis.</Description>
+    <RootNamespace>TurboRama</RootNamespace>
+  </PropertyGroup>
+</Project>

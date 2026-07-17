@@ -1,0 +1,13 @@
+EXITO: o processo "TurboRama.Launcher.exe" com PID 5696 foi finalizado.
+EXITO: o processo "TurboRama.Launcher.exe" com PID 6108 foi finalizado.
+EXITO: o processo "TurboRama.Launcher.exe" com PID 12200 foi finalizado.
+
+  Determinando os projetos a serem restaurados...
+  Todos os projetos est+úo atualizados para restaura+º+úo.
+  TurboRama.Core -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama\src\TurboRama.Core\bin\Release\net8.0-windows\TurboRama.Core.dll
+  TurboRama.Configuration -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama\src\TurboRama.Configuration\bin\Release\net8.0-windows\TurboRama.Configuration.dll
+  TurboRama.Launcher -> D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama\src\TurboRama.Launcher\bin\Release\net8.0-windows\TurboRama.Launcher.dll
+  TurboRama.Launcher -> C:\TurboRama\App\Launcher\
+
+EXIT=0
+DLL=07/15/2026 19:05:56 len=93184

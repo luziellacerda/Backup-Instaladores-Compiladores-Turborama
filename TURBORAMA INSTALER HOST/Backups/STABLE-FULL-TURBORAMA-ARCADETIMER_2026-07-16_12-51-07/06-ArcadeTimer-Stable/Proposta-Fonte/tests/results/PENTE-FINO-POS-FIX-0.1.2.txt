@@ -1,0 +1,24 @@
+﻿PENTE-FINO POS-FIX 0.1.2-test (so Timer, sem mexer TurboRama)
+Data: 2026-07-16
+
+STATIC
+- TIME_ACCUM / NO_MAX1: OK (consume por ms reais)
+- COUNT_ALWAYS: OK (shouldCount)
+- CASE_INS: OK
+- DEFAULT_WD: OK (Launcher/Watchdog/Maintenance)
+- GUARD: OK (--guard)
+- INVOKE / LOOP_TRY: OK
+- SINGLE: OK (count=1, 2a sai)
+
+RUNTIME
+- F10=300 OK
+- DUAL n=1 credit=1500 OK (5xF10 com debounce = 5 fichas, NAO race)
+- DRAIN 10s->10s OK
+- CAMEL credit 500 lido OK (notepad vivo rem~496)
+- GUARD relaunch mains=1 OK
+- KIOSK ES+FILTER+CAD intactos OK
+
+PACOTE
+D:\Backup-Instaladores-Compiladores-Turborama\TurboRamaArcadeTimer_Proposta\dist\TurboRama-ArcadeTimer-0.1.2-test\
+ZIP: ...\TurboRama-ArcadeTimer-0.1.2-test.zip
+Factory: D:\tr-factory-pack\TurboRama-Factory-Pack\App\ArcadeTimer-Test\

@@ -1,0 +1,327 @@
+<!-- Theme by LZRetroGames
+
+-->
+<theme>
+     <formatVersion>7</formatVersion>
+
+     <!-- 
+     CONTROLE GERAL:
+
+     <pos>X Y</pos>
+     X = esquerda / direita
+     Y = cima / baixo
+
+     <size>LARGURA ALTURA</size>
+     usado para controlar tamanho dos vídeos
+
+     <size>LARGURA ALTURA</size>
+     usado para controlar tamanho de imagens, marcos, bordas e overlays
+
+     0.000 = começo da tela
+     0.500 = meio da tela
+     1.000 = final da tela
+     -->
+
+
+     <!-- ======================================================= -->
+     <!-- CONFIGURAÇÃO BASE -->
+     <!-- ======================================================= -->
+     <view name="system">
+
+
+          <!-- VÍDEO DE FUNDO / BACKGROUND -->
+          <video name="background_movie" extra="true">
+               <pos>0 0</pos>
+               <size>1 1</size>
+               <origin>0 0</origin>
+               <path>${themePath}/_theme_options/colorsets/black/background-movie.mp4</path>
+               <effect>none</effect>
+               <showSnapshotNoVideo>false</showSnapshotNoVideo>
+               <showSnapshotDelay>false</showSnapshotDelay>
+               <zIndex>0</zIndex>
+               <audio>false</audio>
+          </video>
+
+
+          <!-- CARRUSEL MEDIANO -->
+          <carousel name="systemcarousel">
+               <logoSize>0.195</logoSize>
+               <logoScale>2.485</logoScale>
+               <scaledLogoSpacing>1.25</scaledLogoSpacing>
+               <maxLogoCount>10</maxLogoCount>
+               <pos>-0.400 0.115</pos>
+               <size>1.15 1</size>
+               <zIndex>10</zIndex>
+          </carousel>
+
+
+          <!-- MARCO ATIVO DO CAROUSEL -->
+          <image name="marco-activo" extra="static">
+               <pos>0.038 0.178</pos>
+               <size>0.0 0.0</size>
+                <roundCorners>5</roundCorners>
+               <origin>0 0.1</origin>
+               <path>${themePath}/_theme_inc/effects/marco-activo.png</path>
+               <zIndex>90</zIndex>
+          </image>
+
+
+          <!-- ======================================================= -->
+          <!-- VÍDEOS BASE -->
+          <!-- ======================================================= -->
+
+          <!-- VÍDEO 1 PRINCIPAL -->
+          <video name="system_video" extra="true">
+               <origin>0 0</origin>
+               <size>0.240 0.338</size>
+               <effect>none</effect>
+               <roundCorners>5</roundCorners>
+               <showSnapshotNoVideo>false</showSnapshotNoVideo>
+               <showSnapshotDelay>false</showSnapshotDelay>
+               <path>${themePath}/_theme_inc/videos/tela1/${system.theme}.mp4</path>
+               <zIndex>95</zIndex>
+               <audio>false</audio>
+               <default>${themePath}/_theme_inc/videos/no-video.mp4</default>
+          </video>
+
+
+          <!-- VÍDEO 2 -->
+          <video name="system_video_2" extra="true">
+               <origin>0 0</origin>
+               <size>0.240 0.338</size>
+               <effect>none</effect>
+               <roundCorners>5</roundCorners>
+               <showSnapshotNoVideo>false</showSnapshotNoVideo>
+               <showSnapshotDelay>false</showSnapshotDelay>
+               <path>${themePath}/_theme_inc/videos/tela2/${system.theme}.mp4</path>
+               <zIndex>95</zIndex>
+               <audio>false</audio>
+               <default>${themePath}/_theme_inc/videos/no-video.mp4</default>
+          </video>
+
+
+          <!-- VÍDEO 3 -->
+          <video name="system_video_3" extra="true">
+               <origin>0 0</origin>
+               <size>0.240 0.338</size>
+               <effect>none</effect>
+               <roundCorners>5</roundCorners>
+               <showSnapshotNoVideo>false</showSnapshotNoVideo>
+               <showSnapshotDelay>false</showSnapshotDelay>
+               <path>${themePath}/_theme_inc/videos/tela3/${system.theme}.mp4</path>
+               <zIndex>95</zIndex>
+               <audio>false</audio>
+               <default>${themePath}/_theme_inc/videos/no-video.mp4</default>
+          </video>
+
+
+          <!-- VÍDEO 4 / COMPRIMIDOS -->
+          <video name="system_video_4" extra="true">
+               <origin>0 0</origin>
+               <size>1.150 0.650</size>
+               <effect>none</effect>
+               <roundCorners>5</roundCorners>
+               <showSnapshotNoVideo>false</showSnapshotNoVideo>
+               <showSnapshotDelay>false</showSnapshotDelay>
+               <path>${themePath}/_theme_inc/videos/tela4/${system.theme}.mp4</path>
+               <zIndex>95</zIndex>
+               <audio>false</audio>
+               <default>${themePath}/_theme_inc/videos/no-video.mp4</default>
+          </video>
+
+
+          <!-- ======================================================= -->
+          <!-- GRID NO FUNDO -->
+          <!-- ======================================================= -->
+
+          <image name="grid_lines_effect" extra="true">
+               <pos>0 0</pos>
+               <size>1 1</size>
+               <path>${themePath}/_theme_inc/effects/grid-lines.png</path>
+               <opacity>0.35</opacity>
+               <zIndex>1</zIndex>
+          </image>
+
+
+          <!-- ======================================================= -->
+          <!-- TEXTOS -->
+          <!-- ======================================================= -->
+
+          <text name="start" extra="true">
+               <pos>0.399 0.335</pos>
+               <size>0.35 0.04</size>
+               <fontSize>0.03</fontSize>
+               <zIndex>20</zIndex>
+          </text>
+
+
+          <text name="system_name" extra="true">
+               <text>{system:fullName}.proper()</text>
+               <pos>999.0 0.999</pos>
+          </text>
+
+
+          <text name="fullName" extra="true">
+               <pos>0.999 0.999</pos>
+               <size>0.161 0.288</size>
+               <fontSize>0.028</fontSize>
+          </text>
+
+     </view>
+ <!-- ======================================================= -->
+          <!-- MARCOS DOS VÍDEOS -->
+          <!-- ======================================================= -->
+
+          <!-- MARCO DO VÍDEO 1 -->
+          <image name="marco-activo-video-1" extra="static">
+               <path>${themePath}/_theme_inc/effects/marco-activo.png</path>
+               <origin>0 0</origin>
+               <opacity>1</opacity>
+               <zIndex>96</zIndex>
+          </image>
+
+          <!-- MARCO DO VÍDEO 2 -->
+          <image name="marco-activo-video-2" extra="static">
+               <path>${themePath}/_theme_inc/effects/marco-activo.png</path>
+               <origin>0 0</origin>
+               <opacity>1</opacity>
+               <zIndex>96</zIndex>
+          </image>
+
+          <!-- MARCO DO VÍDEO 3 -->
+          <image name="marco-activo-video-3" extra="static">
+               <path>${themePath}/_theme_inc/effects/marco-activo.png</path>
+               <origin>0 0</origin>
+               <opacity>1</opacity>
+               <zIndex>96</zIndex>
+          </image>
+
+          <!-- MARCO DO VÍDEO 4 / COMPRIMIDOS -->
+          <image name="marco-activo-video-4" extra="static">
+               <path>${themePath}/_theme_inc/effects/marco-activo.png</path>
+               <origin>0 0</origin>
+               <opacity>1</opacity>
+               <zIndex>96</zIndex>
+          </image>
+
+     <!-- ======================================================= -->
+     <!-- MODO MÉDIO / LZ CONFIG -->
+     <!-- ======================================================= -->
+     <view name="system" ifSubset="carousel:medium">
+
+          <!-- VÍDEO 1 -->
+          <video name="system_video" extra="true">
+               <pos>0.680 0.740</pos>
+               <origin>0 0</origin>
+               <size>0.130 0.130</size>
+               <zIndex>95</zIndex>
+          </video>
+
+
+          <!-- VÍDEO 2 -->
+          <video name="system_video_2" extra="true">
+               <pos>0.540 0.740</pos>
+               <origin>0 0</origin>
+               <size>0.130 0.130</size>
+               <zIndex>95</zIndex>
+          </video>
+
+
+          <!-- VÍDEO 3 -->
+          <video name="system_video_3" extra="true">
+               <pos>0.820 0.740</pos>
+               <origin>0 0</origin>
+               <size>0.130 0.130</size>
+               <zIndex>95</zIndex>
+          </video>
+
+
+          <!-- VÍDEO 4 CORRIGIDO -->
+          <video name="system_video_4" extra="true">
+               <pos>0.460 0.050</pos>
+               <origin>0 0</origin>
+               <size>0.510 0.730</size>
+               <zIndex>30</zIndex>
+          </video>
+
+
+          <!-- MARCO DO VÍDEO 4 -->
+          <image name="marco-activo-video-4" extra="static">
+               <pos>0.100 0.575</pos>
+               <size>0.200 0.160</size>
+          </image>
+
+     </view>
+
+
+     <!-- ======================================================= -->
+     <!-- MODO PEQUENO -->
+     <!-- ======================================================= -->
+     <view name="system" ifSubset="carousel:small">
+
+          <!-- VÍDEO 1 -->
+          <video name="system_video" extra="true">
+               <pos>0.650 0.520</pos>
+               <origin>0 0</origin>
+               <size>0.220 0.300</size>
+               <zIndex>95</zIndex>
+          </video>
+
+
+          <!-- MARCO DO VÍDEO 1 -->
+          <image name="marco-activo-video-1" extra="static">
+               <pos>0.645 0.510</pos>
+               <size>0.235 0.320</size>
+          </image>
+
+
+          <!-- VÍDEO 2 -->
+          <video name="system_video_2" extra="true">
+               <pos>0.725 0.510</pos>
+               <origin>0 0</origin>
+               <size>0.210 0.145</size>
+               <zIndex>95</zIndex>
+          </video>
+
+
+          <!-- MARCO DO VÍDEO 2 -->
+          <image name="marco-activo-video-2" extra="static">
+               <pos>0.715 0.500</pos>
+               <size>0.230 0.165</size>
+          </image>
+
+
+          <!-- VÍDEO 3 -->
+          <video name="system_video_3" extra="true">
+               <pos>0.725 0.690</pos>
+               <origin>0 0</origin>
+               <size>0.210 0.145</size>
+               <zIndex>95</zIndex>
+          </video>
+
+
+          <!-- MARCO DO VÍDEO 3 -->
+          <image name="marco-activo-video-3" extra="static">
+               <pos>0.715 0.680</pos>
+               <size>0.230 0.165</size>
+          </image>
+
+
+          <!-- VÍDEO 4 / COMPRIMIDOS -->
+          <video name="system_video_4" extra="true">
+               <pos>0.500 0.690</pos>
+               <origin>0 0</origin>
+               <size>0.210 0.145</size>
+               <zIndex>95</zIndex>
+          </video>
+
+
+          <!-- MARCO DO VÍDEO 4 -->
+          <image name="marco-activo-video-4" extra="static">
+               <pos>0.490 0.680</pos>
+               <size>0.230 0.165</size>
+          </image>
+
+     </view>
+
+</theme>

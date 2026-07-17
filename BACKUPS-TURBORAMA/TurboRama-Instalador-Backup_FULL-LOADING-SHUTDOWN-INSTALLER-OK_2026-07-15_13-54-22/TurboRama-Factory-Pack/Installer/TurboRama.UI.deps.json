@@ -1,0 +1,217 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0/win-x64",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {},
+    ".NETCoreApp,Version=v8.0/win-x64": {
+      "TurboRama.UI/2.0.0-alpha": {
+        "dependencies": {
+          "TurboRama.Configuration": "2.0.0-alpha",
+          "TurboRama.Core": "2.0.0-alpha",
+          "TurboRama.Diagnostics": "2.0.0-alpha",
+          "TurboRama.Installation": "2.0.0-alpha",
+          "TurboRama.Rollback": "2.0.0-alpha",
+          "TurboRama.Security": "2.0.0-alpha",
+          "TurboRama.Windows": "2.0.0-alpha"
+        },
+        "runtime": {
+          "TurboRama.UI.dll": {}
+        }
+      },
+      "System.Configuration.ConfigurationManager/8.0.1": {
+        "dependencies": {
+          "System.Diagnostics.EventLog": "8.0.1"
+        },
+        "runtime": {
+          "lib/net8.0/System.Configuration.ConfigurationManager.dll": {
+            "assemblyVersion": "8.0.0.0",
+            "fileVersion": "8.0.1024.46610"
+          }
+        }
+      },
+      "System.Diagnostics.EventLog/8.0.1": {
+        "runtime": {
+          "runtimes/win/lib/net8.0/System.Diagnostics.EventLog.dll": {
+            "assemblyVersion": "8.0.0.0",
+            "fileVersion": "8.0.1024.46610"
+          }
+        }
+      },
+      "System.DirectoryServices.AccountManagement/8.0.1": {
+        "dependencies": {
+          "System.Configuration.ConfigurationManager": "8.0.1",
+          "System.DirectoryServices.Protocols": "8.0.0"
+        },
+        "runtime": {
+          "runtimes/win/lib/net8.0/System.DirectoryServices.AccountManagement.dll": {
+            "assemblyVersion": "8.0.0.1",
+            "fileVersion": "8.0.1024.46610"
+          }
+        }
+      },
+      "System.DirectoryServices.Protocols/8.0.0": {
+        "runtime": {
+          "runtimes/win/lib/net8.0/System.DirectoryServices.Protocols.dll": {
+            "assemblyVersion": "8.0.0.0",
+            "fileVersion": "8.0.23.53103"
+          }
+        }
+      },
+      "TurboRama.Configuration/2.0.0-alpha": {
+        "dependencies": {
+          "TurboRama.Core": "2.0.0-alpha"
+        },
+        "runtime": {
+          "TurboRama.Configuration.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      },
+      "TurboRama.Core/2.0.0-alpha": {
+        "runtime": {
+          "TurboRama.Core.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      },
+      "TurboRama.Diagnostics/2.0.0-alpha": {
+        "dependencies": {
+          "TurboRama.Configuration": "2.0.0-alpha",
+          "TurboRama.Core": "2.0.0-alpha",
+          "TurboRama.Windows": "2.0.0-alpha"
+        },
+        "runtime": {
+          "TurboRama.Diagnostics.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      },
+      "TurboRama.Installation/2.0.0-alpha": {
+        "dependencies": {
+          "TurboRama.Configuration": "2.0.0-alpha",
+          "TurboRama.Core": "2.0.0-alpha",
+          "TurboRama.Security": "2.0.0-alpha",
+          "TurboRama.Windows": "2.0.0-alpha"
+        },
+        "runtime": {
+          "TurboRama.Installation.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      },
+      "TurboRama.Rollback/2.0.0-alpha": {
+        "dependencies": {
+          "TurboRama.Core": "2.0.0-alpha",
+          "TurboRama.Installation": "2.0.0-alpha"
+        },
+        "runtime": {
+          "TurboRama.Rollback.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      },
+      "TurboRama.Security/2.0.0-alpha": {
+        "dependencies": {
+          "TurboRama.Core": "2.0.0-alpha",
+          "TurboRama.Windows": "2.0.0-alpha"
+        },
+        "runtime": {
+          "TurboRama.Security.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      },
+      "TurboRama.Windows/2.0.0-alpha": {
+        "dependencies": {
+          "System.DirectoryServices.AccountManagement": "8.0.1",
+          "TurboRama.Core": "2.0.0-alpha"
+        },
+        "runtime": {
+          "TurboRama.Windows.dll": {
+            "assemblyVersion": "2.0.0.0",
+            "fileVersion": "2.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "TurboRama.UI/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "System.Configuration.ConfigurationManager/8.0.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-gPYFPDyohW2gXNhdQRSjtmeS6FymL2crg4Sral1wtvEJ7DUqFCDWDVbbLobASbzxfic8U1hQEdC7hmg9LHncMw==",
+      "path": "system.configuration.configurationmanager/8.0.1",
+      "hashPath": "system.configuration.configurationmanager.8.0.1.nupkg.sha512"
+    },
+    "System.Diagnostics.EventLog/8.0.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-n1ZP7NM2Gkn/MgD8+eOT5MulMj6wfeQMNS2Pizvq5GHCZfjlFMXV2irQlQmJhwA2VABC57M0auudO89Iu2uRLg==",
+      "path": "system.diagnostics.eventlog/8.0.1",
+      "hashPath": "system.diagnostics.eventlog.8.0.1.nupkg.sha512"
+    },
+    "System.DirectoryServices.AccountManagement/8.0.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-qVDWKClyDY+rHVEnf11eU4evW25d5OeidrtMPSJv+fwG213wa2zJ+AuIFCxsuvNSCFyHo+DvQIVfBcoK3CL1pA==",
+      "path": "system.directoryservices.accountmanagement/8.0.1",
+      "hashPath": "system.directoryservices.accountmanagement.8.0.1.nupkg.sha512"
+    },
+    "System.DirectoryServices.Protocols/8.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-puwJxURHDrYLGTQdsHyeMS72ClTqYa4lDYz6LHSbkZEk5hq8H8JfsO4MyYhB5BMMxg93jsQzLUwrnCumj11UIg==",
+      "path": "system.directoryservices.protocols/8.0.0",
+      "hashPath": "system.directoryservices.protocols.8.0.0.nupkg.sha512"
+    },
+    "TurboRama.Configuration/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TurboRama.Core/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TurboRama.Diagnostics/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TurboRama.Installation/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TurboRama.Rollback/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TurboRama.Security/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TurboRama.Windows/2.0.0-alpha": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

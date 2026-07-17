@@ -1,0 +1,16 @@
+## Build
+bin/
+obj/
+.dotnet/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.log
+TestResults/
+*.nupkg
+project.lock.json
+artifacts/

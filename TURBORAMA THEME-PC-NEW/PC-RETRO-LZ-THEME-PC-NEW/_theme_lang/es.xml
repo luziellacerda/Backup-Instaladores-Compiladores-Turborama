@@ -1,0 +1,123 @@
+﻿<!-- Theme by LZ-RETRO-PC-2026
+https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X 
+-->
+<theme>
+  <formatVersion>7</formatVersion>
+  
+  <variables lang="es">
+    <theme.welcome>Bienvenido a Playstation X para</theme.welcome>
+    <theme.start>Iniciar</theme.start>
+    <theme.mostplayed>El más jugado:</theme.mostplayed>
+    <theme.items>Número de elementos:</theme.items>
+    <theme.collections>colecciones</theme.collections>
+    <GamesNumber>Juegos</GamesNumber>
+    <GamesFavs>Favoritos</GamesFavs>
+    <NumberPlayed>Jugados</NumberPlayed>
+    <blue>Azul</blue>
+    <black>Negro</black>
+    <red>rojo</red>
+    <yellow>amarillo</yellow>
+    <green>verde</green>
+    <purple>morado</purple>
+    <orange>naranja</orange>
+    <pink>rosa</pink>
+    <default>por defecto</default>
+    <big>grande</big>
+    <medium>mediano</medium>
+    <small>pequeño</small>
+    <yes>Si</yes>
+    <no>No</no>
+    <none>Ninguno</none>
+    <never>Nunca</never>
+    <always>Siempre</always>
+    <iconset>Tipo de Iconos y botones</iconset>
+    <theme.frontend>Selecciona tu frontend favorito</theme.frontend>
+    <gameBar>Mostrar la información de juegos</gameBar>
+    <CarouselImageSize>Tamaño del carrusel de sistemas</CarouselImageSize>
+    <theme.videoBackground>Mostrar vídeos en la vista de sistemas</theme.videoBackground>
+    <theme.videoRandom>Mostrar vídeo de juego aleatorio</theme.videoRandom>
+    <ifnospot>Si no existe video del sistema</ifnospot>
+    <theme.system-description>Mostrar descripciones de sistemas</theme.system-description>
+    <theme.animated-background>Fondo animado (ondas)</theme.animated-background>
+    <theme.backgroundVideoOption>Vídeo de fondo</theme.backgroundVideoOption>
+    <theme.windowVideoOption>Vídeo en ventana</theme.windowVideoOption>
+    <theme.insideVideoOption>Dentro de la cuadrícula</theme.insideVideoOption>
+    <theme.smallScreenOption>Ventana pequeña</theme.smallScreenOption>
+    <theme.videoaudio>Activar el audio en los vídeos de sistemas</theme.videoaudio>
+    <theme.Avatar>Escoge tu imagen de Avatar</theme.Avatar>
+    <theme.username>Escoge un Nick</theme.username>
+    <custom>Personalizado</custom>
+    <theme.videoGamelistDelay>Retraso del vÍdeo en la lista de juegos</theme.videoGamelistDelay>
+    <VideoOff>No mostrar vídeo</VideoOff>
+    <theme.systemConsole>Mostrar consola y logo en la vista de sistemas</theme.systemConsole>
+    <randomGame>Juego Aleatorio</randomGame>
+    <theme.colorset>Color del tema</theme.colorset>
+    <theme.secondaryColorset>Color secundario</theme.secondaryColorset>
+    <theme.gridvideo>Mostrar vídeos de juegos</theme.gridvideo>
+    <theme.videoSnapAudio>Activar el audio en los vídeos de juegos</theme.videoSnapAudio>
+    <theme.animatedList>Transiciones animadas en la lista de juegos</theme.animatedList>
+    <theme.animatedSystem>Transiciones animadas en la vista de sistemas</theme.animatedSystem>
+    <theme.aspect-ratio>Selecciona tu tipo de pantalla</theme.aspect-ratio>
+    <theme.oversizeVideoOption>Video superpuesto</theme.oversizeVideoOption>
+    <theme.bato35compatilble>Solo compatible en batocera 35 o superior</theme.bato35compatilble>
+    <theme.netplay-required>Activa netplay en el sistema para mostrar tu nombre de usuario o selecciona otro nick en las opciones del tema</theme.netplay-required>
+    <theme.ra-required>Activa retroachievements en el sistema para mostrar tu nombre de usuario o selecciona otro nick en las opciones del tema</theme.ra-required>
+    <theme.hotkey>Mostrar ayuda hotkey en pant. bienvenida</theme.hotkey>
+    <theme.hotkey-x86>Mostrar ayuda rápida hotkey</theme.hotkey-x86>
+    <theme.hotkey.gamesplash>Solo en la pantalla de carga del juego</theme.hotkey.gamesplash>
+    <theme.hotkey.splash>Solo en la pantalla de bienvenida</theme.hotkey.splash>
+    <theme.hotkey.both>En ambas pantallas</theme.hotkey.both>
+    <theme.detected>detectada</theme.detected>
+    <theme.detailedorigin>Imagen en la vista detallada</theme.detailedorigin>
+    <theme.gridMainorigin>Imagen principal en la vista de cuadrícula</theme.gridMainorigin>
+    <theme.gridorigin>Imágenes de la cuadrícula</theme.gridorigin>
+    <theme.carouselMainOrigin>Imagen principal en la vista de carrusel</theme.carouselMainOrigin>
+    <theme.carouselOrigin>Imágenes del carrusel</theme.carouselOrigin>
+    <theme.systemBackground>Imagen de fondo en la vista de sistemas</theme.systemBackground>
+		<randomFanart>Fanart aleatorio</randomFanart>
+    <theme.gamelistBackground>Imagen de fondo en la lista de juegos</theme.gamelistBackground>
+    <theme.forced>forzado</theme.forced>
+    <theme.gameDescription>Mostrar descripciones de juegos</theme.gameDescription>
+    <carouselViewName>Carrusel horizontal</carouselViewName>
+    <ps4StylelViewName>Estilo PS4</ps4StylelViewName>
+    <ps5StylelViewName>Estilo PS5</ps5StylelViewName>
+    <theme.mainImage>Imagen Destacada</theme.mainImage>
+		<theme.gridImage>Imagen del carrusel o cuadrícula</theme.gridImage>
+    <fullGridlViewName>Cuadrícula ampliada</fullGridlViewName>
+    <theme.gamesplash-type>Pantalla de carga de juegos</theme.gamesplash-type>
+		<image-full-size>Imagen a pantalla completa</image-full-size>
+    <theme.nav-sounds>Sonidos de navegación</theme.nav-sounds>
+    <singlelViewName>Juego a juego</singlelViewName>
+    <theme.multidisc>multi-disco</theme.multidisc>
+    <theme.box>Caja</theme.box>
+    <theme.romFolder>Mostrar info de la carpeta de ROMs</theme.romFolder>
+    <dim>Atenuado</dim>
+    <theme-lastplayedLabel>Jugaste por última vez</theme-lastplayedLabel>
+    <theme-timesPlayedLabel>Partidas:</theme-timesPlayedLabel>
+    <theme-gameTimeLabel>Tiempo Jugado:</theme-gameTimeLabel>
+    <theme.dummydata>Mostrar versión y año en la parte superior</theme.dummydata>
+    <dummydata.showversion>Solo versión</dummydata.showversion>
+    <dummydata.showyear>Solo año</dummydata.showyear>
+    <theme.hardwareType if="${system.hardwareType} == 'console'">Consola</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'computer'">Ordenador</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'custom collection'">Colección personalizada</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'portable'">Consola portátil</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'system'">Sistema</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'auto collection'">Colección automática</theme.hardwareType>
+		<theme.thumbnail-type>Tipo de caja de juego (prioridad)</theme.thumbnail-type>
+		<theme.showlogo>Mostrar logo del juego</theme.showlogo>
+		<theme.topinfoarea>Area superior de información</theme.topinfoarea>
+		<theme.clean>Limpio / Mínimo</theme.clean>
+		<theme.region>Región</theme.region>
+		<theme.europe>Europa</theme.europe>
+		<theme.usa>Estados Unidos</theme.usa>
+		<theme.japan>Japón</theme.japan>
+    <theme.overlayExtra>Mostrar artes superpuestos en la vista de sistemas</theme.overlayExtra>
+    <theme.gamelistOverlayExtra>Mostrar artes superpuestos en la lista de juegos</theme.gamelistOverlayExtra>
+    <theme.nonumbers>Sin números de versión y año</theme.nonumbers>
+    <theme.highVramRequired>(requiere valores elevados de VRAM)</theme.highVramRequired>
+    <CarouselType>Estilo de carrusel de sistemas</CarouselType>
+    <theme.SystemConsole>Imagen de consola en la vista de sistemas</theme.SystemConsole>
+    <theme.SystemLogo>Imagen de logo en la vista de sistemas</theme.SystemLogo>
+  </variables>
+</theme>

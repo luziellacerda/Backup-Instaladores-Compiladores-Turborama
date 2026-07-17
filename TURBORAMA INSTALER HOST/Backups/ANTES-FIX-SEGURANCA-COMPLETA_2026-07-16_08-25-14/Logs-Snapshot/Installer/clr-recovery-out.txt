@@ -1,0 +1,14 @@
+tried remove recovery
+recovery_exists=False
+lock_exists=False
+---watchdog---
+2026-07-14 20:03:35.015 -03:00 [INFO] component=Watchdog user=DESKTOP-34UE5OP$ | maintenance.lock ativo — sem reinícios.
+2026-07-14 20:03:38.020 -03:00 [INFO] component=Watchdog user=DESKTOP-34UE5OP$ | maintenance.lock ativo — sem reinícios.
+2026-07-14 20:03:41.025 -03:00 [INFO] component=Watchdog user=DESKTOP-34UE5OP$ | maintenance.lock ativo — sem reinícios.
+2026-07-14 20:03:44.032 -03:00 [INFO] component=Watchdog user=DESKTOP-34UE5OP$ | maintenance.lock ativo — sem reinícios.
+2026-07-14 20:03:47.047 -03:00 [INFO] component=Watchdog user=DESKTOP-34UE5OP$ | maintenance.lock ativo — sem reinícios.
+2026-07-14 20:03:50.053 -03:00 [WARNING] component=Watchdog user=DESKTOP-34UE5OP$ | Modo recuperação — aguardando limpeza manual (EXIT maintenance / reinício controlado).
+2026-07-14 20:04:00.081 -03:00 [WARNING] component=Watchdog user=DESKTOP-34UE5OP$ | Modo recuperação — aguardando limpeza manual (EXIT maintenance / reinício controlado).
+2026-07-14 20:04:10.093 -03:00 [WARNING] component=Watchdog user=DESKTOP-34UE5OP$ | Modo recuperação — aguardando limpeza manual (EXIT maintenance / reinício controlado).
+2026-07-14 20:04:20.106 -03:00 [WARNING] component=Watchdog user=DESKTOP-34UE5OP$ | Modo recuperação — aguardando limpeza manual (EXIT maintenance / reinício controlado).
+2026-07-14 20:04:30.107 -03:00 [WARNING] component=Watchdog user=DESKTOP-34UE5OP$ | Modo recuperação — aguardando limpeza manual (EXIT maintenance / reinício controlado).

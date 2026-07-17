@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TurboRama.Security</RootNamespace>
+    <AssemblyName>TurboRama.Security</AssemblyName>
+    <Description>Credenciais, políticas por SID e proteção de segredos (DPAPI).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TurboRama.Core\TurboRama.Core.csproj" />
+    <ProjectReference Include="..\TurboRama.Windows\TurboRama.Windows.csproj" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+</Project>

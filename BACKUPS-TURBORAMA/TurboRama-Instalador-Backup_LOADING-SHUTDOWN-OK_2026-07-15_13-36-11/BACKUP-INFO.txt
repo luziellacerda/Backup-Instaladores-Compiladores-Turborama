@@ -1,0 +1,39 @@
+﻿BACKUP TURBORAMA — LOADING + SHUTDOWN OK (proximo passo)
+Data: 2026-07-15 13:36:11
+Pasta: TurboRama-Instalador-Backup_LOADING-SHUTDOWN-OK_2026-07-15_13-36-11
+
+Estado aprovado para continuar o trabalho.
+
+Conteudo:
+- Projeto-Novo-TurboRama  → codigo-fonte (sem bin/obj)
+- Publish-Loading         → binarios C:\TurboRama\App\Launcher
+- TurboRama-Factory-Pack  → pack de instalacao (App\Launcher incluido)
+- QUICK-LOADING-SHUTDOWN  → ficheiros-chave + Assets
+
+Telas:
+1) LOADING (LoadingScreenForm.cs)
+   - Visual PS3 / ondas / barra
+   - 5 modelos de boas-vindas (aleatorio)
+   - Assets: logo.png + boot.wav
+   - Preview: TESTAR-LOADING.bat / --test-loading
+
+2) DESLIGAR (ShutdownScreenForm.cs) — ficheiro SEPARADO
+   - Visual igual a loading
+   - 5 modelos de despedida/agradecimento
+   - Assets: logo-shutdown.png + shutdown.wav (opcional)
+   - Preview: TESTAR-DESLIGAR.bat / --test-shutdown
+   - No kiosk: frontend fecha → splash + power off Windows
+
+Instalacao:
+- Factory pack copia App\Launcher → C:\TurboRama\App\Launcher
+- showLoadingScreen=true no turborama.json
+
+Restaurar Launcher no PC:
+  copiar Publish-Loading\* para C:\TurboRama\App\Launcher\
+
+Restaurar pack:
+  usar TurboRama-Factory-Pack deste backup
+
+Testes sem reiniciar / sem desligar:
+  C:\TurboRama\App\Launcher\TESTAR-LOADING.bat
+  C:\TurboRama\App\Launcher\TESTAR-DESLIGAR.bat

@@ -1,0 +1,18 @@
+<!-- Theme by LZ-RETRO-PC-2026
+https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X 
+-->
+<theme>
+   <formatVersion>7</formatVersion>
+
+
+   <view name="system">
+
+
+      <text name="systemInfoEx" extra="true">
+         <text>{system:total} ${GamesNumber}  •  {system:favorites} ${GamesFavs}</text>
+
+      </text>
+
+      
+   </view>
+</theme>

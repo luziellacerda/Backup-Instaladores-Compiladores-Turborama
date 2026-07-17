@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TurboRama.Installation</RootNamespace>
+    <AssemblyName>TurboRama.Installation</AssemblyName>
+    <Description>Máquina de estados e orquestração de etapas de instalação.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TurboRama.Core\TurboRama.Core.csproj" />
+    <ProjectReference Include="..\TurboRama.Configuration\TurboRama.Configuration.csproj" />
+    <ProjectReference Include="..\TurboRama.Windows\TurboRama.Windows.csproj" />
+    <ProjectReference Include="..\TurboRama.Security\TurboRama.Security.csproj" />
+  </ItemGroup>
+</Project>

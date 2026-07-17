@@ -1,0 +1,28 @@
+TurboRama Instalador - Backup de seguranca
+==========================================
+Data/Hora: 2026-07-15 10:28:34
+Pasta: D:\Backup-Instaladores-Compiladores-Turborama\BACKUPS-TURBORAMA\TurboRama-Instalador-Backup_2026-07-15_10-28-34
+
+MARCO: LOADING FUNCIONANDO
+--------------------------
+- Tela loading TURBORAMA (marca ~5s ANTES do jogo)
+- Cores: preto, verde, branco, vermelho
+- Progresso estavel (timer, nao trava em 4%)
+- Som boot.wav + logo.png
+- Logon Windows silenciado (HideAutoLogonUI + sem first logon animation)
+- Bolinhas de boot Windows: NAO removidas
+- LogonUiQuietService no instalador (ApplyKioskPolicies)
+
+Conteudo:
+- Projeto-Novo-TurboRama\  = codigo-fonte (sem bin/obj)
+- TurboRama-Factory-Pack\  = pack fabrica
+- Publish-Loading\         = publish Launcher
+
+Origens:
+- Projeto: D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama
+- Pack:    D:\tr-factory-pack\TurboRama-Factory-Pack
+- Publish: D:\tr-publish-loadingProjeto-Novo-TurboRama                 0,74 MB     120 arquivos
+Publish-Loading                        0,55 MB      13 arquivos
+TurboRama-Factory-Pack                 9,21 MB     164 arquivos
+TOTAL: 10.51 MB (298 arquivos)
+

@@ -1,0 +1,26 @@
+﻿BACKUP TURBORAMA — LOADING PS3 OK (barra suave 00→100)
+Data: 2026-07-15 12:36:12
+Pasta: TurboRama-Instalador-Backup_LOADING-PS3-OK_2026-07-15_12-36-12
+
+Estado aprovado pelo utilizador: "esta otimo"
+
+Conteúdo:
+- Projeto-Novo-TurboRama  → código-fonte (src, sem bin/obj)
+- Publish-Loading         → binários em C:\TurboRama\App\Launcher
+- TurboRama-Factory-Pack  → pack de fábrica
+
+Destaque loading:
+- LoadingScreenForm.cs — ondas PS3, painel glass, barra elegante
+- Progresso no loop ShowBrandHold com Stopwatch + Refresh() síncrono
+- Sem PathGradientBrush (paint leve ~30fps)
+- Som boot.wav, preview: --test-loading / TESTAR-LOADING.bat
+
+Restaurar Launcher no PC:
+  copiar Publish-Loading\* para C:\TurboRama\App\Launcher\
+
+Restaurar código:
+  copiar Projeto-Novo-TurboRama\src\TurboRama.Launcher\LoadingScreenForm.cs
+  (e resto do projeto se necessário)
+
+Teste sem reiniciar:
+  C:\TurboRama\App\Launcher\TESTAR-LOADING.bat
