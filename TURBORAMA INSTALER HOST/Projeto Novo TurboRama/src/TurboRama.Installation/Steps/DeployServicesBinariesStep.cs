@@ -214,26 +214,47 @@ public sealed class DeployServicesBinariesStep : IInstallationStep
 
     private static string? FindExe(string name)
     {
-        string[] roots =
-        {
-            AppContext.BaseDirectory,
-            @"D:\tr-phase3-fix\watchdog",
-            @"D:\tr-phase3-fix\maintenance",
-            @"D:\tr-phase3-fix\ui",
-            @"D:\tr-phase3-fix\ui-fast",
-            @"D:\tr-phase4-ui",
-            @"D:\tr-phase3-ui",
-            @"D:\tr-phase2-ui",
-            Path.Combine(Path.GetTempPath(), "tr-pub-watchdog"),
-            Path.Combine(Path.GetTempPath(), "tr-pub-maintenance"),
-        };
+        string baseDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string? pack = FactoryFullInstall.FindPackRoot();
+        string component = name.Contains("Watchdog", StringComparison.OrdinalIgnoreCase) ? "Watchdog" : "Maintenance";
 
-        foreach (string root in roots)
+        var candidates = new List<string>
         {
-            string p = Path.Combine(root, name);
-            if (File.Exists(p))
+            // Produção: pack e seed
+            Path.Combine(baseDir, "App", component, name),
+            Path.Combine(baseDir, "..", "App", component, name),
+            Path.Combine(ProductPaths.App, component, name),
+            Path.Combine(ProductPaths.AppWatchdog, name),
+            Path.Combine(ProductPaths.AppMaintenance, name),
+            Path.Combine(baseDir, name),
+            // Dev
+            @"D:\tr-phase3-fix\watchdog\" + name,
+            @"D:\tr-phase3-fix\maintenance\" + name,
+            Path.Combine(Path.GetTempPath(), "tr-pub-watchdog", name),
+            Path.Combine(Path.GetTempPath(), "tr-pub-maintenance", name),
+            @"D:\tr-factory-pack\TurboRama-Factory-Pack\App\" + component + "\\" + name,
+        };
+        if (!string.IsNullOrEmpty(pack))
+        {
+            candidates.Insert(0, Path.Combine(pack, "App", component, name));
+        }
+
+        foreach (string p in candidates)
+        {
+            try
             {
-                return p;
+                string full = Path.GetFullPath(p);
+                if (File.Exists(full))
+                {
+                    return full;
+                }
+            }
+            catch
+            {
+                if (File.Exists(p))
+                {
+                    return p;
+                }
             }
         }
 

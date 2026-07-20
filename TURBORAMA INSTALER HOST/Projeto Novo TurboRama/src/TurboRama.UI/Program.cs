@@ -9,6 +9,7 @@ using TurboRama.Installation;
 using TurboRama.Installation.Steps;
 using TurboRama.Rollback;
 using TurboRama.Windows.Baseline;
+using TurboRama.Windows.Optional;
 using TurboRama.Windows.Recovery;
 
 namespace TurboRama.UI;
@@ -359,6 +360,16 @@ internal static class Program
             logger.Info("FactoryFull", m);
         }
 
+        // Evita duas instalações simultâneas (corrupção de state/serviços)
+        using var installMutex = new Mutex(true, @"Global\TurboRamaFactoryFullInstall", out bool createdNew);
+        if (!createdNew)
+        {
+            return OperationResult.Fail(
+                "Outra instalação TurboRama já está em andamento. Aguarde ou reinicie e tente de novo.",
+                "FULL_MUTEX",
+                "FactoryFull");
+        }
+
         try
         {
             string? pack = FactoryFullInstall.FindPackRoot();
@@ -372,6 +383,18 @@ internal static class Program
             }
 
             L("Pack root: " + pack);
+
+            // .NET 8 Desktop Runtime — falha dura (sem runtime o kiosk não sobe)
+            if (!HasDotNetDesktopRuntime8())
+            {
+                return OperationResult.Fail(
+                    "Microsoft .NET 8 Desktop Runtime (x64) não encontrado. " +
+                    "Instale: https://dotnet.microsoft.com/download/dotnet/8.0 e rode de novo.",
+                    "FULL_NO_DOTNET8",
+                    "FactoryFull");
+            }
+
+            L("Runtime .NET 8 Desktop: OK");
 
             OperationResult seed = FactoryFullInstall.SeedPackToMachine(pack, logger);
             L("Seed: " + (seed.Success ? "OK" : "FAIL") + " — " + seed.Message);
@@ -439,6 +462,36 @@ internal static class Program
                     "FactoryFull");
             }
 
+            // Fase 4 + lockdown de produção (igual a este Windows de referência).
+            // Keyboard Filter / DeviceLockdown / SecurityAgent / políticas CAD.
+            // TurboRama (jogos) NÃO entra aqui — copiar D:\Turborama depois.
+            L("Segurança Windows produção (Keyboard Filter + Agent + políticas)...");
+            config.EnableKeyboardFilter = true;
+            config.EnableUwf = false;
+            config.EnableBootBranding = false;
+            // Frontend padrão = pasta de jogos copiada depois (não bloqueia kiosk)
+            if (string.IsNullOrWhiteSpace(config.FrontendExecutable) ||
+                config.FrontendExecutable.IndexOf("Frontend.exe", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                config.FrontendExecutable = @"D:\Turborama\TurboRama.exe";
+            }
+
+            ConfigurationStore.Save(config);
+
+            OperationResult p4 = await RunPhase4Async(
+                config,
+                logger,
+                enableUwf: false,
+                enableKeyboardFilter: true,
+                enableBootBranding: false,
+                force: true).ConfigureAwait(false);
+            L("Fase4 KbFilter: " + (p4.Success ? "OK" : "WARN") + " — " + p4.Message);
+
+            OperationResult sec = ProductionKioskSecurityService.Apply();
+            L("SecurityProd: " + (sec.Success ? "OK" : "WARN") + " — " + sec.Message);
+            // Segurança é best-effort se a edição Windows não tiver IoT;
+            // kiosk básico (F2+F3) já está instalado.
+
             L("Fase 6 Aceite...");
             OperationResult p6 = new PostInstallValidationService().RunToResult(config, clearLocks: true);
             L("Fase6: " + (p6.Success ? "OK" : "FAIL") + " — " + p6.Message);
@@ -452,14 +505,17 @@ internal static class Program
             }
 
             string summary =
-                "INSTALAÇÃO DE FÁBRICA CONCLUÍDA.\n\n" +
+                "INSTALAÇÃO DE FÁBRICA CONCLUÍDA (Windows = kiosk + segurança de produção).\n\n" +
                 "• Pack: " + pack + "\n" +
                 "• Kiosk: " + FactoryDefaults.KioskUserName + "\n" +
                 "• Senha kiosk (se login manual): " + FactoryDefaults.KioskPassword + "\n" +
                 "• Serviços: Watchdog + Maintenance\n" +
+                "• Segurança: Keyboard Filter + SecurityAgent + políticas (como PC referência)\n" +
+                "• Frontend esperado (copiar depois): " + config.FrontendExecutable + "\n" +
                 "• Aceite: OK\n\n" +
-                "REINICIE o PC para autologon no Arcade + Launcher.\n" +
-                "Admin continua para manutenção (Explorer).\n\n" +
+                "1) REINICIE o PC (autologon Arcade + filtro de teclado).\n" +
+                "2) Quando o Windows estiver no kiosk, COPIE a pasta D:\\Turborama (jogos/ES).\n" +
+                "   Admin continua para manutenção (Explorer).\n\n" +
                 "Log: " + string.Join(" → ", stepsLog);
 
             return OperationResult.Ok(summary, "FactoryFull");
@@ -471,6 +527,60 @@ internal static class Program
                 "FULL_EX",
                 "FactoryFull",
                 exception: ex);
+        }
+    }
+
+    /// <summary>
+    /// .NET 8 Desktop Runtime (WindowsDesktop.App 8.x) — obrigatório para Launcher/serviços.
+    /// </summary>
+    private static bool HasDotNetDesktopRuntime8()
+    {
+        try
+        {
+            string[] hosts =
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet", "dotnet.exe"),
+                @"C:\Program Files\dotnet\dotnet.exe",
+                @"D:\tr-dotnet\dotnet.exe",
+            };
+            string? dotnet = hosts.FirstOrDefault(File.Exists);
+            if (dotnet is null)
+            {
+                // Frameworks instalados sem host no PATH
+                string fx = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                    "dotnet", "shared", "Microsoft.WindowsDesktop.App");
+                if (Directory.Exists(fx) &&
+                    Directory.GetDirectories(fx).Any(d => Path.GetFileName(d).StartsWith("8.", StringComparison.Ordinal)))
+                {
+                    return true;
+                }
+
+                return false;
+            }
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = dotnet,
+                Arguments = "--list-runtimes",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            using var p = System.Diagnostics.Process.Start(psi);
+            if (p is null)
+            {
+                return false;
+            }
+
+            string output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(15_000);
+            return output.Contains("Microsoft.WindowsDesktop.App 8.", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
         }
     }
 

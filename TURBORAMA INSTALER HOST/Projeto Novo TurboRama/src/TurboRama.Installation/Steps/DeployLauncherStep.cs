@@ -27,29 +27,51 @@ public sealed class DeployLauncherStep : IInstallationStep
             ProductPaths.EnsureLayout();
             string destDir = ProductPaths.AppLauncher;
 
-            string[] sources =
+            // Ordem: pack de fábrica (PC alvo) → seed já em C:\TurboRama → builds de dev
+            string baseDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string? packRoot = FactoryFullInstall.FindPackRoot();
+            var sources = new List<string>
             {
-                Path.Combine(AppContext.BaseDirectory, "TurboRama.Launcher.exe"),
-                Path.Combine(AppContext.BaseDirectory, "..", "TurboRama.Launcher", "TurboRama.Launcher.exe"),
-                @"D:\tr-phase2-ui\TurboRama.Launcher.exe",
-                @"D:\tr-factory-pack\TurboRama-Factory-Pack\App\Launcher\TurboRama.Launcher.exe",
+                // Pack ao lado do Setup (produção / outro PC)
+                Path.Combine(baseDir, "App", "Launcher", "TurboRama.Launcher.exe"),
+                Path.Combine(baseDir, "..", "App", "Launcher", "TurboRama.Launcher.exe"),
+                // Já semeado por FactoryFullInstall (não falhar se só o dest existir)
+                Path.Combine(ProductPaths.AppLauncher, "TurboRama.Launcher.exe"),
+                Path.Combine(baseDir, "TurboRama.Launcher.exe"),
+                Path.Combine(baseDir, "..", "TurboRama.Launcher", "TurboRama.Launcher.exe"),
                 Path.Combine(
                     Path.GetDirectoryName(typeof(DeployLauncherStep).Assembly.Location) ?? "",
                     "TurboRama.Launcher.exe"),
             };
-
-            string? baseDir = AppContext.BaseDirectory;
-            sources = sources.Concat(new[]
+            if (!string.IsNullOrEmpty(packRoot))
             {
-                Path.Combine(baseDir, "..", "..", "..", "..", "TurboRama.Launcher", "bin", "Release", "net8.0-windows", "win-x64", "TurboRama.Launcher.exe"),
-                Path.Combine(baseDir, "..", "..", "..", "..", "TurboRama.Launcher", "bin", "Release", "net8.0-windows", "TurboRama.Launcher.exe"),
-            }).ToArray();
+                sources.Insert(0, Path.Combine(packRoot, "App", "Launcher", "TurboRama.Launcher.exe"));
+            }
 
-            string? found = sources.FirstOrDefault(File.Exists);
+            // Dev builds (opcional)
+            sources.Add(Path.Combine(baseDir, "..", "..", "..", "..", "TurboRama.Launcher", "bin", "Release", "net8.0-windows", "win-x64", "TurboRama.Launcher.exe"));
+            sources.Add(Path.Combine(baseDir, "..", "..", "..", "..", "TurboRama.Launcher", "bin", "Release", "net8.0-windows", "TurboRama.Launcher.exe"));
+            sources.Add(@"D:\tr-factory-pack\TurboRama-Factory-Pack\App\Launcher\TurboRama.Launcher.exe");
+
+            string? found = sources
+                .Select(p =>
+                {
+                    try { return Path.GetFullPath(p); }
+                    catch { return p; }
+                })
+                .FirstOrDefault(File.Exists);
+
+            // Se o destino já tem o EXE do seed e nenhuma fonte de pack/dev, aceita o seed
+            string destExisting = Path.Combine(destDir, "TurboRama.Launcher.exe");
+            if (found is null && File.Exists(destExisting))
+            {
+                found = destExisting;
+            }
+
             if (found is null)
             {
                 return Task.FromResult(OperationResult.Fail(
-                    "TurboRama.Launcher.exe não encontrado para implantar. Compile o projeto Launcher.",
+                    "TurboRama.Launcher.exe não encontrado. Use a pasta TurboRama-Factory-Pack completa (App\\Launcher) ou rode INSTALAR-COMPLETO a partir do pack.",
                     "LAUNCHER_SRC",
                     Name));
             }

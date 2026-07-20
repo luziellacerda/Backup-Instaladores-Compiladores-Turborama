@@ -98,6 +98,29 @@ Copy-Tree $launcherOut (Join-Path $PackageDir "App\Launcher")
 Copy-Tree $watchdogOut (Join-Path $PackageDir "App\Watchdog")
 Copy-Tree $maintenanceOut (Join-Path $PackageDir "App\Maintenance")
 
+# Scripts de seguranca do PC de referencia (reaplicar lockdown se preciso)
+$secSrcCandidates = @(
+    "C:\TurboRama\App\Launcher",
+    (Join-Path $ProjectRoot "pack-extra\Launcher")
+)
+foreach ($secSrc in $secSrcCandidates) {
+    if (-not (Test-Path $secSrc)) { continue }
+    foreach ($bat in @(
+        "INSTALAR-SEGURANCA.bat",
+        "DEPLOY-LAUNCHER-SEGURO.bat",
+        "BACKUP-SEGURANCA-PANE.bat",
+        "TESTAR-SEGURANCA.bat",
+        "TESTAR-SEGURANCA-COMPLETO.bat"
+    )) {
+        $p = Join-Path $secSrc $bat
+        if (Test-Path $p) {
+            Copy-Item $p (Join-Path $PackageDir "App\Launcher\$bat") -Force
+            Write-Host "  security bat: $bat"
+        }
+    }
+    break
+}
+
 # Instalador prático na RAIZ do pack (1 clique no outro PC)
 $setupDir = Join-Path $PackageDir "_setup-bin"
 if (Test-Path $setupDir) { Remove-Item $setupDir -Recurse -Force }
@@ -165,12 +188,14 @@ $configJson = @'
   "installationId": "00000000-0000-0000-0000-000000000000",
   "kioskUser": "Arcade",
   "installDirectory": "C:\\TurboRama",
-  "frontendExecutable": "C:\\TurboRama\\Frontend\\Frontend.exe",
+  "frontendExecutable": "D:\\Turborama\\TurboRama.exe",
   "profile": "KioskBasic",
   "enableAutoLogon": true,
   "enableKeyboardFilter": true,
   "enableUwf": false,
   "enableBootBranding": false,
+  "enableSecurityMenu": true,
+  "showLoadingScreen": true,
   "watchdog": {
     "enabled": true,
     "restartDelaySeconds": 5,
@@ -181,10 +206,17 @@ $configJson = @'
 '@
 Write-TextFile (Join-Path $PackageDir "Config\turborama.json") $configJson.Trim()
 
-Write-TextFile (Join-Path $PackageDir "Frontend\PUT-FRONTEND-HERE.txt") @"
-Put game/frontend EXE here, e.g. Frontend.exe or TurboRama.exe
-After install: C:\TurboRama\Frontend\
-Edit Config\turborama.json if the name differs.
+Write-TextFile (Join-Path $PackageDir "Frontend\LEIA-COPIAR-TURBORAMA.txt") @"
+NAO e obrigatorio colocar o jogo aqui.
+O instalador de fabrica so prepara o WINDOWS (kiosk + seguranca).
+
+Depois que o Windows reiniciar no Arcade:
+  1) Copie a pasta inteira D:\Turborama do PC modelo
+     (ou do kit) para D:\Turborama neste PC.
+  2) Confirme que existe D:\Turborama\TurboRama.exe
+  3) Reinicie (ou deixe o Launcher/Watchdog reabrir o frontend)
+
+Config aponta para: D:\Turborama\TurboRama.exe
 "@
 
 Write-Host "[4/5] Install scripts + docs..."
@@ -240,11 +272,11 @@ exit /b 0
 "@
 Write-TextFile (Join-Path $PackageDir "INSTALAR.bat") $installBat
 
-# Instalador completo 1 clique (Admin)
+# Instalador completo 1 clique (Admin) = Windows igual PC referencia
 $setupBat = @"
 @echo off
 chcp 65001 >nul
-title TurboRama Secure - Instalacao completa de fabrica
+title TurboRama Secure - Windows Kiosk + Seguranca (fabrica)
 cd /d "%~dp0"
 net session >nul 2>&1
 if errorlevel 1 (
@@ -253,8 +285,13 @@ if errorlevel 1 (
   exit /b
 )
 echo ============================================
-echo   TurboRama Secure - INSTALACAO COMPLETA
-echo   Recria layout, kiosk, servicos e valida
+echo   TurboRama - WINDOWS KIOSK DE PRODUCAO
+echo   Arcade + autologon + servicos +
+echo   Keyboard Filter + SecurityAgent
+echo   (igual PC referencia)
+echo ============================================
+echo   Jogos/TurboRama: COPIAR D:\Turborama
+echo   DEPOIS do reboot, quando o Windows estiver OK.
 echo ============================================
 echo.
 if exist "%~dp0CHECAR-DOTNET.bat" call "%~dp0CHECAR-DOTNET.bat"
@@ -271,14 +308,17 @@ if not exist "%SETUP%" (
   exit /b 1
 )
 set "RESULT=%TEMP%\turborama-factory-full.txt"
-echo Instalando... aguarde.
+echo Instalando Windows kiosk + seguranca... aguarde.
 "%SETUP%" --install-full --result "%RESULT%"
 set ERR=%ERRORLEVEL%
 echo.
 type "%RESULT%" 2>nul
 echo.
 if %ERR% equ 0 (
-  echo OK - REINICIE o PC.
+  echo OK - Windows pronto.
+  echo 1 REINICIE o PC
+  echo 2 Depois copie D:\Turborama (jogos) para este PC
+  echo 3 Confirme D:\Turborama\TurboRama.exe
 ) else (
   echo FALHA - veja C:\TurboRama\Logs\Installer\
 )
@@ -412,25 +452,36 @@ exit /b %ERR%
 Write-TextFile (Join-Path $PackageDir "VALIDAR-ACEITE.bat") $validateBat
 
 $readme = @"
-TurboRama Secure - Factory Pack (Phases 5-6)
+TurboRama Secure - Factory Pack (Windows kiosk de producao)
 Built: $Stamp
 Version: 2.0.0-alpha
 
-======== START HERE (outro PC) ========
-1. Copie a pasta INTEIRA (ou o ZIP) para o PC alvo.
-2. Opcional: coloque o jogo em Frontend\
-3. Clique direito em INSTALAR-COMPLETO.bat (ou SETUP.bat)
-   -> Executar como administrador
-   OU clique duas vezes em TurboRama.Setup.exe (Admin)
-4. Aguarde a mensagem de sucesso.
-5. REINICIE o PC -> autologon Arcade + Launcher.
-6. Senha kiosk se login manual: Lz2026@$
-7. Conta Admin = manutencao (Explorer).
+======== O QUE ESTE PACK FAZ ========
+Prepara o WINDOWS igual ao PC de referencia:
+  - Conta Arcade + autologon
+  - Launcher shell + Watchdog + Maintenance
+  - Keyboard Filter (IoT) + politicas CAD
+  - SecurityAgent (Ctrl+End) + keep-alive
+NAO instala jogos. TurboRama = copiar D:\Turborama depois.
+
+======== START HERE (PC formatado) ========
+1. Windows 10/11 x64 IoT/Enterprise preferivel (Keyboard Filter).
+2. Conta Admin de recuperacao. NAO instalar logado como Arcade.
+3. .NET 8 Desktop Runtime.
+4. Copie esta pasta inteira para o PC.
+5. Clique direito INSTALAR-COMPLETO.bat -> Executar como administrador
+   (ou TurboRama.Setup.exe como Admin)
+6. REINICIE -> autologon Arcade + filtro de teclado.
+7. COPIE a pasta D:\Turborama (do kit/PC modelo) para D:\Turborama.
+8. Confirme D:\Turborama\TurboRama.exe — o Launcher abre sozinho.
+9. Senha kiosk se login manual: Lz2026@$
+10. Admin = manutencao (Explorer).
 
 Alternativas:
 - INSTALAR.bat = so abre a UI
-- INSTALAR-AUTOMATICO.bat = Fase2+3 quiet
+- INSTALAR-AUTOMATICO.bat = Fase2+3 quiet (sem seguranca completa)
 - VALIDAR-ACEITE.bat = so testa
+- App\Launcher\INSTALAR-SEGURANCA.bat = reaplicar so lockdown
 
 Keep an Administrator recovery account (e.g. Admin).
 
@@ -449,7 +500,7 @@ VALIDAR-ACEITE.bat
 1 Baseline (via installer)
 2 Kiosk (Arcade, shell, autologon, policies)
 3 Services (Watchdog + Maintenance)
-4 Optional UWF/KeyboardFilter/branding (default OFF)
+4 KeyboardFilter + SecurityAgent (ON no install-full de producao)
 5 This factory pack
 6 Post-install accept / security validation
 

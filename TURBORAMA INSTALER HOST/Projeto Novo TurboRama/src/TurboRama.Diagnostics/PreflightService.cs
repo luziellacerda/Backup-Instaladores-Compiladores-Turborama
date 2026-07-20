@@ -165,16 +165,15 @@ public sealed class PreflightService
             report.AddOk("Frontend encontrado: " + config.FrontendExecutable);
         }
 
-        // .NET runtime hint
-        string? dotnet = FindDotnetHost();
-        if (dotnet is not null)
+        // .NET 8 Desktop Runtime — obrigatório (Launcher/UI/serviços)
+        if (HasWindowsDesktopRuntime8(out string netDetail))
         {
-            report.AddOk("dotnet host: " + dotnet);
+            report.AddOk(".NET 8 Desktop Runtime: " + netDetail);
         }
         else
         {
-            report.AddWarning(
-                "dotnet host não encontrado no PATH típico — runtime .NET 8 Desktop pode ser necessário no alvo.",
+            report.AddError(
+                ".NET 8 Desktop Runtime (x64) ausente. Instale antes de continuar: https://dotnet.microsoft.com/download/dotnet/8.0 — " + netDetail,
                 "PF_DOTNET");
         }
 
@@ -354,8 +353,81 @@ public sealed class PreflightService
             report.AddOk("Sem tarefas agendadas TurboRama óbvias.");
         }
 
+        // Autologon tool (obrigatório para kiosk com auto-login)
+        string autoTool = Path.Combine(ProductPaths.App, "Tools", "Autologon64.exe");
+        string autoPack = Path.Combine(AppContext.BaseDirectory, "App", "Tools", "Autologon64.exe");
+        if (File.Exists(autoTool) || File.Exists(autoPack) ||
+            File.Exists(Path.Combine(AppContext.BaseDirectory, "..", "App", "Tools", "Autologon64.exe")))
+        {
+            report.AddOk("Autologon64.exe presente.");
+        }
+        else
+        {
+            report.AddError(
+                "Autologon64.exe ausente (Tools). Pack incompleto — sem isso o autologon kiosk falha.",
+                "PF_AUTOLOGON_TOOL");
+        }
+
         report.Success = report.Errors.Count == 0;
         return report;
+    }
+
+    private static bool HasWindowsDesktopRuntime8(out string detail)
+    {
+        detail = "";
+        try
+        {
+            string shared = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "dotnet", "shared", "Microsoft.WindowsDesktop.App");
+            if (Directory.Exists(shared))
+            {
+                string? v8 = Directory.GetDirectories(shared)
+                    .Select(Path.GetFileName)
+                    .FirstOrDefault(n => n != null && n.StartsWith("8.", StringComparison.Ordinal));
+                if (v8 is not null)
+                {
+                    detail = v8;
+                    return true;
+                }
+            }
+
+            string? host = FindDotnetHost();
+            if (host is not null)
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = host,
+                    Arguments = "--list-runtimes",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                using Process? p = Process.Start(psi);
+                if (p is not null)
+                {
+                    string o = p.StandardOutput.ReadToEnd();
+                    p.WaitForExit(12_000);
+                    if (o.Contains("Microsoft.WindowsDesktop.App 8.", StringComparison.OrdinalIgnoreCase))
+                    {
+                        detail = "via " + host;
+                        return true;
+                    }
+
+                    detail = "host ok, sem WindowsDesktop.App 8.x";
+                    return false;
+                }
+            }
+
+            detail = "dotnet host e shared\\Microsoft.WindowsDesktop.App 8.x ausentes";
+            return false;
+        }
+        catch (Exception ex)
+        {
+            detail = ex.Message;
+            return false;
+        }
     }
 
     private static bool HasOtherAdmin(string kioskUser)

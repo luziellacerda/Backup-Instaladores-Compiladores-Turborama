@@ -22,10 +22,11 @@ public static class ConfigurationStore
         InstallationId = Guid.NewGuid(),
         KioskUser = FactoryDefaults.KioskUserName,
         InstallDirectory = ProductPaths.Root,
-        FrontendExecutable = Path.Combine(ProductPaths.Frontend, "Frontend.exe"),
+        // Jogos ficam em D:\Turborama (copiar depois que o Windows estiver kiosk)
+        FrontendExecutable = @"D:\Turborama\TurboRama.exe",
         Profile = "KioskBasic",
         EnableAutoLogon = true,
-        EnableKeyboardFilter = true, // Windows IoT 10 kiosk
+        EnableKeyboardFilter = true, // produção = igual PC referência (IoT)
         EnableUwf = false,
         EnableBootBranding = false,
         EnableLauncherKeyboardHook = false,

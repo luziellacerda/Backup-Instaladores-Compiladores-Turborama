@@ -10,7 +10,8 @@ public sealed class ProductConfiguration
     public Guid InstallationId { get; set; } = Guid.Empty;
     public string KioskUser { get; set; } = FactoryDefaults.KioskUserName;
     public string InstallDirectory { get; set; } = @"C:\TurboRama";
-    public string FrontendExecutable { get; set; } = @"C:\TurboRama\Frontend\Frontend.exe";
+    /// <summary>EXE do jogo. Padrão produção: copiar pasta D:\Turborama após o Windows kiosk.</summary>
+    public string FrontendExecutable { get; set; } = @"D:\Turborama\TurboRama.exe";
     public string Profile { get; set; } = "KioskBasic";
     public bool EnableAutoLogon { get; set; } = true;
     /// <summary>Keyboard Filter (Windows IoT). Default ON neste projeto (kiosk IoT 10).</summary>

@@ -74,6 +74,14 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 				if (Directory.EnumerateFileSystemEntries(text).Any<string>())
 				{
 					Logger.Log("[WARNING] Installation folder not empty.");
+					DialogResult overwrite = MessageBox.Show(
+						"A pasta de instalacao nao esta vazia:" + Environment.NewLine + text + Environment.NewLine + Environment.NewLine +
+						"Continuar pode sobrescrever ficheiros. Deseja continuar?",
+						"Pasta nao vazia",
+						MessageBoxButtons.YesNo,
+						MessageBoxIcon.Warning);
+					if (overwrite != DialogResult.Yes)
+						return;
 				}
 			}
 			else
@@ -119,15 +127,18 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			};
 			this.worker.ProgressChanged += delegate(object progressSender, ProgressChangedEventArgs progressArgs)
 			{
+				int pct = progressArgs.ProgressPercentage;
+				if (pct < 0) pct = 0;
+				if (pct > 100) pct = 100;
 				if (this.progressBar.InvokeRequired)
 				{
 					this.progressBar.Invoke(new Action(delegate
 					{
-						this.progressBar.Value = progressArgs.ProgressPercentage;
+						this.progressBar.Value = pct;
 					}));
 					return;
 				}
-				this.progressBar.Value = progressArgs.ProgressPercentage;
+				this.progressBar.Value = pct;
 			};
 			this.worker.RunWorkerCompleted += delegate(object completeSender, RunWorkerCompletedEventArgs completeArgs)
 			{
@@ -136,7 +147,8 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 				this.btnBack.Enabled = true;
 				this.progressBar.Visible = false;
 				this.txtInfo.Visible = true;
-				Exception ex3 = completeArgs.Result as Exception;
+				// Superficie erros nao capturados no DoWork (e.Error) e Result
+				Exception ex3 = completeArgs.Error ?? (completeArgs.Result as Exception);
 				if (ex3 != null)
 				{
 					MessageBox.Show(this, "Falha na instalação: " + DownloadDisplayMask.Apply(ex3.Message), null, MessageBoxButtons.OK, MessageBoxIcon.Hand);
@@ -300,7 +312,10 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 									num2 += (long)num4;
 									if (num > 0L)
 									{
+										// Clamp 0-100 — evita crash da ProgressBar em ZIP com Size inconsistente
 										int num5 = (int)(num2 * 100L / num);
+										if (num5 < 0) num5 = 0;
+										if (num5 > 100) num5 = 100;
 										if (num5 != num3)
 										{
 											BackgroundWorker backgroundWorker = this.worker;
@@ -330,28 +345,30 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 		private void ValidateExtractedInstallation(string destinationFolder)
 		{
 			List<string> missing = new List<string>();
+			List<string> warnings = new List<string>();
 
-			string esExe = Path.Combine(destinationFolder, "emulationstation", "emulationstation.exe");
-			string esLauncher = Path.Combine(destinationFolder, "emulationstation", "emulatorlauncher.exe");
-			string esDll = Path.Combine(destinationFolder, "emulationstation", "emulatorlauncher.common.dll");
-			string sdl3 = Path.Combine(destinationFolder, "emulationstation", "SDL3.dll");
+			string esDir = Path.Combine(destinationFolder, "emulationstation");
+			string esExe = Path.Combine(esDir, "emulationstation.exe");
+			string esLauncher = Path.Combine(esDir, "emulatorlauncher.exe");
+			// DLL pode ser EmulatorLauncher.Common.dll (case real no Windows)
+			string esDllA = Path.Combine(esDir, "emulatorlauncher.common.dll");
+			string esDllB = Path.Combine(esDir, "EmulatorLauncher.Common.dll");
+			string sdl3 = Path.Combine(esDir, "SDL3.dll");
+			string esCfg = Path.Combine(esDir, "emulatorLauncher.cfg");
+			string decoRoot = Path.Combine(destinationFolder, "system", "decorations");
+			string esSettings = Path.Combine(esDir, ".emulationstation", "es_settings.cfg");
+			string esSystems = Path.Combine(esDir, ".emulationstation", "es_systems.cfg");
 
 			if (!File.Exists(esExe))
-			{
 				missing.Add("emulationstation\\emulationstation.exe");
-			}
 			if (!File.Exists(esLauncher))
-			{
 				missing.Add("emulationstation\\emulatorlauncher.exe");
-			}
-			if (!File.Exists(esDll))
-			{
-				missing.Add("emulationstation\\emulatorlauncher.common.dll");
-			}
+			if (!File.Exists(esDllA) && !File.Exists(esDllB))
+				missing.Add("emulationstation\\EmulatorLauncher.Common.dll");
 			if (!File.Exists(sdl3))
-			{
 				missing.Add("emulationstation\\SDL3.dll");
-			}
+			if (!File.Exists(esCfg))
+				warnings.Add("emulationstation\\emulatorLauncher.cfg (paths do sistema)");
 
 			bool hasLauncherAtRoot =
 				File.Exists(Path.Combine(destinationFolder, "TurboRama.exe")) ||
@@ -363,6 +380,39 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			{
 				missing.Add("TurboRama.exe (launcher .NET na raiz - NÃO renomeie emulationstation.exe)");
 			}
+
+			// ES TurboRama actual e grande (VLC embutido). ES stock RetroBat ~8MB e insuficiente para kiosk actual.
+			if (File.Exists(esExe))
+			{
+				long esSize = new FileInfo(esExe).Length;
+				const long MinTurboRamaEsBytes = 50L * 1024L * 1024L; // 50 MB
+				if (esSize < MinTurboRamaEsBytes)
+				{
+					warnings.Add(
+						"emulationstation.exe parece ser a versao stock (" +
+						Math.Round(esSize / (1024.0 * 1024.0), 1) +
+						" MB). O TurboRama kiosk actual usa ~700+ MB. Regenere o pacote com o ES compilado.");
+					Logger.Log("[WARNING] " + warnings[warnings.Count - 1]);
+				}
+			}
+
+			if (!Directory.Exists(decoRoot))
+				warnings.Add("system\\decorations (bezels de sistema)");
+			if (!File.Exists(esSettings))
+				warnings.Add("emulationstation\\.emulationstation\\es_settings.cfg");
+			if (!File.Exists(esSystems))
+				warnings.Add("emulationstation\\.emulationstation\\es_systems.cfg");
+
+			// DEV-ONLY nao deve ir para kiosk
+			string devOnly = Path.Combine(destinationFolder, "TurboRama.exe.DEV-ONLY-NAO-USAR-NO-KIOSK");
+			if (File.Exists(devOnly))
+			{
+				try { File.Delete(devOnly); Logger.Log("Removed DEV-ONLY launcher from install."); }
+				catch (Exception ex) { Logger.Log("Could not remove DEV-ONLY: " + ex.Message); }
+			}
+
+			foreach (string w in warnings)
+				Logger.Log("[WARNING] Pacote: " + w);
 
 			if (missing.Count > 0)
 			{

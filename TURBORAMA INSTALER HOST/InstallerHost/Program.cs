@@ -20,6 +20,21 @@ namespace InstallerHost
 		private static void Main(string[] args)
 		{
 			Program.SetProcessDPIAware();
+
+			// Uma unica instancia (evita dois installs em paralelo no mesmo PC)
+			bool createdNew;
+			using (Mutex singleInstance = new Mutex(true, @"Global\TurboramaInstallerHost", out createdNew))
+			{
+				if (!createdNew)
+				{
+					MessageBox.Show(
+						"O instalador TurboRama ja esta em execucao.",
+						"TurboRama",
+						MessageBoxButtons.OK,
+						MessageBoxIcon.Information);
+					return;
+				}
+
 			AppDomain.CurrentDomain.AssemblyResolve += delegate(object sender, ResolveEventArgs resolveArgs)
 			{
 				if (new AssemblyName(resolveArgs.Name).Name == "ICSharpCode.SharpZipLib")
@@ -69,6 +84,7 @@ namespace InstallerHost
 				Logger.Log("Fatal startup error: " + ex.ToString());
 				MessageBox.Show(Texts.GetString("StartupError", Array.Empty<object>()), Texts.GetString("Error", Array.Empty<object>()), MessageBoxButtons.OK, MessageBoxIcon.Hand);
 			}
+			} // Mutex
 		}
 	}
 }

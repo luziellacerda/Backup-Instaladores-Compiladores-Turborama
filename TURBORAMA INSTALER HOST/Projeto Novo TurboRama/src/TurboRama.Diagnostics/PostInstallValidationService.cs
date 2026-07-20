@@ -213,7 +213,19 @@ public sealed class PostInstallValidationService
 
         if (config.EnableKeyboardFilter)
         {
-            report.AddWarning("Keyboard Filter habilitado na config.", "V_KB_ON");
+            // Produção = Keyboard Filter ON (igual PC referência). Aviso só se serviço ausente.
+            string kbQ = RunCapture("sc.exe", "query MsKeyboardFilter");
+            if (kbQ.Contains("RUNNING", StringComparison.OrdinalIgnoreCase) ||
+                kbQ.Contains("STOPPED", StringComparison.OrdinalIgnoreCase))
+            {
+                report.AddOk("Keyboard Filter na config ON e serviço MsKeyboardFilter presente.");
+            }
+            else
+            {
+                report.AddWarning(
+                    "Keyboard Filter ON na config, mas MsKeyboardFilter ausente (edição sem IoT — lockdown parcial).",
+                    "V_KB_ON");
+            }
         }
         else
         {
