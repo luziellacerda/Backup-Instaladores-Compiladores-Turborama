@@ -1,0 +1,23 @@
+﻿TurboRama - Pacote instalacao ESTAVEL 2026-07-20
+================================================
+
+Pasta: D:\Backup-Instaladores-Compiladores-Turborama\DIST-INSTALL-STABLE
+
+FICHEIROS (todos juntos):
+  TurboRama-stable-20260720-win64-setup.exe
+  TurboRama-stable-20260720-win64-setup.exe.pkg.001
+  TurboRama-stable-20260720-win64-setup.exe.pkg.002
+  TurboRama-stable-20260720-win64-setup.exe.pkg.003
+  TurboRama-stable-20260720-win64-setup.exe.sha256.txt
+
+PC LIMPO:
+  1. Windows 10/11 64-bit
+  2. setup.exe como Administrador
+  3. Destino: D:\Turborama
+  4. Aceitar todos os pre-requisitos
+  5. Abrir TurboRama.exe
+
+PACOTE INCLUI ES TurboRama kiosk (~738 MB), screensaver_videos, decorations, emulators, bios.
+NAO inclui ROMs - copiar a parte.
+
+ATALHOS: Start=menu senha | F11=locadora | F10 moeda | F8 pausa | F7 parar | F12 zerar

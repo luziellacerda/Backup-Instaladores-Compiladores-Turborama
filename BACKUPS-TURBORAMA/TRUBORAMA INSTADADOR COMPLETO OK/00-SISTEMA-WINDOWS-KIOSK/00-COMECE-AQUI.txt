@@ -1,0 +1,66 @@
+TurboRama Secure - Factory Pack (Windows kiosk de producao)
+Built: 2026-07-20 19:47:45
+Updated: 2026-07-21 (fix: senha kiosk min 8 + frontend flat D:\TurboRama.exe + UI cabe na tela)
+Version: 2.0.0-alpha
+
+======== O QUE ESTE PACK FAZ ========
+Prepara o WINDOWS igual ao PC de referencia:
+  - Conta Arcade + autologon
+  - Launcher shell + Watchdog + Maintenance
+  - Keyboard Filter (IoT) + politicas CAD
+  - SecurityAgent (Ctrl+End) + keep-alive
+NAO instala jogos. Frontend = copiar/instalar DEPOIS (ou ja no disco).
+
+======== START HERE (PC formatado) ========
+1. Windows 10/11 x64 IoT/Enterprise preferivel (Keyboard Filter).
+2. Conta Admin de recuperacao. NAO instalar logado como Arcade.
+3. .NET 8 Desktop Runtime.
+4. Copie esta pasta inteira para o PC.
+5. Clique direito INSTALAR-COMPLETO.bat -> Executar como administrador
+   (ou TurboRama.Setup.exe como Admin)
+6. REINICIE -> autologon Arcade + filtro de teclado.
+7. JOGOS (um dos layouts):
+   A) Pasta: D:\Turborama\TurboRama.exe  (recomendado)
+   B) Flat:  D:\TurboRama.exe (+ emulationstation na raiz D:\)
+   O instalador/Launcher detecta os dois automaticamente.
+8. Senha kiosk se login manual: Lz2026@$  (8 caracteres — OK)
+9. Admin = manutencao (Explorer).
+
+Alternativas:
+- INSTALAR.bat = so abre a UI
+- INSTALAR-AUTOMATICO.bat = Fase2+3 quiet (sem seguranca completa)
+- VALIDAR-ACEITE.bat = so testa
+- App\Launcher\INSTALAR-SEGURANCA.bat = reaplicar so lockdown
+
+Keep an Administrator recovery account (e.g. Admin).
+
+======== STRUCTURE ========
+TurboRama.Setup.exe  << INSTALADOR PRINCIPAL (1 clique)
+INSTALAR-COMPLETO.bat / SETUP.bat
+Installer\TurboRama.UI.exe
+App\Launcher\ Watchdog\ Maintenance\ Tools\
+Config\ Frontend\
+PACK-HASHES.sha256
+CHECAR-DOTNET.bat
+VALIDAR-ACEITE.bat
+
+======== PROJECT PHASES ========
+0 Foundation
+1 Baseline (via installer)
+2 Kiosk (Arcade, shell, autologon, policies)
+3 Services (Watchdog + Maintenance)
+4 KeyboardFilter + SecurityAgent (ON no install-full de producao)
+5 This factory pack
+6 Post-install accept / security validation
+
+======== REQUIREMENTS ========
+- Windows 10/11 x64
+- .NET 8 Desktop Runtime
+  https://dotnet.microsoft.com/download/dotnet/8.0
+- Administrator account
+- Do NOT install while logged in as Arcade
+
+======== PHASE 4 ========
+In UI, only check modules you accept the risk for.
+UWF needs IoT/Enterprise. Keyboard Filter needs Embedded lockdown.
+Safe default: nothing checked.

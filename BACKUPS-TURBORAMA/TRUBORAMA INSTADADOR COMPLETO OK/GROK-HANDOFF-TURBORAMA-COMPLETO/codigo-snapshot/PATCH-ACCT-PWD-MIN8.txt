@@ -1,0 +1,6 @@
+PATCH 2026-07-21 — ver 11-FIX-SENHA-E-FRONTEND-2026-07-21.md
+
+1) LocalAccountService: password.Length < 8 (era 12)
+2) FactoryDefaults: MinKioskPasswordLength = 8; GetFrontendCandidates inclui D:\TurboRama.exe
+3) MainForm: tamanho adaptativo ao monitor
+4) Pack F:\TURBORAMA-KIOSK\00-SISTEMA-WINDOWS-KIOSK recompilado + PACK-HASHES regenerado

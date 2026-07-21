@@ -1,0 +1,63 @@
+﻿================================================================================
+  TURBORAMA - KIT COMPLETO PARA HD (PC FORMATADO)
+  Unidade: E:\Turborama-INSTALADOR-HD
+  Data: 2026-07-20
+================================================================================
+
+O QUE LEVAR NO HD
+-----------------
+Copie a pasta INTEIRA Turborama-INSTALADOR-HD para o HD/SSD do PC alvo
+(ou use este pendrive E: direto).
+
+ORDEM DE INSTALACAO (OBRIGATORIA)
+---------------------------------
+0) Windows 10/11 x64 (preferivel IoT Enterprise / Enterprise para Keyboard Filter)
+   Conta Admin de recuperacao (NAO instale logado como Arcade)
+
+1) .NET 8 Desktop Runtime x64
+   Pasta: 03-DOTNET-RUNTIME\
+   Rode o exe como Admin (se nao baixou, use o link do BAIXE-DOTNET8-AQUI.txt)
+   Ou: 0-INSTALAR-DOTNET.bat
+
+2) WINDOWS KIOSK (igual PC referencia)
+   Pasta: 00-WINDOWS-KIOSK\
+   Clique direito: INSTALAR-COMPLETO.bat -> Executar como administrador
+   Ou: TurboRama.Setup.exe (Admin)
+   Aguarde OK -> REINICIE o PC
+   Resultado: conta Arcade, autologon, Launcher, Watchdog, Maintenance,
+              Keyboard Filter + SecurityAgent (Ctrl+End)
+
+3) TURBORAMA / JOGOS (frontend)
+   Pasta: 01-TURBORAMA-JOGOS\
+   Rode o setup.exe como Admin
+   Destino recomendado: D:\Turborama
+   (se o setup pedir pasta, use D:\Turborama)
+
+4) ROMs (se tiver em outro disco/backup)
+   Copie para D:\Turborama\roms\
+   O instalador de jogos NAO precisa trazer ROMs.
+
+5) Confirme
+   - Existe D:\Turborama\TurboRama.exe
+   - Reinicie se o jogo nao abriu
+   - VALIDAR-ACEITE.bat em 00-WINDOWS-KIOSK (Admin)
+
+ATALHOS KIOSK
+-------------
+Start = menu senha | F11 = locadora | F10 moeda | F8 pausa | F7 parar | F12 zerar
+Ctrl+End = menu seguranca (PIN = senha kiosk de fabrica se nao trocou)
+
+SENHA KIOSK FABRICA (trocar em producao)
+---------------------------------------
+Lz2026@$
+
+RECUPERACAO
+-----------
+Conta Admin = Explorer/manutencao
+Docs: 00-WINDOWS-KIOSK\docs\
+
+VERIFICACAO RAPIDA
+------------------
+Rode: VERIFICAR-KIT.bat (nesta pasta)
+
+================================================================================

@@ -1,0 +1,23 @@
+NAO e obrigatorio colocar o jogo aqui.
+O instalador de fabrica so prepara o WINDOWS (kiosk + seguranca).
+
+Depois que o Windows reiniciar no Arcade (ou antes, se preferir):
+
+LAYOUT A — pasta classica (recomendado):
+  1) Copie a pasta inteira do PC modelo / kit para D:\Turborama
+  2) Confirme: D:\Turborama\TurboRama.exe
+  3) Reinicie se o Launcher ainda nao abriu o jogo
+
+LAYOUT B — flat (setup estavel / D: na raiz):
+  1) TurboRama.exe + emulationstation + emulators + bios na RAIZ de D:\
+  2) Confirme: D:\TurboRama.exe
+  3) O instalador/Launcher detecta este path automaticamente
+
+O seed e o Launcher procuram, nesta ordem:
+  D:\TurboRama.exe
+  D:\Turborama\TurboRama.exe
+  C:\TurboRama\Frontend\TurboRama.exe
+  ... (outros candidatos)
+
+Config preferido no JSON: D:\Turborama\TurboRama.exe
+(se o EXE real for outro, o seed grava o path encontrado)

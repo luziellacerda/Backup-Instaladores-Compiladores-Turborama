@@ -1,0 +1,432 @@
+using System.Diagnostics;
+using System.Text;
+using TurboRama.Configuration;
+using TurboRama.Core.Logging;
+using TurboRama.Core.Paths;
+using TurboRama.Core.Results;
+using TurboRama.Windows.Security;
+using TurboRama.Windows.Services;
+
+namespace TurboRama.Installation;
+
+/// <summary>
+/// Instalação de fábrica completa em um PC alvo: seed do pack → layout → (pipeline externo).
+/// </summary>
+public static class FactoryFullInstall
+{
+    /// <summary>
+    /// Descobre a pasta do pack a partir do EXE (Installer\ ou raiz do pack).
+    /// </summary>
+    public static string? FindPackRoot(string? hint = null)
+    {
+        var candidates = new List<string>();
+        if (!string.IsNullOrWhiteSpace(hint))
+        {
+            candidates.Add(hint);
+        }
+
+        string baseDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        candidates.Add(baseDir);
+        candidates.Add(Path.GetFullPath(Path.Combine(baseDir, "..")));
+        candidates.Add(Path.GetFullPath(Path.Combine(baseDir, "..", "..")));
+
+        foreach (string c in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (LooksLikePack(c))
+            {
+                return c;
+            }
+
+            // EXE em Installer\
+            string parent = Path.GetFullPath(Path.Combine(c, ".."));
+            if (LooksLikePack(parent))
+            {
+                return parent;
+            }
+        }
+
+        return null;
+    }
+
+    public static bool LooksLikePack(string dir)
+    {
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+        {
+            return false;
+        }
+
+        return File.Exists(Path.Combine(dir, "App", "Launcher", "TurboRama.Launcher.exe"))
+               || File.Exists(Path.Combine(dir, "App", "Watchdog", "TurboRama.Watchdog.exe"))
+               || (Directory.Exists(Path.Combine(dir, "Installer")) &&
+                   Directory.Exists(Path.Combine(dir, "App")));
+    }
+
+    /// <summary>
+    /// Copia App/Config/Frontend/Tools do pack para C:\TurboRama (sem apagar dados de usuário).
+    /// Para serviços/Launcher em uso antes de copiar (evita sharing violation em reinstall).
+    /// </summary>
+    public static OperationResult SeedPackToMachine(string packRoot, ITurboRamaLogger? logger = null)
+    {
+        try
+        {
+            if (!Directory.Exists(packRoot))
+            {
+                return OperationResult.Fail("Pack root inexistente: " + packRoot, "SEED_ROOT", "FactorySeed");
+            }
+
+            // Pack incompleto = falha dura (não instalar metade do sistema)
+            string[] requiredPack =
+            {
+                Path.Combine(packRoot, "App", "Launcher", "TurboRama.Launcher.exe"),
+                Path.Combine(packRoot, "App", "Watchdog", "TurboRama.Watchdog.exe"),
+                Path.Combine(packRoot, "App", "Maintenance", "TurboRama.Maintenance.exe"),
+                Path.Combine(packRoot, "App", "Tools", "Autologon64.exe"),
+            };
+            foreach (string req in requiredPack)
+            {
+                if (!File.Exists(req))
+                {
+                    return OperationResult.Fail(
+                        "Pack incompleto — arquivo obrigatório ausente: " + req +
+                        ". Use a pasta TurboRama-Factory-Pack inteira.",
+                        "SEED_PACK_INCOMPLETE",
+                        "FactorySeed");
+                }
+            }
+
+            ProductPaths.EnsureLayout();
+            var log = new StringBuilder();
+
+            // Parar o que trava EXEs/DLLs antes de sobrescrever (reinstall / upgrade)
+            try
+            {
+                WindowsServiceInstaller.Stop(WindowsServiceInstaller.WatchdogServiceName);
+                WindowsServiceInstaller.Stop(WindowsServiceInstaller.MaintenanceServiceName);
+                Thread.Sleep(1500);
+            }
+            catch (Exception exStop)
+            {
+                log.AppendLine("stop-svc: " + exStop.Message);
+            }
+
+            KillByName("TurboRama.Watchdog");
+            KillByName("TurboRama.Maintenance");
+            KillByName("TurboRama.Launcher");
+            Thread.Sleep(800);
+
+            if (!CopyTree(Path.Combine(packRoot, "App", "Launcher"), ProductPaths.AppLauncher, log))
+            {
+                return OperationResult.Fail("Falha ao copiar Launcher (arquivo em uso ou disco). Feche o kiosk e tente de novo.", "SEED_LAUNCHER", "FactorySeed");
+            }
+
+            if (!CopyTree(Path.Combine(packRoot, "App", "Watchdog"), ProductPaths.AppWatchdog, log))
+            {
+                return OperationResult.Fail("Falha ao copiar Watchdog (serviço ainda em uso?).", "SEED_WATCHDOG", "FactorySeed");
+            }
+
+            if (!CopyTree(Path.Combine(packRoot, "App", "Maintenance"), ProductPaths.AppMaintenance, log))
+            {
+                return OperationResult.Fail("Falha ao copiar Maintenance (serviço ainda em uso?).", "SEED_MAINT", "FactorySeed");
+            }
+
+            if (!CopyTree(Path.Combine(packRoot, "App", "Tools"), Path.Combine(ProductPaths.App, "Tools"), log))
+            {
+                return OperationResult.Fail("Falha ao copiar Tools (Autologon).", "SEED_TOOLS", "FactorySeed");
+            }
+
+            string cfgSrc = Path.Combine(packRoot, "Config", "turborama.json");
+            string cfgDst = ProductPaths.ConfigFile;
+            if (File.Exists(cfgSrc) && !File.Exists(cfgDst))
+            {
+                CopyFileRetry(cfgSrc, cfgDst);
+                log.AppendLine("config template copiado");
+            }
+
+            string feSrc = Path.Combine(packRoot, "Frontend");
+            if (Directory.Exists(feSrc))
+            {
+                foreach (string exe in Directory.GetFiles(feSrc, "*.exe"))
+                {
+                    string dest = Path.Combine(ProductPaths.Frontend, Path.GetFileName(exe));
+                    CopyFileRetry(exe, dest);
+                    log.AppendLine("frontend " + Path.GetFileName(exe));
+                }
+            }
+
+            // Descobre frontend real (pack, C:\TurboRama\Frontend, ou instalação legada D:\Turborama)
+            TryBindFrontendPath(cfgDst, log);
+
+            // Scripts ES: quit/shutdown/reboot → power-request.txt (Launcher trata splash + energia)
+            InstallEmulationStationPowerScripts(packRoot, log);
+
+            // Ctrl+Alt+Del: esvaziar/bloquear — menu = Ctrl+End (agente no Launcher)
+            try
+            {
+                OperationResult cad = CadBlockService.ApplySystemWide();
+                log.AppendLine("CadBlock: " + cad.Message);
+                logger?.Info("FactorySeed", "CadBlock: " + cad.Message);
+            }
+            catch (Exception exCad)
+            {
+                log.AppendLine("CadBlock: " + exCad.Message);
+            }
+
+            // Validação pós-seed (falha dura)
+            string auto = Path.Combine(ProductPaths.App, "Tools", "Autologon64.exe");
+            string launcher = Path.Combine(ProductPaths.AppLauncher, "TurboRama.Launcher.exe");
+            string wd = Path.Combine(ProductPaths.AppWatchdog, "TurboRama.Watchdog.exe");
+            string mt = Path.Combine(ProductPaths.AppMaintenance, "TurboRama.Maintenance.exe");
+            if (!File.Exists(auto) || !File.Exists(launcher) || !File.Exists(wd) || !File.Exists(mt))
+            {
+                return OperationResult.Fail(
+                    "Seed incompleto após cópia. Autologon=" + File.Exists(auto) +
+                    " Launcher=" + File.Exists(launcher) +
+                    " Watchdog=" + File.Exists(wd) +
+                    " Maintenance=" + File.Exists(mt),
+                    "SEED_VALIDATE",
+                    "FactorySeed");
+            }
+
+            string msg = "Seed OK de " + packRoot + " → C:\\TurboRama. " + log.ToString().Replace(Environment.NewLine, "; ");
+            logger?.Info("FactorySeed", msg);
+            return OperationResult.Ok(msg, "FactorySeed", currentState: ProductPaths.Root);
+        }
+        catch (Exception ex)
+        {
+            return OperationResult.Fail("Seed falhou: " + ex.Message, "SEED_EX", "FactorySeed", exception: ex);
+        }
+    }
+
+    /// <returns>false se algum arquivo crítico falhou após retries</returns>
+    private static bool CopyTree(string src, string dst, StringBuilder log)
+    {
+        if (!Directory.Exists(src))
+        {
+            log.AppendLine("skip missing " + src);
+            return false;
+        }
+
+        Directory.CreateDirectory(dst);
+        bool ok = true;
+        foreach (string file in Directory.GetFiles(src))
+        {
+            try
+            {
+                CopyFileRetry(file, Path.Combine(dst, Path.GetFileName(file)));
+            }
+            catch (Exception ex)
+            {
+                log.AppendLine("copy fail " + Path.GetFileName(file) + ": " + ex.Message);
+                ok = false;
+            }
+        }
+
+        foreach (string dir in Directory.GetDirectories(src))
+        {
+            if (!CopyTree(dir, Path.Combine(dst, Path.GetFileName(dir)), log))
+            {
+                ok = false;
+            }
+        }
+
+        log.AppendLine((ok ? "copied " : "partial ") + Path.GetFileName(src));
+        return ok;
+    }
+
+    private static void CopyFileRetry(string source, string dest, int attempts = 10)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+        for (int i = 0; i < attempts; i++)
+        {
+            try
+            {
+                File.Copy(source, dest, true);
+                return;
+            }
+            catch (IOException) when (i < attempts - 1)
+            {
+                Thread.Sleep(350 + (i * 150));
+            }
+            catch (UnauthorizedAccessException) when (i < attempts - 1)
+            {
+                Thread.Sleep(350 + (i * 150));
+            }
+        }
+
+        File.Copy(source, dest, true);
+    }
+
+    private static void KillByName(string processName)
+    {
+        try
+        {
+            foreach (Process p in Process.GetProcessesByName(processName))
+            {
+                try
+                {
+                    p.Kill(entireProcessTree: true);
+                    p.WaitForExit(4000);
+                }
+                catch
+                {
+                    /* ignore */
+                }
+            }
+        }
+        catch
+        {
+            /* ignore */
+        }
+    }
+
+    /// <summary>
+    /// Instala scripts EmulationStation (quit/shutdown/reboot) que gravam
+    /// C:\TurboRama\State\power-request.txt para o Launcher.
+    /// </summary>
+    public static void InstallEmulationStationPowerScripts(string? packRoot, StringBuilder? log = null)
+    {
+        log ??= new StringBuilder();
+        try
+        {
+            string? scriptsSrc = null;
+            string[] srcCandidates =
+            {
+                packRoot == null ? "" : Path.Combine(packRoot, "Frontend", "emulationstation-scripts"),
+                packRoot == null ? "" : Path.Combine(packRoot, "scripts", "emulationstation"),
+                Path.Combine(AppContext.BaseDirectory, "emulationstation-scripts"),
+                @"D:\Backup-Instaladores-Compiladores-Turborama\TURBORAMA INSTALER HOST\Projeto Novo TurboRama\scripts\emulationstation",
+            };
+            foreach (string c in srcCandidates)
+            {
+                if (!string.IsNullOrEmpty(c) && Directory.Exists(c) &&
+                    Directory.Exists(Path.Combine(c, "shutdown")))
+                {
+                    scriptsSrc = c;
+                    break;
+                }
+            }
+
+            if (scriptsSrc == null)
+            {
+                // Gera scripts embutidos mínimos se o pack não trouxer pasta
+                scriptsSrc = Path.Combine(ProductPaths.AppLauncher, "es-scripts-generated");
+                WriteEmbeddedEsScripts(scriptsSrc);
+            }
+
+            string[] destRoots =
+            {
+                Path.Combine(@"D:\Turborama", "emulationstation", ".emulationstation", "scripts"),
+                // Layout flat (setup estável / cópia na raiz de D:)
+                Path.Combine(@"D:\emulationstation", ".emulationstation", "scripts"),
+                Path.Combine(ProductPaths.Frontend, "emulationstation", ".emulationstation", "scripts"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".emulationstation", "scripts"),
+            };
+
+            foreach (string destRoot in destRoots)
+            {
+                string parent = Path.GetDirectoryName(destRoot) ?? "";
+                if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
+                {
+                    // Cria scripts mesmo se .emulationstation existir no caminho Turborama
+                    if (!destRoot.StartsWith(@"D:\Turborama", StringComparison.OrdinalIgnoreCase) &&
+                        !destRoot.StartsWith(ProductPaths.Frontend, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                }
+
+                foreach (string action in new[] { "shutdown", "reboot", "quit" })
+                {
+                    string from = Path.Combine(scriptsSrc, action);
+                    string to = Path.Combine(destRoot, action);
+                    if (!Directory.Exists(from))
+                    {
+                        continue;
+                    }
+
+                    Directory.CreateDirectory(to);
+                    foreach (string file in Directory.GetFiles(from, "*.bat"))
+                    {
+                        File.Copy(file, Path.Combine(to, Path.GetFileName(file)), true);
+                    }
+                }
+
+                log.AppendLine("es-scripts → " + destRoot);
+            }
+        }
+        catch (Exception ex)
+        {
+            log.AppendLine("es-scripts fail: " + ex.Message);
+        }
+    }
+
+    private static void WriteEmbeddedEsScripts(string root)
+    {
+        Directory.CreateDirectory(Path.Combine(root, "shutdown"));
+        Directory.CreateDirectory(Path.Combine(root, "reboot"));
+        Directory.CreateDirectory(Path.Combine(root, "quit"));
+
+        const string header = "@echo off\r\nset \"TR_STATE=C:\\TurboRama\\State\"\r\nif not exist \"%TR_STATE%\" mkdir \"%TR_STATE%\" 2>nul\r\n";
+        File.WriteAllText(Path.Combine(root, "shutdown", "01-turborama-power-request.bat"),
+            header + "> \"%TR_STATE%\\power-request.txt\" echo shutdown\r\nshutdown /a >nul 2>&1\r\nexit /b 0\r\n");
+        File.WriteAllText(Path.Combine(root, "reboot", "01-turborama-power-request.bat"),
+            header + "> \"%TR_STATE%\\power-request.txt\" echo reboot\r\nshutdown /a >nul 2>&1\r\nexit /b 0\r\n");
+        // quit = shutdown no kiosk (menu Desligar do ES usa pasta quit)
+        File.WriteAllText(Path.Combine(root, "quit", "01-turborama-power-request.bat"),
+            header + "> \"%TR_STATE%\\power-request.txt\" echo shutdown\r\n" +
+            "shutdown /a >nul 2>&1\r\n" +
+            "taskkill /IM emulationstation.exe /F >nul 2>&1\r\n" +
+            "taskkill /IM TurboRama.exe /F >nul 2>&1\r\n" +
+            "exit /b 0\r\n");
+    }
+
+    /// <summary>
+    /// Grava frontendExecutable no turborama.json apontando para o EXE real encontrado no PC.
+    /// Suporta layout pasta (D:\Turborama\TurboRama.exe) e flat (D:\TurboRama.exe + ES na raiz D:\).
+    /// </summary>
+    private static void TryBindFrontendPath(string configPath, StringBuilder log)
+    {
+        try
+        {
+            // Candidatos centralizados — ordem: flat D:\TurboRama.exe, pasta D:\Turborama\, Frontend, ES
+            string? found = FactoryDefaults.FindExistingFrontend(
+                configuredPath: null,
+                packFrontendDir: ProductPaths.Frontend);
+
+            if (found is null || !File.Exists(configPath))
+            {
+                if (found is null)
+                {
+                    log.AppendLine("frontend path: nenhum EXE candidato (configure depois)");
+                }
+
+                return;
+            }
+
+            string json = File.ReadAllText(configPath);
+            string escaped = found.Replace("\\", "\\\\");
+            if (json.Contains("\"frontendExecutable\"", StringComparison.Ordinal))
+            {
+                json = System.Text.RegularExpressions.Regex.Replace(
+                    json,
+                    "\"frontendExecutable\"\\s*:\\s*\"[^\"]*\"",
+                    "\"frontendExecutable\": \"" + escaped + "\"");
+            }
+            else
+            {
+                // Insere após installDirectory se possível
+                json = json.Replace(
+                    "\"installDirectory\"",
+                    "\"frontendExecutable\": \"" + escaped + "\",\r\n  \"installDirectory\"");
+            }
+
+            File.WriteAllText(configPath, json);
+            log.AppendLine("frontendExecutable=" + found);
+        }
+        catch (Exception ex)
+        {
+            log.AppendLine("frontend bind skip: " + ex.Message);
+        }
+    }
+}

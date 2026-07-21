@@ -1,0 +1,24 @@
+﻿{
+    "kioskUser":  "Arcade",
+    "loadingMinDisplayMs":  5000,
+    "enableAutoLogon":  true,
+    "installationId":  "637160e5-5d82-4929-86e3-243847dc8109",
+    "enableKeyboardFilter":  true,
+    "enableBootBranding":  false,
+    "frontendExecutable":  "D:\\TurboRama.exe",
+    "enableLauncherKeyboardHook":  false,
+    "installDirectory":  "C:\\TurboRama",
+    "productVersion":  "2.0.0-alpha",
+    "profile":  "KioskBasic",
+    "enableSecurityMenu":  true,
+    "watchdog":  {
+                     "restartDelaySeconds":  5,
+                     "maximumRestarts":  5,
+                     "enabled":  true
+                 },
+    "schemaVersion":  1,
+    "enableUwf":  false,
+    "enableLauncherTechMenu":  true,
+    "loadingSoundFile":  "",
+    "showLoadingScreen":  true
+}
