@@ -1,0 +1,84 @@
+2026-07-20 19:32:21 - Running Turborama Installer.
+2026-07-20 19:32:21 - Showing Welcome screen.
+2026-07-20 19:32:26 - Welcome screen, user clicked NEXT
+2026-07-20 19:32:26 - Showing License screen.
+2026-07-21 22:01:03 - Running Turborama Installer.
+2026-07-21 22:01:03 - Showing Welcome screen.
+2026-07-21 22:01:05 - Welcome screen, user clicked NEXT
+2026-07-21 22:01:05 - Showing License screen.
+2026-07-21 22:01:07 - Licence screen, licence accepted: True
+2026-07-21 22:01:08 - Licence screen, user clicked NEXT
+2026-07-21 22:01:08 - NVIDIA GPU detected: NVIDIA GeForce RTX 2060 SUPER
+2026-07-21 22:01:08 - NVIDIA GPU detected: NVIDIA GeForce RTX 2060 SUPER
+2026-07-21 22:01:08 - Showing Prerequisites screen.
+2026-07-21 22:01:08 - NVIDIA GPU detected: NVIDIA GeForce RTX 2060 SUPER
+2026-07-21 22:01:08 - NVIDIA GPU detected: NVIDIA GeForce RTX 2060 SUPER
+2026-07-21 22:01:08 - NVIDIA GPU detected: NVIDIA GeForce RTX 2060 SUPER
+2026-07-21 22:01:08 - NVIDIA GPU detected: NVIDIA GeForce RTX 2060 SUPER
+2026-07-21 22:01:14 - Installing complete offline gaming runtime stack...
+2026-07-21 22:01:14 - Extracted embedded prerequisite: dotNetFx35_WX_10_x86_x64.exe
+2026-07-21 22:01:14 - Running installer: C:\Users\Admin\AppData\Local\Temp\TurboramaPrerequisites\dotNetFx35_WX_10_x86_x64.exe /y /q /norestart
+2026-07-21 22:02:03 - .NET Framework 3.5 finished with exit code 0
+2026-07-21 22:02:03 - .NET Framework 4.8 already installed.
+2026-07-21 22:02:03 - Extracted embedded prerequisite: windowsdesktop-runtime-8.0-win-x64.exe
+2026-07-21 22:02:03 - Running installer: C:\Users\Admin\AppData\Local\Temp\TurboramaPrerequisites\windowsdesktop-runtime-8.0-win-x64.exe /install /quiet /norestart
+2026-07-21 22:02:06 - .NET Desktop Runtime 8.0 x64 finished with exit code 0
+2026-07-21 22:02:06 - Extracted embedded prerequisite: windowsdesktop-runtime-8.0-win-x86.exe
+2026-07-21 22:02:06 - Running installer: C:\Users\Admin\AppData\Local\Temp\TurboramaPrerequisites\windowsdesktop-runtime-8.0-win-x86.exe /install /quiet /norestart
+2026-07-21 22:02:10 - .NET Desktop Runtime 8.0 x86 finished with exit code 0
+2026-07-21 22:02:10 - Extracted embedded prerequisite: vc_redist.x64.exe
+2026-07-21 22:02:10 - Running installer: C:\Users\Admin\AppData\Local\Temp\TurboramaPrerequisites\vc_redist.x64.exe /install /quiet /norestart
+2026-07-21 22:02:12 - vc_redist.x64.exe finished with exit code 0
+2026-07-21 22:02:12 - Extracted embedded prerequisite: vc_redist.x86.exe
+2026-07-21 22:02:12 - Running installer: C:\Users\Admin\AppData\Local\Temp\TurboramaPrerequisites\vc_redist.x86.exe /install /quiet /norestart
+2026-07-21 22:02:14 - vc_redist.x86.exe finished with exit code 0
+2026-07-21 22:02:14 - Visual C++ 2005 x64 already installed.
+2026-07-21 22:02:14 - Visual C++ 2005 x86 already installed.
+2026-07-21 22:02:14 - Visual C++ 2008 x64 already installed.
+2026-07-21 22:02:14 - Visual C++ 2008 x86 already installed.
+2026-07-21 22:02:14 - Visual C++ 2010 x64 already installed.
+2026-07-21 22:02:14 - Visual C++ 2010 x86 already installed.
+2026-07-21 22:02:14 - Extracted embedded prerequisite: vcredist2012_x64.zip
+2026-07-21 22:02:14 - Running installer: C:\Users\Admin\AppData\Local\Temp\TurboramaVCBundle\vcredist2012_x64\vcredist2012_x64.exe /passive /norestart
+2026-07-21 22:02:15 - vcredist2012_x64.zip /passive /norestart finished with exit code 0
+2026-07-21 22:02:15 - Extracted embedded prerequisite: vcredist2012_x86.zip
+2026-07-21 22:02:15 - Running installer: C:\Users\Admin\AppData\Local\Temp\TurboramaVCBundle\vcredist2012_x86\vcredist2012_x86.exe /passive /norestart
+2026-07-21 22:02:17 - vcredist2012_x86.zip /passive /norestart finished with exit code 0
+2026-07-21 22:02:17 - Extracted embedded prerequisite: vcredist2013_x64.zip
+2026-07-21 22:02:17 - Running installer: C:\Users\Admin\AppData\Local\Temp\TurboramaVCBundle\vcredist2013_x64\vcredist2013_x64.exe /passive /norestart
+2026-07-21 22:02:18 - vcredist2013_x64.zip /passive /norestart finished with exit code 0
+2026-07-21 22:02:18 - Extracted embedded prerequisite: vcredist2013_x86.zip
+2026-07-21 22:02:18 - Running installer: C:\Users\Admin\AppData\Local\Temp\TurboramaVCBundle\vcredist2013_x86\vcredist2013_x86.exe /passive /norestart
+2026-07-21 22:02:19 - vcredist2013_x86.zip /passive /norestart finished with exit code 0
+2026-07-21 22:02:19 - DirectX June 2010 already installed.
+2026-07-21 22:02:19 - Extracted embedded prerequisite: DokanSetup.zip
+2026-07-21 22:02:19 - Running installer: C:\Users\Admin\AppData\Local\Temp\TurboramaZip_DokanSetup\extract\DokanSetup.exe /quiet /norestart
+2026-07-21 22:02:22 - DokanSetup.zip finished with exit code 0
+2026-07-21 22:02:22 - Extracted embedded prerequisite: winfsp.zip
+2026-07-21 22:02:22 - Running installer: C:\Windows\system32\msiexec.exe /i "C:\Users\Admin\AppData\Local\Temp\TurboramaWinFsp\extract\winfsp-2.1.25156.msi" /qn /norestart
+2026-07-21 22:02:24 - WinFsp finished with exit code 0
+2026-07-21 22:02:24 - Extracted embedded prerequisite: MicrosoftEdgeWebView2RuntimeInstallerX64.exe
+2026-07-21 22:02:24 - Running installer: C:\Users\Admin\AppData\Local\Temp\TurboramaPrerequisites\MicrosoftEdgeWebView2RuntimeInstallerX64.exe /silent /install
+2026-07-21 22:03:05 - WebView2 Runtime finished with exit code 0
+2026-07-21 22:03:05 - Extracted embedded prerequisite: xnafx40_redist.msi
+2026-07-21 22:03:05 - Running installer: C:\Windows\system32\msiexec.exe /i "C:\Users\Admin\AppData\Local\Temp\TurboramaPrerequisites\xnafx40_redist.msi" /qn /norestart
+2026-07-21 22:03:07 - XNA Framework 4.0 finished with exit code 0
+2026-07-21 22:03:07 - Extracted embedded prerequisite: openal-offline.zip
+2026-07-21 22:03:07 - Deployed OpenAL32.dll to C:\Windows\SysWOW64\OpenAL32.dll
+2026-07-21 22:03:07 - Deployed OpenAL32.dll to C:\Windows\Sysnative\OpenAL32.dll
+2026-07-21 22:03:07 - OpenAL offline deployed successfully.
+2026-07-21 22:03:07 - Complete gaming runtime stack verified.
+2026-07-21 22:03:07 - Prerequisites completed, showing Install screen.
+2026-07-21 22:03:07 - Showing Install screen.
+2026-07-21 22:03:07 - NVIDIA GPU detected: NVIDIA GeForce RTX 2060 SUPER
+2026-07-21 22:03:07 - NVIDIA GPU detected: NVIDIA GeForce RTX 2060 SUPER
+2026-07-21 22:03:59 - [WARNING] Installation folder not empty.
+2026-07-21 22:04:01 - Using split installer package with 3 part(s). Base: F:\TURBORAMA-KIOSK\01-INSTALADOR\TurboRama-stable-20260720-win64-setup.exe
+2026-07-21 22:08:28 - Installation package validation passed.
+2026-07-21 22:08:28 - Executable renamed from Turborama.exe to TurboRama.exe
+2026-07-21 22:08:28 - Desktop shortcut created: C:\Users\Admin\Desktop\TurboRama2026.lnk
+2026-07-21 22:08:28 - Drive shortcut created: D:\TurboRama2026.lnk
+2026-07-21 22:08:28 - Start Menu shortcut created: C:\Users\Admin\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\TurboRama\TurboRama2026.lnk
+2026-07-21 22:08:28 - Installation successful, showing finish screen.
+2026-07-21 22:08:28 - Showing Finish screen.
+2026-07-21 22:08:48 - Launched installed app: D:\TurboRama.exe

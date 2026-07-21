@@ -1,0 +1,29 @@
+
+-------------------------------------------------------------------------------
+   ROBOCOPY     ::     Robust File Copy para Windows                              
+-------------------------------------------------------------------------------
+
+  Iniciado: segunda-feira, 20 de julho de 2026 19:27:25
+   Origem : D:\Turborama\roms\
+     Dest : E:\Turborama-PARA-OUTRO-PC\03-ROMS\
+
+    Arquivos: *.*
+	    
+  Op‡oes: *.* /NDL /NFL /TEE /S /E /DCOPY:DA /COPY:DAT /J /NP /MT:8 /R:2 /W:3 
+
+------------------------------------------------------------------------------
+
+
+------------------------------------------------------------------------------
+
+               Total   Copiada  IgnoradaIncompatibilidade     FALHA    Extras
+Diret¢rios:       272       272         1         0         0         0
+ Arquivos:     18784     18784         0         0         0         0
+    Bytes:  79.208 g  79.208 g         0         0         0         0
+N.§ de Vezes:   0:24:55   0:02:27                       0:00:00   0:00:18
+
+
+Velocidade:           575751987 Bytes/s.
+Velocidade:           32944.793 MegaBytes/min.
+   Finalizado em: segunda-feira, 20 de julho de 2026 19:30:12
+
