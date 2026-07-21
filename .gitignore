@@ -82,9 +82,12 @@ Desktop.ini
 **/prerequisites/
 **/resources/prerequisites/
 
-# --- Pastas que sao so binario / pack final ---
+# --- Pastas que sao so binario / pack final / instaladores ---
 TURBORAMA BINARIOS EXE/
 TURBORAMA BINARIOS/
+DIST-INSTALL-STABLE/
+**/*.bak
+**/*.bak-*
 
 # --- Backups cheios de binarios (manter so fontes nos projetos) ---
 **/Backups/**/product/
@@ -104,6 +107,7 @@ LARGE-FILES-SKIPPED-GITHUB.txt
 
 # Snapshots de sistema / live (nao sao codigo)
 **/TurboRama-Live/
+**/*TurboRama-Live*/
 **/bcd-backup*
 **/*.LOG1
 **/*.LOG2
