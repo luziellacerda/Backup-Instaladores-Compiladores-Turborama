@@ -13,7 +13,10 @@ namespace TurboramaRomLinker.Models
 
     public sealed class RomLinkPlanItem
     {
+        /// <summary>Id técnico da pasta (psx, snes...) — usado em links e paths.</summary>
         public string SystemName { get; set; }
+        /// <summary>Nome profissional para UI (ex.: PlayStation, Super Nintendo).</summary>
+        public string DisplayName { get; set; }
         public string SourceDrive { get; set; }
         public string SourcePath { get; set; }
         public string LinkPath { get; set; }

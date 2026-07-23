@@ -9,6 +9,8 @@ namespace TurboramaRomLinker.Services
     public sealed class EsSystemInfo
     {
         public string Name { get; set; }
+        /// <summary>Nome amigável do es_systems (&lt;fullname&gt;), se existir.</summary>
+        public string FullName { get; set; }
         public SortedSet<string> Extensions { get; private set; }
 
         public EsSystemInfo()
@@ -31,11 +33,10 @@ namespace TurboramaRomLinker.Services
             {
                 string rawPath = (systemElement.Element("path") != null ? systemElement.Element("path").Value : string.Empty).Trim();
                 string systemName = ExtractSystemName(rawPath);
+                string cfgName = (systemElement.Element("name") != null ? systemElement.Element("name").Value : string.Empty).Trim();
+                string fullName = (systemElement.Element("fullname") != null ? systemElement.Element("fullname").Value : string.Empty).Trim();
                 if (string.IsNullOrWhiteSpace(systemName))
-                {
-                    string fallbackName = (systemElement.Element("name") != null ? systemElement.Element("name").Value : string.Empty).Trim();
-                    systemName = SafeSystemName(fallbackName);
-                }
+                    systemName = SafeSystemName(cfgName);
 
                 if (string.IsNullOrWhiteSpace(systemName)) continue;
 
@@ -46,6 +47,10 @@ namespace TurboramaRomLinker.Services
                     info.Name = systemName;
                     systems.Add(systemName, info);
                 }
+
+                if (!string.IsNullOrWhiteSpace(fullName)
+                    && (string.IsNullOrWhiteSpace(info.FullName) || info.FullName.Length < fullName.Length))
+                    info.FullName = fullName;
 
                 string extensions = (systemElement.Element("extension") != null ? systemElement.Element("extension").Value : string.Empty).Trim();
                 foreach (string extension in ParseExtensions(extensions))

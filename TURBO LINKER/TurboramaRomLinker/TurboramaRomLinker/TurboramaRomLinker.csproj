@@ -55,6 +55,8 @@
     <Compile Include="Services\EsSystemsCatalog.cs" />
     <Compile Include="Services\RomLinkService.cs" />
     <Compile Include="Services\JunctionService.cs" />
+    <Compile Include="Services\BatLaunchFixer.cs" />
+    <Compile Include="Services\SystemDisplayNames.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

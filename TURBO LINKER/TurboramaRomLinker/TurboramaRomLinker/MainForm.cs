@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -22,8 +22,10 @@ namespace TurboramaRomLinker
         private Label _titleLabel;
         private Label _subtitleLabel;
         private NeonButton _scanButton;
+        private NeonButton _browseButton;
         private NeonButton _applyButton;
         private NeonButton _cleanButton;
+        private readonly List<string> _manualRomRoots = new List<string>();
 
         private Panel _masterCard;
         private PictureBox _masterIcon;
@@ -33,6 +35,8 @@ namespace TurboramaRomLinker
         private Panel _gridCard;
         private Label _gridTitleLabel;
         private Label _gridHintLabel;
+        private Button _btnSelectAll;
+        private Button _btnDeselectAll;
         private DataGridView _grid;
 
         private Panel _logCard;
@@ -44,9 +48,19 @@ namespace TurboramaRomLinker
         private Label _footerLeftLabel;
         private Label _footerRightLabel;
 
+        private Panel _loadingOverlay;
+        private ProgressBar _loadingBar;
+        private Label _loadingLabel;
+
         private readonly List<RomLinkPlanItem> _currentCreatableItems = new List<RomLinkPlanItem>();
         private bool _busy;
         private bool _masterDetected;
+        private int _hoverRow = -1;
+        private static readonly Color GridSelBack = Color.FromArgb(0, 115, 200);
+        private static readonly Color GridHoverBack = Color.FromArgb(28, 55, 110);
+        private static readonly Color GridZebraA = Color.FromArgb(7, 14, 33);
+        private static readonly Color GridZebraB = Color.FromArgb(12, 19, 43);
+        private static readonly Color DriveGreen = Color.FromArgb(84, 255, 115);
 
         public MainForm()
         {
@@ -54,12 +68,11 @@ namespace TurboramaRomLinker
             ShowIcon = true;
             ShowInTaskbar = true;
             StartPosition = FormStartPosition.CenterScreen;
-            FormBorderStyle = FormBorderStyle.FixedSingle;
-            MaximizeBox = false;
-            WindowState = FormWindowState.Normal;
-            MinimumSize = new Size(1280, 720);
-            MaximumSize = new Size(1280, 720);
-            Size = new Size(1280, 720);
+            FormBorderStyle = FormBorderStyle.Sizable;
+            MaximizeBox = true;
+            MinimizeBox = true;
+            WindowState = FormWindowState.Maximized;
+            MinimumSize = new Size(1100, 700);
             BackColor = Color.FromArgb(3, 8, 20);
             ForeColor = Color.White;
             Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
@@ -73,9 +86,8 @@ namespace TurboramaRomLinker
         protected override async void OnShown(EventArgs e)
         {
             base.OnShown(e);
-            WindowState = FormWindowState.Normal;
-            CenterToScreen();
-            await Task.Delay(120);
+            PerformLayouting();
+            await Task.Delay(80);
             await ScanAsync();
         }
 
@@ -113,6 +125,10 @@ namespace TurboramaRomLinker
             _scanButton = new NeonButton("ANALISAR", NeonStyle.Blue);
             _scanButton.Click += async delegate { await ScanAsync(); };
             Controls.Add(_scanButton);
+
+            _browseButton = new NeonButton("PROCURAR", NeonStyle.Blue);
+            _browseButton.Click += async delegate { await BrowseManualFolderAsync(); };
+            Controls.Add(_browseButton);
 
             _applyButton = new NeonButton("CRIAR", NeonStyle.Green);
             _applyButton.Click += async delegate { await ApplySelectedAsync(); };
@@ -153,12 +169,22 @@ namespace TurboramaRomLinker
             _gridCard.Controls.Add(_gridTitleLabel);
 
             _gridHintLabel = new Label();
-            _gridHintLabel.Text = "Só aparece aqui o que realmente vai criar link";
+            _gridHintLabel.Text = "Clique no ☑ de cada HD ou use os botões ao lado";
             _gridHintLabel.AutoSize = true;
-            _gridHintLabel.Font = new Font("Segoe UI", 9.2F, FontStyle.Regular, GraphicsUnit.Point);
+            _gridHintLabel.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
             _gridHintLabel.ForeColor = Color.FromArgb(142, 154, 184);
             _gridCard.Controls.Add(_gridHintLabel);
 
+            // Botões claros (não links flutuantes) — marcar / desmarcar todos os HDs
+            _btnSelectAll = CreateSelectToggleButton("☑  Marcar todos", Color.FromArgb(40, 180, 90), Color.FromArgb(12, 45, 28));
+            _btnSelectAll.Click += delegate { SetAllUnitChecks(true); };
+            _gridCard.Controls.Add(_btnSelectAll);
+
+            _btnDeselectAll = CreateSelectToggleButton("☐  Desmarcar todos", Color.FromArgb(220, 70, 110), Color.FromArgb(45, 18, 30));
+            _btnDeselectAll.Click += delegate { SetAllUnitChecks(false); };
+            _gridCard.Controls.Add(_btnDeselectAll);
+
+            // Tabela clássica (design original organizado) + multi-HD / loading / PROCURAR
             _grid = new DataGridView();
             _grid.BackgroundColor = Color.FromArgb(6, 12, 30);
             _grid.BorderStyle = BorderStyle.None;
@@ -173,37 +199,124 @@ namespace TurboramaRomLinker
             _grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
             _grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
             _grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
-            _grid.RowTemplate.Height = 44;
+            _grid.RowTemplate.Height = 72;
             _grid.ScrollBars = ScrollBars.Vertical;
+            // Texto bem legível (branco puro, sem cinza apagado)
+            Color nameWhite = Color.FromArgb(255, 255, 255);
+            Color driveGreen = Color.FromArgb(84, 255, 115); // verde neon — letras da unidade
+
             _grid.DefaultCellStyle.BackColor = Color.FromArgb(7, 15, 35);
-            _grid.DefaultCellStyle.ForeColor = Color.White;
-            _grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(27, 35, 77);
+            _grid.DefaultCellStyle.ForeColor = nameWhite;
+            // Destaque forte da linha selecionada (clique / setas)
+            _grid.DefaultCellStyle.SelectionBackColor = GridSelBack;
             _grid.DefaultCellStyle.SelectionForeColor = Color.White;
-            _grid.DefaultCellStyle.Font = new Font("Segoe UI", 9.6F, FontStyle.Regular, GraphicsUnit.Point);
+            _grid.DefaultCellStyle.Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
+            _grid.DefaultCellStyle.Padding = new Padding(6, 2, 6, 2);
+            _grid.ReadOnly = true; // clica = seleciona linha (não edita célula)
+            _grid.StandardTab = true;
             _grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(12, 22, 54);
-            _grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(231, 234, 241);
+            _grid.ColumnHeadersDefaultCellStyle.ForeColor = nameWhite;
             _grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI Semibold", 9.6F, FontStyle.Bold, GraphicsUnit.Point);
+            _grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(8, 0, 0, 0);
             _grid.ColumnHeadersHeight = 40;
             _grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
-            _grid.RowTemplate.DividerHeight = 1;
-            _grid.DefaultCellStyle.Padding = new Padding(4, 0, 4, 0);
-            _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Use", HeaderText = "Usar", Width = 56, TrueValue = true, FalseValue = false });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Action", HeaderText = "Ação", Width = 135 });
-            _grid.Columns.Add(new DataGridViewImageColumn { Name = "Icon", HeaderText = "Ícone", Width = 72, ImageLayout = DataGridViewImageCellLayout.Zoom });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "System", HeaderText = "Sistema", Width = 140 });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Source", HeaderText = "Origem (TurboRoms)", Width = 320 });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Destination", HeaderText = "Destino (sistema\\roms)", Width = 270 });
-            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Status", HeaderText = "Status", Width = 150 });
-            _grid.Columns[2].DefaultCellStyle.NullValue = null;
-            _grid.CurrentCellDirtyStateChanged += delegate
+
+            // Sem coluna "Usar" única: 1 checkbox real por HD. Ícone na resolução original (coluna Image).
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Action", HeaderText = "Ação", Width = 110 });
+            // Ícones grandes e bem visíveis na linha
+            DataGridViewImageColumn iconCol = new DataGridViewImageColumn
             {
-                if (_grid.IsCurrentCellDirty)
-                {
-                    _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
-                }
+                Name = "Icon",
+                HeaderText = "Ícone",
+                Width = 76,
+                ImageLayout = DataGridViewImageCellLayout.Zoom
             };
-            _grid.CellFormatting += GridCellFormatting;
+            iconCol.DefaultCellStyle.NullValue = null;
+            iconCol.DefaultCellStyle.Padding = new Padding(4, 4, 4, 4);
+            iconCol.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            _grid.Columns.Add(iconCol);
+            DataGridViewTextBoxColumn systemCol = new DataGridViewTextBoxColumn
+            {
+                Name = "System",
+                HeaderText = "Sistema",
+                Width = 220,
+                ReadOnly = true
+            };
+            systemCol.DefaultCellStyle.Font = new Font("Segoe UI Semibold", 10.2F, FontStyle.Bold, GraphicsUnit.Point);
+            systemCol.DefaultCellStyle.ForeColor = nameWhite;
+            _grid.Columns.Add(systemCol);
+            // Unidades: host com CheckBox real por HD (☑ D:  ☑ F:)
+            DataGridViewTextBoxColumn driveCol = new DataGridViewTextBoxColumn
+            {
+                Name = "Drive",
+                HeaderText = "Unidades (HD)",
+                Width = 220,
+                ReadOnly = true
+            };
+            driveCol.DefaultCellStyle.ForeColor = driveGreen;
+            _grid.Columns.Add(driveCol);
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Source", HeaderText = "Origem (TurboRoms)", Width = 320 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Destination", HeaderText = "Destino (sistema\\roms)", Width = 200 });
+            _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Status", HeaderText = "Status", Width = 120 });
+
+            _grid.Columns["Action"].DefaultCellStyle.ForeColor = Color.FromArgb(90, 220, 255);
+            _grid.Columns["Action"].DefaultCellStyle.Font = new Font("Segoe UI Semibold", 10F, FontStyle.Bold, GraphicsUnit.Point);
+            _grid.Columns["Status"].DefaultCellStyle.ForeColor = Color.FromArgb(90, 220, 255);
+            _grid.Columns["Source"].DefaultCellStyle.ForeColor = nameWhite;
+            _grid.Columns["Destination"].DefaultCellStyle.ForeColor = nameWhite;
+            _grid.Columns["System"].DefaultCellStyle.ForeColor = nameWhite;
+
+            // Checkboxes de HD desenhados na célula (sem painéis flutuantes = sem pixel quebrado)
+            _grid.CellPainting += Grid_DriveCellPainting;
+            _grid.CellMouseClick += Grid_DriveCellMouseClick;
+            _grid.SelectionChanged += delegate { SyncRowColors(); };
+            _grid.CellMouseEnter += delegate(object s, DataGridViewCellEventArgs e)
+            {
+                if (e.RowIndex < 0) return;
+                if (_hoverRow == e.RowIndex) return;
+                int old = _hoverRow;
+                _hoverRow = e.RowIndex;
+                if (old >= 0 && old < _grid.Rows.Count) ApplyRowVisual(old);
+                ApplyRowVisual(e.RowIndex);
+            };
+            _grid.MouseLeave += delegate
+            {
+                int old = _hoverRow;
+                _hoverRow = -1;
+                if (old >= 0 && old < _grid.Rows.Count) ApplyRowVisual(old);
+            };
+            _grid.CellMouseDown += delegate(object s, DataGridViewCellMouseEventArgs e)
+            {
+                if (e.RowIndex < 0 || e.Button != MouseButtons.Left) return;
+                // Clique em Unidades: só alterna checkbox (handler de click); não rouba seleção antes
+                if (_grid.Columns[e.ColumnIndex].Name == "Drive") return;
+                try
+                {
+                    _grid.ClearSelection();
+                    _grid.Rows[e.RowIndex].Selected = true;
+                    _grid.CurrentCell = _grid.Rows[e.RowIndex].Cells[e.ColumnIndex >= 0 ? e.ColumnIndex : 0];
+                }
+                catch { }
+            };
             _gridCard.Controls.Add(_grid);
+
+            // Overlay de loading (barra animada enquanto pesquisa)
+            _loadingOverlay = new Panel();
+            _loadingOverlay.BackColor = Color.FromArgb(200, 4, 10, 24);
+            _loadingOverlay.Visible = false;
+            _loadingLabel = new Label();
+            _loadingLabel.AutoSize = false;
+            _loadingLabel.TextAlign = ContentAlignment.MiddleCenter;
+            _loadingLabel.Font = new Font("Segoe UI Semibold", 14F, FontStyle.Bold, GraphicsUnit.Point);
+            _loadingLabel.ForeColor = Color.FromArgb(120, 220, 255);
+            _loadingLabel.Text = "Pesquisando unidades...";
+            _loadingOverlay.Controls.Add(_loadingLabel);
+            _loadingBar = new ProgressBar();
+            _loadingBar.Style = ProgressBarStyle.Marquee;
+            _loadingBar.MarqueeAnimationSpeed = 28;
+            _loadingOverlay.Controls.Add(_loadingBar);
+            Controls.Add(_loadingOverlay);
+            _loadingOverlay.BringToFront();
 
             _logCard = BuildCard();
             Controls.Add(_logCard);
@@ -271,58 +384,116 @@ namespace TurboramaRomLinker
             int areaWidth = ClientSize.Width - areaLeft - 18;
             if (areaWidth < 760) areaWidth = 760;
 
-            int buttonWidth = 118;
-            int buttonHeight = 30;
-            int buttonGap = 12;
-            int buttonsTotal = buttonWidth * 3 + buttonGap * 2;
+            int buttonWidth = 108;
+            int buttonHeight = 32;
+            int buttonGap = 10;
+            int buttonsTotal = buttonWidth * 4 + buttonGap * 3;
             int buttonsLeft = areaLeft + areaWidth - buttonsTotal - 4;
+            if (buttonsLeft < areaLeft + 200) buttonsLeft = areaLeft + 200;
 
-            // Layout compacto: sobe título/botões e libera mais altura para a lista de ROMs.
-            int topY = 24;
-
-            int titleWidth = Math.Max(330, buttonsLeft - areaLeft - 24);
-            _titleLabel.SetBounds(areaLeft + 8, topY + 4, titleWidth, 30);
+            int topY = 16;
+            int titleWidth = Math.Max(220, buttonsLeft - areaLeft - 16);
+            _titleLabel.SetBounds(areaLeft + 4, topY + 2, titleWidth, 30);
             _subtitleLabel.Visible = false;
 
             _scanButton.SetBounds(buttonsLeft, topY, buttonWidth, buttonHeight);
-            _applyButton.SetBounds(buttonsLeft + buttonWidth + buttonGap, topY, buttonWidth, buttonHeight);
-            _cleanButton.SetBounds(buttonsLeft + 2 * (buttonWidth + buttonGap), topY, buttonWidth, buttonHeight);
+            _browseButton.SetBounds(buttonsLeft + buttonWidth + buttonGap, topY, buttonWidth, buttonHeight);
+            _applyButton.SetBounds(buttonsLeft + 2 * (buttonWidth + buttonGap), topY, buttonWidth, buttonHeight);
+            _cleanButton.SetBounds(buttonsLeft + 3 * (buttonWidth + buttonGap), topY, buttonWidth, buttonHeight);
 
-            int masterY = topY + 50;
-            int masterH = 76;
+            int masterY = topY + 48;
+            int masterH = 72;
             _masterCard.SetBounds(areaLeft, masterY, areaWidth, masterH);
-            _masterIcon.SetBounds(18, 12, 72, 52);
-            _masterTitleLabel.Left = 108;
-            _masterTitleLabel.Top = 14;
-            _masterInfoLabel.SetBounds(108, 42, _masterCard.Width - 132, 28);
+            _masterIcon.SetBounds(16, 10, 64, 52);
+            _masterTitleLabel.Left = 96;
+            _masterTitleLabel.Top = 12;
+            _masterInfoLabel.SetBounds(96, 40, _masterCard.Width - 120, 26);
 
-            int footerH = 24;
+            int footerH = 28;
             int bottomMargin = 10;
             int footerY = ClientSize.Height - footerH - bottomMargin;
             _footerPanel.SetBounds(areaLeft, footerY, areaWidth, footerH);
             _footerLeftLabel.Left = 16;
-            _footerLeftLabel.Top = 3;
-            _footerRightLabel.Left = _footerPanel.Width - _footerRightLabel.PreferredWidth - 20;
-            _footerRightLabel.Top = 3;
+            _footerLeftLabel.Top = 5;
+            _footerRightLabel.Left = Math.Max(200, _footerPanel.Width - _footerRightLabel.PreferredWidth - 16);
+            _footerRightLabel.Top = 5;
 
-            // Log menor para aumentar o container "Pastas com ROMs válidas".
-            int logH = 70;
+            int logH = 78;
             int logY = footerY - logH - 8;
             _logCard.SetBounds(areaLeft, logY, areaWidth, logH);
-            _logTitleLabel.Left = 26;
-            _logTitleLabel.Top = 8;
-            _clearLogLink.Left = _logCard.Width - 110;
-            _clearLogLink.Top = 10;
-            _logBox.SetBounds(16, 30, _logCard.Width - 32, _logCard.Height - 36);
+            _logTitleLabel.Left = 18;
+            _logTitleLabel.Top = 6;
+            _clearLogLink.Left = _logCard.Width - 100;
+            _clearLogLink.Top = 8;
+            _logBox.SetBounds(14, 28, _logCard.Width - 28, _logCard.Height - 36);
 
             int gridY = masterY + masterH + 10;
-            int gridH = Math.Max(260, logY - gridY - 12);
+            int gridH = Math.Max(240, logY - gridY - 10);
             _gridCard.SetBounds(areaLeft, gridY, areaWidth, gridH);
-            _gridTitleLabel.Left = 26;
-            _gridTitleLabel.Top = 10;
-            _gridHintLabel.Left = _gridCard.Width - _gridHintLabel.PreferredWidth - 26;
-            _gridHintLabel.Top = 14;
-            _grid.SetBounds(10, 40, _gridCard.Width - 20, _gridCard.Height - 50);
+            // Barra superior fixa: título | hint | [Marcar todos] [Desmarcar todos]
+            int barY = 10;
+            int btnW = 148;
+            int btnH = 30;
+            int btnGap = 8;
+            int rightPad = 16;
+            _btnDeselectAll.SetBounds(_gridCard.Width - rightPad - btnW, barY, btnW, btnH);
+            _btnSelectAll.SetBounds(_btnDeselectAll.Left - btnGap - btnW, barY, btnW, btnH);
+            _gridTitleLabel.Left = 18;
+            _gridTitleLabel.Top = barY + 4;
+            int hintLeft = _gridTitleLabel.Left + _gridTitleLabel.PreferredWidth + 16;
+            int hintMax = _btnSelectAll.Left - 12;
+            _gridHintLabel.Left = hintLeft;
+            _gridHintLabel.Top = barY + 7;
+            _gridHintLabel.Visible = hintLeft + 80 < hintMax;
+
+            _grid.SetBounds(12, 48, _gridCard.Width - 24, _gridCard.Height - 60);
+
+            // Ajusta largura da coluna Origem ao espaço restante
+            if (_grid.Columns.Count >= 5 && _grid.Columns.Contains("Source"))
+            {
+                int used = 0;
+                for (int i = 0; i < _grid.Columns.Count; i++)
+                {
+                    if (_grid.Columns[i].Name == "Source") continue;
+                    used += _grid.Columns[i].Width;
+                }
+                int sourceW = _grid.ClientSize.Width - used - 24;
+                if (sourceW > 160)
+                    _grid.Columns["Source"].Width = sourceW;
+            }
+
+            int overlayLeft = areaLeft;
+            int overlayTop = masterY;
+            int overlayW = areaWidth;
+            int overlayH = Math.Max(100, logY - masterY);
+            _loadingOverlay.SetBounds(overlayLeft, overlayTop, overlayW, overlayH);
+            _loadingLabel.SetBounds(40, overlayH / 2 - 50, overlayW - 80, 36);
+            _loadingBar.SetBounds(overlayW / 2 - 180, overlayH / 2, 360, 22);
+        }
+
+        private void ShowLoading(string message)
+        {
+            if (_loadingLabel != null)
+                _loadingLabel.Text = string.IsNullOrEmpty(message) ? "Pesquisando..." : message;
+            if (_loadingOverlay != null)
+            {
+                _loadingOverlay.Visible = true;
+                _loadingOverlay.BringToFront();
+            }
+            if (_loadingBar != null)
+            {
+                _loadingBar.Style = ProgressBarStyle.Marquee;
+                _loadingBar.MarqueeAnimationSpeed = 25;
+            }
+            Application.DoEvents();
+        }
+
+        private void HideLoading()
+        {
+            if (_loadingOverlay != null)
+                _loadingOverlay.Visible = false;
+            if (_loadingBar != null)
+                _loadingBar.MarqueeAnimationSpeed = 0;
         }
 
         private Panel BuildCard()
@@ -332,22 +503,76 @@ namespace TurboramaRomLinker
 
         private async Task ScanAsync()
         {
+            await ScanAsync(false, null);
+        }
+
+        private async Task ScanAsync(bool showSummaryDialog, string highlightPath)
+        {
             if (_busy) return;
             try
             {
                 SetBusy(true);
+                ShowLoading("Pesquisando unidades e pastas TurboRoms...");
                 AppendLog("Iniciando análise de unidades...");
-                DriveScanResult result = await Task.Run(delegate { return _service.BuildPlan(); });
-                RenderScanResult(result);
+                if (_manualRomRoots.Count > 0)
+                    AppendLog("Pastas manuais ativas: " + string.Join(" | ", _manualRomRoots.ToArray()));
+                List<string> manual = new List<string>(_manualRomRoots);
+                DriveScanResult result = await Task.Run(delegate { return _service.BuildPlan(manual); });
+                HideLoading();
+                RenderScanResult(result, showSummaryDialog, highlightPath);
             }
             catch (Exception ex)
             {
+                HideLoading();
                 MessageBox.Show(ex.ToString(), "Erro ao analisar", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 AppendLog("Erro: " + ex.Message);
             }
             finally
             {
+                HideLoading();
                 SetBusy(false);
+            }
+        }
+
+        private async Task BrowseManualFolderAsync()
+        {
+            if (_busy) return;
+
+            using (FolderBrowserDialog dlg = new FolderBrowserDialog())
+            {
+                dlg.Description = "Escolha a unidade (G:\\), TurboRoms, TurboRoms\\roms ou pasta de sistema (ps4, snes...).";
+                dlg.ShowNewFolderButton = false;
+                try
+                {
+                    if (Directory.Exists(@"G:\")) dlg.SelectedPath = @"G:\";
+                    else if (Directory.Exists(@"F:\")) dlg.SelectedPath = @"F:\";
+                }
+                catch { }
+
+                if (dlg.ShowDialog(this) != DialogResult.OK)
+                    return;
+
+                string path = dlg.SelectedPath;
+                if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+                {
+                    MessageBox.Show("Pasta inválida.", "PROCURAR", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                bool exists = false;
+                foreach (string p in _manualRomRoots)
+                {
+                    if (string.Equals(p, path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists)
+                    _manualRomRoots.Add(path);
+
+                AppendLog("PROCURAR: pasta escolhida — " + path);
+                await ScanAsync(true, path);
             }
         }
 
@@ -357,11 +582,21 @@ namespace TurboramaRomLinker
             List<RomLinkPlanItem> selected = GetSelectedItems();
             if (selected.Count == 0)
             {
-                MessageBox.Show("Selecione ao menos uma pasta na coluna Usar.", "Nenhum item selecionado", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Marque ao menos um HD (checkbox ☑ D: / ☑ F:) para criar o link.", "Nenhum item selecionado", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            if (MessageBox.Show("Criar os links selecionados em sistema\\roms?", "Confirmar", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            if (MessageBox.Show(
+                    "Linkar ARQUIVOS e subpastas para a mestre?\n\n"
+                    + "O EmulationStation NÃO lê se a pasta ps5 for um único link.\n\n"
+                    + "Será assim:\n"
+                    + "  F:\\...\\ps5\\jogo.bat     →  sistema\\roms\\ps5\\jogo.bat\n"
+                    + "  F:\\...\\ps5\\lista.xml    →  sistema\\roms\\ps5\\lista.xml\n"
+                    + "  F:\\...\\ps5\\videos\\     →  sistema\\roms\\ps5\\videos\\\n\n"
+                    + "A pasta sistema\\roms\\ps5 fica REAL; só o conteúdo é link.",
+                    "Confirmar",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question) != DialogResult.Yes)
             {
                 return;
             }
@@ -369,23 +604,39 @@ namespace TurboramaRomLinker
             try
             {
                 SetBusy(true);
-                int created = 0;
-                int errors = 0;
-                foreach (RomLinkPlanItem item in selected)
+                ShowLoading("Linkando arquivos/pastas na mestre e corrigindo bats...");
+                List<string> createLog = new List<string>();
+                int created = await Task.Run(delegate
                 {
-                    JunctionService.CreateJunction(item);
-                    if (item.Success) created++; else errors++;
+                    return _service.CreateSelected(selected, createLog);
+                });
+                HideLoading();
+                foreach (string line in createLog)
+                    AppendLog(line);
+                int batsFixed = createLog.FindAll(delegate(string s) { return s != null && s.StartsWith("BatFix OK:", StringComparison.OrdinalIgnoreCase); }).Count;
+                AppendLog("Criação concluída. Itens linkados: " + created + ". Bats corrigidos: " + batsFixed + ".");
+                if (createLog.Exists(delegate(string s) { return s != null && s.IndexOf("Modo de Programador", StringComparison.OrdinalIgnoreCase) >= 0; }))
+                {
+                    MessageBox.Show(
+                        "Alguns links de ARQUIVO falharam.\n\n"
+                        + "Ative: Windows → Definições → Para programadores → Modo de programador\n"
+                        + "ou execute o Linker como Administrador.\n\n"
+                        + "(Links de pastas tipo videos/ normalmente não precisam disso.)",
+                        "Atenção",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
                 }
-                AppendLog("Criação concluída. Criados: " + created + ". Erros: " + errors + ".");
                 await ScanAsync();
             }
             catch (Exception ex)
             {
+                HideLoading();
                 MessageBox.Show(ex.ToString(), "Erro ao criar links", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 AppendLog("Erro ao criar links: " + ex.Message);
             }
             finally
             {
+                HideLoading();
                 SetBusy(false);
             }
         }
@@ -402,7 +653,12 @@ namespace TurboramaRomLinker
                     return;
                 }
 
-                if (MessageBox.Show("Remover apenas os links/junctions dentro de sistema\\roms? Pastas reais serão preservadas.", "Confirmar limpeza", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                if (MessageBox.Show(
+                        "Remover apenas LINKS (junctions/symlinks) em sistema\\roms?\n"
+                        + "Pastas e arquivos reais na mestre são preservados.",
+                        "Confirmar limpeza",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning) != DialogResult.Yes)
                 {
                     return;
                 }
@@ -413,20 +669,22 @@ namespace TurboramaRomLinker
                 int preserved = 0;
                 if (Directory.Exists(romsRoot))
                 {
+                    // Link antigo da pasta inteira do sistema
                     foreach (string dir in Directory.GetDirectories(romsRoot))
                     {
-                        if (JunctionService.IsReparsePoint(dir))
+                        if (JunctionService.IsDirectoryReparsePoint(dir))
                         {
-                            Directory.Delete(dir);
-                            removed++;
+                            try { Directory.Delete(dir); removed++; }
+                            catch { preserved++; }
+                            continue;
                         }
-                        else
-                        {
-                            preserved++;
-                        }
+
+                        int p;
+                        removed += JunctionService.CleanReparsePointsIn(dir, out p);
+                        preserved += p;
                     }
                 }
-                AppendLog("Limpeza concluída. Links removidos: " + removed + ". Pastas reais preservadas: " + preserved + ".");
+                AppendLog("Limpeza concluída. Links removidos: " + removed + ". Itens reais preservados: " + preserved + ".");
                 await ScanAsync();
             }
             catch (Exception ex)
@@ -442,7 +700,13 @@ namespace TurboramaRomLinker
 
         private void RenderScanResult(DriveScanResult result)
         {
+            RenderScanResult(result, false, null);
+        }
+
+        private void RenderScanResult(DriveScanResult result, bool showSummaryDialog, string highlightPath)
+        {
             _currentCreatableItems.Clear();
+            _hoverRow = -1;
             _grid.Rows.Clear();
             _logBox.Clear();
 
@@ -455,12 +719,10 @@ namespace TurboramaRomLinker
                 : "Não encontrou sistema\\emulationstation\\.emulationstation\\es_systems.cfg ao lado do executável.";
             _masterIcon.Image = TryLoadMasterFolderIcon(masterOk);
             _footerRightLabel.Text = "Catálogo: " + result.ValidSystems.Count + " sistemas";
-            _footerRightLabel.Left = _footerPanel.Width - _footerRightLabel.PreferredWidth - 20;
+            _footerRightLabel.Left = Math.Max(200, _footerPanel.Width - _footerRightLabel.PreferredWidth - 16);
 
             foreach (string message in result.Messages)
-            {
                 AppendLog(message);
-            }
 
             if (!masterOk)
             {
@@ -469,18 +731,343 @@ namespace TurboramaRomLinker
                 return;
             }
 
-            foreach (RomLinkPlanItem item in result.Items.Where(i => i.CanCreate).OrderBy(i => i.SystemName))
+            // 1 sistema = 1 linha; HDs diferentes = checkboxes na mesma linha (snes → ☑ D: ☑ F:)
+            List<RomLinkPlanItem> visible = result.Items
+                .Where(i => i.CanCreate || i.Action == RomLinkAction.AlreadyExists)
+                .OrderBy(i => i.SystemName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(i => GetDriveLetter(i.SourcePath))
+                .ToList();
+
+            Dictionary<string, List<RomLinkPlanItem>> bySystem = new Dictionary<string, List<RomLinkPlanItem>>(StringComparer.OrdinalIgnoreCase);
+            foreach (RomLinkPlanItem item in visible)
             {
-                _currentCreatableItems.Add(item);
-                int rowIndex = _grid.Rows.Add(true, "+ Criar link", SystemIconFactory.GetSystemIcon(item.SystemName), item.SystemName, item.SourcePath, MakeDestinationRelative(item.LinkPath, result.MasterRoot), "+ Criar link");
-                DataGridViewRow row = _grid.Rows[rowIndex];
-                row.Tag = item;
-                row.DefaultCellStyle.BackColor = rowIndex % 2 == 0 ? Color.FromArgb(7, 14, 33) : Color.FromArgb(12, 19, 43);
+                string key = item.SystemName ?? "";
+                if (!bySystem.ContainsKey(key))
+                    bySystem[key] = new List<RomLinkPlanItem>();
+                bySystem[key].Add(item);
             }
 
+            Dictionary<string, int> countByDrive = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            int rowIndex = 0;
+            foreach (KeyValuePair<string, List<RomLinkPlanItem>> group in bySystem.OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                string systemName = group.Key;
+                List<RomLinkPlanItem> sources = group.Value;
+                SystemRowBind bind = new SystemRowBind();
+                bind.SystemName = systemName;
+                // Nome profissional (PlayStation, Super Nintendo...) — pasta técnica fica no path
+                string displayName = null;
+                if (sources.Count > 0 && sources[0] != null && !string.IsNullOrWhiteSpace(sources[0].DisplayName))
+                    displayName = sources[0].DisplayName;
+                else
+                    displayName = SystemDisplayNames.Get(systemName);
+                bind.DisplayName = displayName;
+                bind.Icon = SystemIconFactory.GetSystemIcon(systemName);
+
+                foreach (RomLinkPlanItem item in sources)
+                {
+                    string drive = GetDriveLetter(item.SourcePath);
+                    UnitPick unit = new UnitPick();
+                    unit.Item = item;
+                    unit.Drive = drive;
+                    unit.CanCreate = item.CanCreate;
+                    // Já vem marcado se pode criar; se já linkado fica desmarcado/desabilitado
+                    unit.Selected = item.CanCreate;
+                    bind.Units.Add(unit);
+
+                    if (item.CanCreate)
+                        _currentCreatableItems.Add(item);
+
+                    if (!countByDrive.ContainsKey(drive))
+                        countByDrive[drive] = 0;
+                    countByDrive[drive] = countByDrive[drive] + 1;
+                }
+
+                int creatableCount = bind.Units.Count(u => u.CanCreate);
+                bool anyCreate = creatableCount > 0;
+
+                string action = anyCreate
+                    ? (sources.Count > 1 ? "+ Criar (" + creatableCount + " HD)" : "+ Criar link")
+                    : "Já linkado";
+                string status = anyCreate ? "+ Criar link" : "OK";
+
+                // Origem: todas as pastas na mesma linha
+                List<string> origins = new List<string>();
+                foreach (UnitPick u in bind.Units)
+                {
+                    if (u.Item != null && !string.IsNullOrEmpty(u.Item.SourcePath))
+                        origins.Add(u.Item.SourcePath);
+                }
+                string sourceText = string.Join("  ·  ", origins.ToArray());
+
+                // Destino: base sistema\roms\<sys> (+ multi se >1)
+                string dest = "";
+                if (sources.Count > 0 && sources[0] != null)
+                {
+                    dest = MakeDestinationRelative(sources[0].LinkPath, result.MasterRoot);
+                    if (sources.Count > 1)
+                    {
+                        // mostra pasta do sistema (sem nested) + multi
+                        int slash = dest.IndexOf('\\');
+                        // dest tipo sistema\roms\snes ou sistema\roms\snes\D_snes
+                        string[] parts = dest.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 3)
+                            dest = parts[0] + "\\" + parts[1] + "\\" + parts[2] + "  · multi";
+                        else
+                            dest = dest + "  · multi";
+                    }
+                }
+
+                // Colunas: Action, Icon, System, Drive (☑ por HD desenhados), Source, Destination, Status
+                // Texto na coluna Drive só como fallback; o desenho real é CellPainting
+                string driveLabel = string.Join("  ", bind.Units.ConvertAll(u => (u.Selected ? "[x] " : "[ ] ") + u.Drive).ToArray());
+                int r = _grid.Rows.Add(
+                    action,
+                    bind.Icon,
+                    displayName,
+                    driveLabel,
+                    sourceText,
+                    dest,
+                    status);
+                DataGridViewRow row = _grid.Rows[r];
+                row.Tag = bind;
+                row.Height = 72;
+                row.DefaultCellStyle.ForeColor = Color.White;
+                row.DefaultCellStyle.SelectionBackColor = GridSelBack;
+                row.DefaultCellStyle.SelectionForeColor = Color.White;
+                row.Cells["System"].Style.ForeColor = Color.White;
+                row.Cells["System"].ToolTipText = "Pasta técnica: " + systemName;
+                row.Cells["Source"].Style.ForeColor = Color.White;
+                row.Cells["Destination"].Style.ForeColor = Color.White;
+                row.Cells["Drive"].Style.ForeColor = DriveGreen;
+                row.Cells["Drive"].Style.SelectionForeColor = DriveGreen;
+                if (!anyCreate)
+                {
+                    row.Cells["Action"].Style.ForeColor = Color.FromArgb(160, 230, 255);
+                    row.Cells["Status"].Style.ForeColor = Color.FromArgb(160, 230, 255);
+                }
+
+                ApplyRowVisual(row.Index);
+                rowIndex++;
+            }
+            SyncRowColors();
+
+            AppendLog("======== RESUMO POR UNIDADE ========");
+            if (countByDrive.Count == 0)
+                AppendLog("Nenhum sistema em nenhuma unidade.");
+            else
+            {
+                foreach (KeyValuePair<string, int> kv in countByDrive.OrderBy(k => k.Key))
+                    AppendLog("OK  " + kv.Key + "  →  " + kv.Value + " pasta(s)");
+            }
             AppendLog("Pastas com jogos válidos prontas para adicionar como link: " + _currentCreatableItems.Count);
+            AppendLog("====================================");
+
             _applyButton.Enabled = _currentCreatableItems.Count > 0;
             _cleanButton.Enabled = _masterDetected;
+
+            if (countByDrive.Count > 0)
+            {
+                List<string> parts = new List<string>();
+                foreach (KeyValuePair<string, int> kv in countByDrive.OrderBy(k => k.Key))
+                    parts.Add(kv.Key + "=" + kv.Value);
+                _masterInfoLabel.Text = "Mestre validada  •  Catálogo carregado  •  Links em sistema\\roms  •  "
+                    + string.Join("  ", parts.ToArray()) + "  •  " + _currentCreatableItems.Count + " p/ criar";
+            }
+
+            if (showSummaryDialog && countByDrive.Count == 0)
+            {
+                MessageBox.Show(this,
+                    "Nenhum sistema com jogos nesta pasta/unidade.\n\n"
+                    + (string.IsNullOrEmpty(highlightPath) ? "" : ("Pedida: " + highlightPath + "\n\n"))
+                    + "Use:\n  G:\\TurboRoms\\roms\\ps4\\\n  G:\\TurboRoms\\roms\\snes\\",
+                    "PROCURAR — sem sistemas",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+
+        private static string GetDriveLetter(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || path.Length < 2 || path[1] != ':')
+                return "?";
+            return char.ToUpperInvariant(path[0]) + ":";
+        }
+
+        private static Color ZebraColor(int rowIndex)
+        {
+            return (rowIndex % 2 == 0) ? GridZebraA : GridZebraB;
+        }
+
+        private void ApplyRowVisual(int rowIndex)
+        {
+            if (_grid == null || rowIndex < 0 || rowIndex >= _grid.Rows.Count) return;
+            DataGridViewRow row = _grid.Rows[rowIndex];
+            Color bg = row.Selected ? GridSelBack
+                : (rowIndex == _hoverRow ? GridHoverBack : ZebraColor(rowIndex));
+            row.DefaultCellStyle.BackColor = bg;
+            row.DefaultCellStyle.SelectionBackColor = GridSelBack;
+            row.DefaultCellStyle.SelectionForeColor = Color.White;
+            if (_grid.Columns.Contains("Drive"))
+                _grid.InvalidateCell(_grid.Columns["Drive"].Index, rowIndex);
+        }
+
+        private void SyncRowColors()
+        {
+            if (_grid == null) return;
+            for (int i = 0; i < _grid.Rows.Count; i++)
+                ApplyRowVisual(i);
+        }
+
+        private void Grid_DriveCellPainting(object sender, DataGridViewCellPaintingEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            if (_grid.Columns[e.ColumnIndex].Name != "Drive") return;
+
+            e.Handled = true;
+            e.PaintBackground(e.ClipBounds, true);
+
+            DataGridViewRow row = _grid.Rows[e.RowIndex];
+            SystemRowBind bind = row.Tag as SystemRowBind;
+            if (bind == null || bind.Units == null || bind.Units.Count == 0)
+            {
+                e.Paint(e.ClipBounds, DataGridViewPaintParts.Border | DataGridViewPaintParts.Focus);
+                return;
+            }
+
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Font driveFont = new Font("Segoe UI Semibold", 11.5F, FontStyle.Bold, GraphicsUnit.Point);
+            const int box = 18;
+            const int chipW = 62;
+            int x = e.CellBounds.X + 8;
+            int midY = e.CellBounds.Y + e.CellBounds.Height / 2;
+
+            foreach (UnitPick unit in bind.Units)
+            {
+                unit.HitBounds = new Rectangle(x - e.CellBounds.X, 4, chipW, e.CellBounds.Height - 8);
+                bool enabled = unit.CanCreate;
+                bool on = unit.Selected && enabled;
+                Color border = enabled ? DriveGreen : Color.FromArgb(90, 100, 110);
+                Color fill = on ? Color.FromArgb(20, 70, 45) : (enabled ? Color.FromArgb(10, 30, 40) : Color.FromArgb(25, 30, 40));
+                Rectangle boxRect = new Rectangle(x, midY - box / 2, box, box);
+                using (SolidBrush br = new SolidBrush(fill))
+                using (Pen pen = new Pen(border, 2f))
+                {
+                    e.Graphics.FillRectangle(br, boxRect);
+                    e.Graphics.DrawRectangle(pen, boxRect);
+                }
+                if (on)
+                {
+                    using (Pen check = new Pen(DriveGreen, 2.6f))
+                    {
+                        e.Graphics.DrawLines(check, new[]
+                        {
+                            new Point(boxRect.X + 3, boxRect.Y + 9),
+                            new Point(boxRect.X + 7, boxRect.Y + 13),
+                            new Point(boxRect.X + 15, boxRect.Y + 4)
+                        });
+                    }
+                }
+                Rectangle labelRect = new Rectangle(x + box + 5, e.CellBounds.Y, 36, e.CellBounds.Height);
+                TextRenderer.DrawText(e.Graphics, unit.Drive, driveFont, labelRect,
+                    enabled ? DriveGreen : Color.FromArgb(100, 110, 120),
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+                x += chipW;
+                if (x > e.CellBounds.Right - 24) break;
+            }
+            driveFont.Dispose();
+            e.Paint(e.ClipBounds, DataGridViewPaintParts.Border | DataGridViewPaintParts.Focus);
+        }
+
+        private void Grid_DriveCellMouseClick(object sender, DataGridViewCellMouseEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            if (_grid.Columns[e.ColumnIndex].Name != "Drive") return;
+            if (e.Button != MouseButtons.Left) return;
+
+            DataGridViewRow row = _grid.Rows[e.RowIndex];
+            SystemRowBind bind = row.Tag as SystemRowBind;
+            if (bind == null) return;
+            try
+            {
+                _grid.ClearSelection();
+                row.Selected = true;
+                _grid.CurrentCell = row.Cells["Drive"];
+            }
+            catch { }
+
+            Point pt = new Point(e.X, e.Y);
+            foreach (UnitPick unit in bind.Units)
+            {
+                if (!unit.CanCreate) continue;
+                if (!unit.HitBounds.Contains(pt)) continue;
+                unit.Selected = !unit.Selected;
+                row.Cells["Drive"].Value = string.Join("  ", bind.Units.ConvertAll(u => (u.Selected ? "[x] " : "[ ] ") + u.Drive).ToArray());
+                _grid.InvalidateCell(e.ColumnIndex, e.RowIndex);
+                break;
+            }
+        }
+
+        private static Button CreateSelectToggleButton(string text, Color accent, Color fill)
+        {
+            Button b = new Button();
+            b.Text = text;
+            b.FlatStyle = FlatStyle.Flat;
+            b.FlatAppearance.BorderSize = 1;
+            b.FlatAppearance.BorderColor = accent;
+            b.FlatAppearance.MouseOverBackColor = Color.FromArgb(Math.Min(255, fill.R + 25), Math.Min(255, fill.G + 25), Math.Min(255, fill.B + 25));
+            b.FlatAppearance.MouseDownBackColor = accent;
+            b.BackColor = fill;
+            b.ForeColor = Color.White;
+            b.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold, GraphicsUnit.Point);
+            b.Cursor = Cursors.Hand;
+            b.TabStop = false;
+            b.UseVisualStyleBackColor = false;
+            return b;
+        }
+
+        private void SetAllUnitChecks(bool selected)
+        {
+            if (_grid == null || _busy) return;
+            int count = 0;
+            foreach (DataGridViewRow row in _grid.Rows)
+            {
+                SystemRowBind bind = row.Tag as SystemRowBind;
+                if (bind == null || bind.Units == null) continue;
+                foreach (UnitPick unit in bind.Units)
+                {
+                    if (unit == null || !unit.CanCreate) continue;
+                    unit.Selected = selected;
+                    count++;
+                }
+                if (_grid.Columns.Contains("Drive"))
+                {
+                    row.Cells["Drive"].Value = string.Join("  ", bind.Units.ConvertAll(u => (u.Selected ? "[x] " : "[ ] ") + u.Drive).ToArray());
+                    _grid.InvalidateCell(_grid.Columns["Drive"].Index, row.Index);
+                }
+            }
+            if (_grid.Columns.Contains("Drive"))
+                _grid.InvalidateColumn(_grid.Columns["Drive"].Index);
+            AppendLog(selected ? "Todos os HDs marcados (" + count + ")." : "Todos os HDs desmarcados (" + count + ").");
+        }
+
+        private static Label MakeColHeader(string text, int left)
+        {
+            Label l = new Label();
+            l.Text = text;
+            l.Font = new Font("Segoe UI Semibold", 8F, FontStyle.Bold, GraphicsUnit.Point);
+            l.ForeColor = Color.FromArgb(120, 155, 200);
+            l.AutoSize = false;
+            l.TextAlign = ContentAlignment.MiddleLeft;
+            // Alinhado às colunas da linha: SISTEMA ~18 | UNIDADES ~180 | DESTINO ~420
+            if (left <= 12)
+                l.SetBounds(18, 6, 150, 20);
+            else if (left < 200)
+                l.SetBounds(180, 6, 220, 20);
+            else
+                l.SetBounds(420, 6, 220, 20);
+            return l;
         }
 
         private static string MakeDestinationRelative(string fullPath, string masterRoot)
@@ -505,18 +1092,41 @@ namespace TurboramaRomLinker
             List<RomLinkPlanItem> items = new List<RomLinkPlanItem>();
             foreach (DataGridViewRow row in _grid.Rows)
             {
-                bool selected = row.Cells[0].Value is bool && (bool)row.Cells[0].Value;
-                if (!selected) continue;
-                RomLinkPlanItem item = row.Tag as RomLinkPlanItem;
-                if (item != null) items.Add(item);
+                SystemRowBind bind = row.Tag as SystemRowBind;
+                if (bind == null) continue;
+                foreach (UnitPick unit in bind.Units)
+                {
+                    if (unit != null && unit.Selected && unit.CanCreate && unit.Item != null)
+                        items.Add(unit.Item);
+                }
             }
             return items;
+        }
+
+        private sealed class SystemRowBind
+        {
+            public string SystemName;
+            public string DisplayName;
+            public Image Icon;
+            public List<UnitPick> Units = new List<UnitPick>();
+        }
+
+        private sealed class UnitPick
+        {
+            public RomLinkPlanItem Item;
+            public string Drive;
+            public bool Selected;
+            public bool CanCreate;
+            public Rectangle HitBounds;
         }
 
         private void SetBusy(bool busy)
         {
             _busy = busy;
             _scanButton.Enabled = !busy;
+            _browseButton.Enabled = !busy;
+            if (_btnSelectAll != null) _btnSelectAll.Enabled = !busy;
+            if (_btnDeselectAll != null) _btnDeselectAll.Enabled = !busy;
             if (busy)
             {
                 _applyButton.Enabled = false;
@@ -534,20 +1144,6 @@ namespace TurboramaRomLinker
         {
             if (string.IsNullOrWhiteSpace(message)) return;
             _logBox.AppendText("[" + DateTime.Now.ToString("HH:mm:ss") + "] " + message + Environment.NewLine);
-        }
-
-        private void GridCellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
-        {
-            if (e.RowIndex < 0) return;
-            if (e.ColumnIndex == _grid.Columns[6].Index)
-            {
-                e.CellStyle.ForeColor = Color.FromArgb(39, 211, 255);
-                e.CellStyle.Font = new Font("Segoe UI Semibold", 10.5F, FontStyle.Bold, GraphicsUnit.Point);
-            }
-            else if (e.ColumnIndex == _grid.Columns[1].Index)
-            {
-                e.CellStyle.ForeColor = Color.FromArgb(39, 211, 255);
-            }
         }
 
         private Image TryLoadSidebarImage()
@@ -948,17 +1544,47 @@ namespace TurboramaRomLinker
             string key = systemName ?? string.Empty;
             if (Cache.ContainsKey(key)) return Cache[key];
 
+            // Garante ~64px para ficar bem visível na grade (sem esticar blur na célula)
+            const int displaySize = 64;
             Bitmap exact = LoadExactSystemEmbedded(systemName);
             if (exact != null)
             {
-                Cache[key] = exact;
-                return exact;
+                Bitmap display = EnsureDisplaySize(exact, displaySize);
+                if (display != exact) exact.Dispose();
+                Cache[key] = display;
+                return display;
             }
 
             string family = GetFamily(systemName);
             Bitmap bmp = LoadFamilyEmbedded(family) ?? GenerateFallback(systemName, family);
-            Cache[key] = bmp;
-            return bmp;
+            Bitmap outBmp = EnsureDisplaySize(bmp, displaySize);
+            if (outBmp != bmp) bmp.Dispose();
+            Cache[key] = outBmp;
+            return outBmp;
+        }
+
+        /// <summary>Se o PNG for pequeno, amplia com qualidade; se já for grande, mantém.</summary>
+        private static Bitmap EnsureDisplaySize(Bitmap source, int size)
+        {
+            if (source == null) return null;
+            if (source.Width >= size && source.Height >= size)
+                return source;
+
+            Bitmap dest = new Bitmap(size, size);
+            using (Graphics g = Graphics.FromImage(dest))
+            {
+                g.Clear(Color.Transparent);
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.SmoothingMode = SmoothingMode.HighQuality;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                float scale = Math.Min((float)size / source.Width, (float)size / source.Height);
+                int w = Math.Max(1, (int)(source.Width * scale));
+                int h = Math.Max(1, (int)(source.Height * scale));
+                int x = (size - w) / 2;
+                int y = (size - h) / 2;
+                g.DrawImage(source, x, y, w, h);
+            }
+            return dest;
         }
 
         private static Bitmap LoadExactSystemEmbedded(string systemName)
