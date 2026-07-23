@@ -1,0 +1,254 @@
+<!-- Theme by LZ-RETRO-PC-2026
+https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X 
+-->
+<theme>
+   <formatVersion>7</formatVersion>
+
+         <!-- VIDEO CONTROLS -->
+
+   <!--detallada-->
+   <view name="detailed">
+      <video name="game-video" extra="true">
+         <path>{game:video}</path>
+         <delay>${subset.video-gamelist-delay}</delay>
+         <audio>${subset.videosnap-audio}</audio>
+         <visible ifSubset="game-video:off">false</visible>
+         <zIndex>99</zIndex>
+         <effect>none</effect>
+         <loops>-1</loops>
+         <origin>0.5 0.5</origin>
+      </video>
+
+      <video ifSubset="game-video:window|inside|default" name="game-video">
+         <!-- <default>${themePath}/_theme_options/colorsets/blue/background-psx-blue.mp4</default> -->
+         <pos>0.760 0.405</pos>
+         <pos ifSubset="aspect-ratio:4-3">0.760 0.345</pos>
+         <pos ifSubset="aspect-ratio:5-4">0.760 0.343</pos>
+         <maxSize>0.42 0.565</maxSize>
+         <maxSize ifSubset="aspect-ratio:4-3">0.42 0.425</maxSize>
+         <maxSize ifSubset="aspect-ratio:5-4">0.418 0.4</maxSize>
+      </video>
+
+      <video ifSubset="game-video:background" name="game-video">
+         <zIndex>47</zIndex>
+         <pos>0 0</pos>
+         <size>1 1</size>
+         <origin>0 0</origin>
+         <storyboard>
+            <animation property="opacity" from="0" to="1" duration="800" mode="easeIn" />
+         </storyboard>
+         <loops>1</loops>
+      </video>
+   </view>
+<!--cuadricula-->
+   <view name="grid">
+         <video name="game-video" extra="true">
+            <path>{game:video}</path>
+            <delay>${subset.video-gamelist-delay}</delay>
+            <audio ifSubset="videosnap-audio:false">false</audio>
+            <visible ifSubset="game-video:off">false</visible>
+            <zIndex>99</zIndex>
+            <effect>none</effect>
+            <loops>-1</loops>
+            <origin>0.5 0.5</origin>
+         </video>
+
+         <video ifSubset="game-video:window" name="game-video">
+            <pos>0.154 0.3</pos>
+            <pos ifSubset="aspect-ratio:4-3|5-4">0.145 0.272</pos>
+            <maxSize>0.258 0.338</maxSize>
+            <maxSize ifSubset="aspect-ratio:4-3|5-4">0.278 0.338</maxSize>
+         </video>
+
+
+         <video ifSubset="game-video:default|inside" name="game-video">
+            <visible>false</visible>
+         </video>
+
+         <video ifSubset="game-video:background" name="game-video">
+            <zIndex>49</zIndex>
+            <pos>0 -0.298</pos>
+            <size>1 1</size>
+            <origin>0 0</origin>
+            <storyboard>
+               <animation property="opacity" from="0" to="1" duration="800" mode="easeIn" />
+            </storyboard>
+         </video>
+
+         
+
+         <imagegrid name="gamegrid" ifSubset="game-video:inside|default">
+            <showVideoAtDelay ifSubset="video-gamelist-delay:0.001">1</showVideoAtDelay>
+            <showVideoAtDelay ifSubset="video-gamelist-delay:0.5">500</showVideoAtDelay>
+            <showVideoAtDelay ifSubset="video-gamelist-delay:1">1000</showVideoAtDelay>
+            <showVideoAtDelay ifSubset="video-gamelist-delay:2">2000</showVideoAtDelay>
+            <showVideoAtDelay ifSubset="video-gamelist-delay:3">3000</showVideoAtDelay>
+         </imagegrid>
+         <video name="gridtile.video">
+            <audio>${subset.videosnap-audio}</audio>
+         </video>
+
+      </view>
+
+<!-- full-grid -->
+      <customView name="full-grid">
+
+
+
+         <imagegrid name="gamegrid" ifSubset="game-video:default">
+            <showVideoAtDelay>30000000</showVideoAtDelay>
+
+         </imagegrid>
+
+
+         <video ifSubset="game-video:window|default" name="game-video">
+            <pos>0.144 0.340</pos>
+            <maxSize>0.258 0.338</maxSize>
+            <maxSize ifSubset="aspect-ratio:4-3|5-4">0.278 0.338</maxSize>
+            <zIndex>99</zIndex>
+            <visible>true</visible>
+         </video>
+
+         <video ifSubset="game-video:background" name="game-video">
+            <zIndex>49</zIndex>
+            <pos>0 0</pos>
+            <size>1 1</size>
+            <origin>0 0</origin>
+            <storyboard>
+               <animation property="opacity" from="0" to="1" duration="800" mode="easeIn" />
+            </storyboard>
+         </video>
+
+         
+      
+      </customView>
+
+<!-- ps4Style -->
+
+      <customView name="ps4Style">
+
+         <imagegrid name="gamegrid" ifSubset="game-video:inside|default">
+            <showVideoAtDelay ifSubset="video-gamelist-delay:0.001">1</showVideoAtDelay>
+            <showVideoAtDelay ifSubset="video-gamelist-delay:0.5">500</showVideoAtDelay>
+            <showVideoAtDelay ifSubset="video-gamelist-delay:1">1000</showVideoAtDelay>
+            <showVideoAtDelay ifSubset="video-gamelist-delay:2">2000</showVideoAtDelay>
+            <showVideoAtDelay ifSubset="video-gamelist-delay:3">3000</showVideoAtDelay>
+         </imagegrid>
+
+
+         <video ifSubset="game-video:window" name="game-video">
+            <pos>0.154 0.68</pos>
+            <maxSize>0.258 0.338</maxSize>
+            <maxSize ifSubset="aspect-ratio:4-3|5-4">0.278 0.338</maxSize>
+         </video>
+
+
+         <video ifSubset="game-video:default" name="game-video">
+            <pos>-2 -2</pos>
+            <visible>false</visible>
+            <opacity>0</opacity>
+         </video>
+
+         <video ifSubset="game-video:background" name="game-video">
+            <zIndex>49</zIndex>
+            <pos>0 0</pos>
+            <size>1 1</size>
+            <origin>0 0</origin>
+            <storyboard>
+               <animation property="opacity" from="0" to="1" duration="800" mode="easeIn" />
+            </storyboard>
+         </video>
+
+      </customView>
+
+       <!-- ps5Style -->
+
+ <customView name="ps5Style"  ifSubset="game-video:inside|default|window">
+
+   <imagegrid name="gamegrid">
+      <showVideoAtDelay ifSubset="video-gamelist-delay:0.001">1</showVideoAtDelay>
+      <showVideoAtDelay ifSubset="video-gamelist-delay:0.5">500</showVideoAtDelay>
+      <showVideoAtDelay ifSubset="video-gamelist-delay:1">1000</showVideoAtDelay>
+      <showVideoAtDelay ifSubset="video-gamelist-delay:2">2000</showVideoAtDelay>
+      <showVideoAtDelay ifSubset="video-gamelist-delay:3">3000</showVideoAtDelay>
+   </imagegrid>
+
+   <video ifSubset="game-video:background" name="game-video">
+      <zIndex>49</zIndex>
+      <pos>0 0</pos>
+      <size>1 1</size>
+      <origin>0 0</origin>
+      <storyboard>
+         <animation property="opacity" from="0" to="1" duration="800" mode="easeIn" />
+      </storyboard>
+   </video>
+
+   <video ifSubset="game-video:default|window" name="game-video">
+      <pos>-2 -2</pos>
+      <visible>false</visible>
+      <opacity>0</opacity>
+   </video>
+ 
+ </customView>
+
+
+      <!--carousel-->
+
+      <customView name="carousel">
+         <video ifSubset="game-video:default" name="game-video">
+            <zIndex>49</zIndex>
+            <size>1 1</size>
+            <origin>0 0</origin>
+            <pos>0 -0.298</pos>
+            <storyboard>
+               <animation property="opacity" from="0" to="1" duration="800" mode="easeIn" />
+            </storyboard>
+            <visible>true</visible>
+         </video>
+         
+
+         <imagegrid name="gamegrid" ifSubset="game-video:default">
+            <showVideoAtDelay>30000000</showVideoAtDelay>
+         </imagegrid>
+
+      </customView>
+
+      <!--Single-->
+
+      <customView name="single">
+         <video ifSubset="game-video:background|inside|default" name="game-video">
+            <zIndex>49</zIndex>
+            <size>1 1</size>
+            <origin>0.5 0.5</origin>
+            <pos>0.5 0.5</pos>
+            <storyboard>
+               <animation property="opacity" from="0" to="1" duration="800" mode="easeIn" />
+            </storyboard>
+            <visible>true</visible>
+         </video>
+
+         <imagegrid name="gamegrid">
+            <showVideoAtDelay>30000000</showVideoAtDelay>
+         </imagegrid>
+
+         <video ifSubset="game-video:window" name="game-video">
+            <pos>0.15 0.760</pos>
+            <maxSize>0.25 0.3</maxSize>
+            <visible>true</visible>
+         </video>
+
+      </customView>
+
+<!-- oversize -->
+      <view name="detailed, grid">
+         <video ifSubset="game-video:oversize" name="game-video">
+            <maxSize>0.9 0.82</maxSize>
+            <pos>0.5 0.528</pos>
+            <effect>size</effect>
+            <zIndex>500</zIndex>
+            <loops>0</loops>
+         </video>
+
+
+      </view>
+</theme>

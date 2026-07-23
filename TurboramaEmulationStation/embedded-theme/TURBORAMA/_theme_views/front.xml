@@ -1,0 +1,195 @@
+<!-- Theme by LZ-RETRO-PC-2026
+https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X 
+-->
+<theme>
+   <formatVersion>7</formatVersion>
+   <view name="system" >
+
+
+      <carousel name="systemcarousel">
+         <type>horizontal</type>
+         <systemInfoDelay>5</systemInfoDelay>
+         <color>00000000</color>
+         <logoAlignment>top</logoAlignment>
+         <zIndex>97</zIndex>
+         <defaultTransition ifSubset="anim-system:NO">instant</defaultTransition>
+         <defaultTransition ifSubset="anim-system:YES">fade &amp; slide</defaultTransition>
+         <transitionSpeed>600</transitionSpeed>
+      </carousel>
+   
+      
+
+      <image name="background-art" extra="true" region="eu" />
+      <image name="background-art" extra="true" ifSubset="background-system:default|fanart">
+         <path>{random:fanart}</path>
+         <path>${themePath}/${theme.backgroundPath}/${system.theme}.jpg</path>
+         <path region="us">${themePath}/${theme.backgroundPath}/us/${system.theme}.jpg</path>
+         <path region="jp">${themePath}/${theme.backgroundPath}/jp/${system.theme}.jpg</path>
+         <zIndex>45</zIndex>
+      </image>
+      
+      <image name="background-fanart" extra="true" ifSubset="background-system:fanart">
+      <path ifSubset="background-system:fanart">{random:fanart}</path>
+         <zIndex>46</zIndex>
+      </image>
+
+      <image name="overlay" extra="static">
+         <path>${themePath}/_theme_inc/images/overlay-systemview.png</path>
+         <zIndex>48</zIndex>
+      </image>
+
+      <image name="background-art, overlay, background-fanart, background">
+         <origin>0.5 0.5</origin>
+         <pos>0.5 0.5</pos>
+         <minSize>1 1</minSize>
+         <linearSmooth>true</linearSmooth>
+         <tile>false</tile>
+         <autoFade>false</autoFade>
+      </image>
+
+      
+      <image name="overlay-arts" extra="true" ifSubset="overlay-arts:YES">
+         <linearSmooth>true</linearSmooth>
+         <tile>false</tile>
+         <autoFade>false</autoFade>
+         <size>0 1</size>
+         <path>${themePath}/${theme.overlayArtsPath}/systems/${system.theme}.png</path>
+         <path region="jp">${themePath}/${theme.overlayArtsPath}/systems/jp/${system.theme}-jp.png</path>
+         <path region="us">${themePath}/${theme.overlayArtsPath}/systems/us/${system.theme}-us.png</path>
+         <zIndex>98</zIndex>
+         <opacity>0</opacity>
+         <origin>1 0.5</origin>
+         <pos>1 0.5</pos>
+      </image>
+
+      <image name="linea-inferior" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0 0.934</pos>
+         <size>1 0.002</size>
+         <size tinyScreen="true">1 0.005</size>
+         <color>${sistema.lineainferior}</color>
+         <colorEnd>${sistema.lineainferior}</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <zIndex>97</zIndex>
+         <autoFade>false</autoFade>
+      </image>
+
+      <image name="linea-inferior" extra="static" ifHelpPrompts="false">
+         <y>0.995</y>
+      </image>
+
+      <image name="pie-barra" extra="static" ifHelpPrompts="true">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0 0.934</pos>
+         <size>1 0.2</size>
+         <color>${sistema.pie}</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>96</zIndex>
+         <opacity>0.4</opacity>
+      </image>
+
+      <image name="logo2" extra="true" ifSubset="system-logo:YES">
+         <pos>0.825 0.77</pos>
+         <alignment>center</alignment>
+         <maxSize>0.16 0.12</maxSize>
+         <origin>0 0</origin>
+         <path>{random:marquee}</path>
+         <!--  png -->
+         <path>${themePath}/${theme.logosPath}/${system.theme}.png</path>
+         <!--  svg -->
+         <path>${themePath}/${theme.logosPath}/${system.theme}.svg</path>
+         <!--  svg white -->
+         <path>${themePath}/${theme.logosPath}/${system.theme}-w.svg</path>
+         <!-- check if lang resources exist -->
+         <path>${themePath}/${theme.logosPath}/${system.theme}-${lang}.png</path>
+         <path>${themePath}/${theme.logosPath}/${system.theme}-${lang}.svg</path>
+         <zIndex>100</zIndex>
+      </image>
+
+      <image name="logo2" extra="true" region="eu"/>
+      <image name="logo2" extra="true" region="us">
+         <path>${themePath}/${theme.logosPath}/us/${system.theme}.png</path>
+         <!--  svg -->
+         <path>${themePath}/${theme.logosPath}/us/${system.theme}.svg</path>
+         <!--  svg white -->
+         <path>${themePath}/${theme.logosPath}/us/${system.theme}-w.svg</path>
+      </image>
+      <image name="logo2" extra="true" region="jp" >
+         <path>${themePath}/${theme.logosPath}/jp/${system.theme}.png</path>
+         <!--  svg -->
+         <path>${themePath}/${theme.logosPath}/jp/${system.theme}.svg</path>
+         <!--  svg white -->
+         <path>${themePath}/${theme.logosPath}/jp/${system.theme}-w.svg</path>
+      </image>
+
+      <image name="system-console" extra="true" ifSubset="system-console:YES">
+         <tile>false</tile>
+         <pos>0.825 0.48</pos>
+         <origin>0 0</origin>
+         <verticalAlignment>bottom</verticalAlignment>
+         <alignment>center</alignment>
+         <maxSize >0.16 0.25</maxSize>
+         <path>${themePath}/${theme.consolesPath}/${system.theme}.png</path>
+         <zIndex>99</zIndex>
+         <linearSmooth>true</linearSmooth>
+      </image>
+
+        <image name="system-console" ifSubset="system-logo:NO">
+         <y>0.66</y>
+      </image>
+
+
+
+      <image name="system-console" extra="true" region="eu" />
+      <image name="system-console" extra="true" region="us">
+         <path>${themePath}/${theme.consolesPath}/us/${system.theme}.png</path>
+      </image>
+      <image name="system-console" extra="true" region="jp">
+         <path>${themePath}/${theme.consolesPath}/jp/${system.theme}.png</path>
+      </image>
+
+      <image name="gamefolder" extra="static" if="${system.manufacturer} != 'Collections'  &amp;&amp; ${system.hardwareType} != 'system'">
+         <tile>false</tile>
+         <pos>0.012 0.895</pos>
+         <origin>0 0</origin>
+         <verticalAlignment>center</verticalAlignment>
+         <alignment>center</alignment>
+         <maxSize>0.025 0.025</maxSize>
+         <zIndex>99</zIndex>
+         <linearSmooth>true</linearSmooth>
+         <path>${themePath}/_theme_inc/images/gamefolder.png</path>
+         <autoFade>false</autoFade>
+         <opacity ifSubset="system-rom-folder:dim">0.3</opacity>
+         <visible ifSubset="system-rom-folder:NO">false</visible>
+         <visible ifSubset="system-rom-folder:YES|dim">true</visible>
+      </image>
+      <image name="gamefolder" if="${system.manufacturer} != 'Collections' &amp;&amp; ${system.hardwareType} != 'system'" ifHelpPrompts="false">
+         <y>0.955</y>
+      </image>
+
+      <text name="system-folder" extra="true" if="${system.manufacturer} != 'Collections' &amp;&amp; ${system.hardwareType} != 'system'">
+         <text>/${system.theme}</text>
+         <fontSize>0.025</fontSize>
+         <verticalAlignment>center</verticalAlignment>
+         <alignment>center</alignment>
+         <color>FFFFFF</color>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <zIndex>99</zIndex>
+         <glowColor>00000035</glowColor>
+         <glowSize>1</glowSize>
+         <glowOffset>3 2</glowOffset>
+         <pos>0.037 0.891</pos>
+         <opacity ifSubset="system-rom-folder:dim">0.3</opacity>
+         <visible ifSubset="system-rom-folder:NO">false</visible>
+         <visible ifSubset="system-rom-folder:YES|dim">true</visible>
+      </text>
+
+      <text name="system-folder" extra="true" if="${system.manufacturer} != 'Collections'  &amp;&amp; ${system.hardwareType} != 'system'"  ifHelpPrompts="false">
+         <y>0.951</y>
+      </text>
+
+   </view>
+
+</theme>

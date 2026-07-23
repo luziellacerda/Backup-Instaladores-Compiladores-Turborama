@@ -1,0 +1,5 @@
+<!-- Theme by LZ-RETRO-PC-2026
+https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X 
+-->
+<!-- force gamelist grid view for tiny low res screens -->
+<theme defaultView="carousel"></theme>

@@ -1,0 +1,18 @@
+<!-- Theme by LZRetroGames
+-->
+<theme>
+	<formatVersion>7</formatVersion>
+
+	<view name="system">
+
+		<text name="system_name" extra="true">
+			<text>Flatpak</text>
+		</text>
+	</view>
+	<view name="system,detailed, grid">
+		<image name="linea-inferior" extra="static">
+			<color>ffffff</color>
+			<colorEnd>eeeeee</colorEnd>
+		</image>
+	</view>
+</theme>

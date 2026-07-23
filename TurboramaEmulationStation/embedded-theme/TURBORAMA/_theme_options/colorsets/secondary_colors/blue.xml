@@ -1,0 +1,20 @@
+﻿<!-- Theme by LZ-RETRO-PC-2026
+https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X 
+-->
+<theme>
+   <formatVersion>7</formatVersion>
+   <variables ifSubset="colorset:blue">
+      <menuSelectedColor>ffffff</menuSelectedColor>
+      <menuSelectorColor>0070d1</menuSelectorColor>
+      <menuSelectorColorEnd>003791</menuSelectorColorEnd>
+   </variables>
+   <variables ifSubset="colorset:black">
+      <menuSelectedColor>3CAEFB</menuSelectedColor>
+   </variables>   
+   <variables>
+      <sistema.lineainferior>0070d1</sistema.lineainferior>
+      <gamelistSelectorColor>0070d1</gamelistSelectorColor>
+      <backgroundgridSelect>0070d1</backgroundgridSelect>
+   </variables>
+
+</theme>

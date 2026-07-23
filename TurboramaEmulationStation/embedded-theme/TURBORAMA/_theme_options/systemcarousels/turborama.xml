@@ -1,0 +1,177 @@
+<!-- Theme by LZ-RETRO-PC-2026
+https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X
+
+NOVA VERSAO V2 - VIDEO NA CELULA ATIVA DO CARROSSEL
+Observacao: o systemcarousel do Batocera/EmulationStation renderiza logos como IMAGE.
+Por isso, o video fica como elemento extra sobre a celula ativa, com zIndex alto.
+-->
+<theme>
+   <formatVersion>7</formatVersion>
+
+   <view name="system">
+
+      <!-- LOGOS/IMAGENS QUE MANTEM O CARROSSEL FUNCIONANDO -->
+      <image name="logo">
+         <path>${themePath}/${theme.caratulasPath}/${system.theme}.jpg</path>
+         <path>${themePath}/${theme.caratulasPath}/${system.theme}.png</path>
+         <path ifSubset="colorset:black">${themePath}/${theme.caratulasPath}/${system.theme}-b.png</path>
+         <tile>false</tile>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>0</zIndex>
+      </image>
+
+      <image name="logo" region="us">
+         <path>${themePath}/${theme.caratulasPath}/us/${system.theme}.jpg</path>
+         <path>${themePath}/${theme.caratulasPath}/us/${system.theme}.png</path>
+         <path>${themePath}/${theme.caratulasPath}/${system.theme}.jpg</path>
+         <path>${themePath}/${theme.caratulasPath}/${system.theme}.png</path>
+         <tile>false</tile>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>0</zIndex>
+      </image>
+
+      <image name="logo" region="jp">
+         <path>${themePath}/${theme.caratulasPath}/jp/${system.theme}.jpg</path>
+         <path>${themePath}/${theme.caratulasPath}/jp/${system.theme}.png</path>
+         <path>${themePath}/${theme.caratulasPath}/${system.theme}.jpg</path>
+         <path>${themePath}/${theme.caratulasPath}/${system.theme}.png</path>
+         <tile>false</tile>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>0</zIndex>
+      </image>
+
+      <!-- CARROSSEL ORIGINAL, COM ZINDEX BAIXO PARA O VIDEO FICAR NA FRENTE -->
+      <carousel name="systemcarousel">
+         <zIndex>20</zIndex>
+         <minLogoOpacity>1</minLogoOpacity>
+
+         <itemTemplate>
+            <container>
+
+               <!-- IMAGEM DO ITEM DO CARROSSEL -->
+               <image name="theLogoImage" pos="0.5" origin="0.5" maxSize="1" linearSmooth="false">
+                  <path>{system:logo}</path>
+                  <visible>exists({system:logo})</visible>
+                  <roundCorners>0.1</roundCorners>
+                  <zIndex>5</zIndex>
+               </image>
+
+               <!-- IMAGEM PADRAO QUANDO NAO EXISTIR LOGO -->
+               <image name="defaultLogoImage" pos="0.5" origin="0.5" maxSize="1" linearSmooth="false">
+                  <path ifSubset="colorset:blue">${themePath}/${theme.caratulasPath}/default.png</path>
+                  <path ifSubset="colorset:black">${themePath}/${theme.caratulasPath}/default-b.png</path>
+                  <visible>!exists({system:logo})</visible>
+                  <roundCorners>0.02</roundCorners>
+                  <zIndex>4</zIndex>
+               </image>
+
+               <text name="substitutionText" color="white" alignment="center" multiLine="true">
+                  <visible>!exists({system:logo})</visible>
+                  <text>{system:fullName}</text>
+                  <fontSize>0.024</fontSize>
+                  <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+                  <forceUppercase>false</forceUppercase>
+                  <lineSpacing>1.2</lineSpacing>
+                  <color>white</color>
+                  <size>0.625 1</size>
+                  <pos>0.19 0</pos>
+                  <padding>0.04 0 0.04 0</padding>
+                  <zIndex>6</zIndex>
+               </text>
+
+               <storyboard ifSubset="nav-sound:ps2">
+                  <sound path="${themePath}/_theme_inc/sound-effects/ps2/enter-system.ogg"/>
+                  <animation property="y" from="0.5" duration="500" mode="easeOutCubic" />
+               </storyboard>
+
+               <storyboard ifSubset="nav-sound:ps3">
+                  <sound path="${themePath}/_theme_inc/sound-effects/ps3/enter-system.ogg"/>
+                  <animation property="y" from="0.5" duration="500" mode="easeOutCubic" />
+               </storyboard>
+
+               <storyboard ifSubset="nav-sound:ps4">
+                  <sound path="${themePath}/_theme_inc/sound-effects/ps4/enter-system.ogg"/>
+                  <animation property="y" from="0.5" duration="500" mode="easeOutCubic" />
+               </storyboard>
+
+               <storyboard ifSubset="nav-sound:ff">
+                  <sound path="${themePath}/_theme_inc/sound-effects/ff/enter-system.ogg"/>
+                  <animation property="y" from="0.5" duration="300" mode="easeOutCubic" />
+               </storyboard>
+
+               <storyboard ifSubset="nav-sound:sd">
+                  <sound path="${themePath}/_theme_inc/sound-effects/sd/enter-system.ogg"/>
+                  <animation property="y" from="0.5" duration="400" mode="easeOutCubic" />
+               </storyboard>
+
+               <storyboard ifSubset="nav-sound:ps5">
+                  <sound path="${themePath}/_theme_inc/sound-effects/ps5/enter-system.ogg"/>
+                  <animation property="y" from="0.5" duration="500" mode="easeOutCubic" />
+               </storyboard>
+
+            </container>
+         </itemTemplate>
+      </carousel>
+
+      <!-- MARCO/BRILHO ORIGINAL COM CONTROLE DE POSICAO E TAMANHO -->
+      <image name="marco-activo" extra="static" tinyScreen="false">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+
+         <!-- CONTROLE DO MARCO BRANCO PISCANDO -->
+         <!-- pos: primeiro numero = esquerda/direita | segundo numero = cima/baixo -->
+         <pos>0.0 0.0</pos>
+
+         <!-- size: primeiro numero = largura | segundo numero = altura -->
+         <size>0.0 0.0</size>
+
+         <alignment>left</alignment>
+         <verticalAlignment>top</verticalAlignment>
+         <zIndex>900</zIndex>
+         <roundCorners>0.0200</roundCorners>
+         <origin>0 0</origin>
+         <opacity>0</opacity>
+         <storyboard>
+            <animation property="opacity" to="1" begin="200" duration="500" mode="easeInOut" autoreverse="true" repeat="forever" />
+         </storyboard>
+      </image>
+
+      <text name="system_name" extra="true">
+         <size>0.6 0.001</size>
+         <size ifSubset="aspect-ratio:3-2">0.57 0.001</size>
+         <alignment>left</alignment>
+         <color>FFFFFF</color>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Light.ttf</fontPath>
+         <fontPath ifSubset="aspect-ratio:4-3|9-16|5-4" tinyScreen="true">${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <zIndex>950</zIndex>
+         <glowColor>00000035</glowColor>
+         <glowSize>1</glowSize>
+         <glowOffset>3 2</glowOffset>
+         <backgroundColor>ff000000</backgroundColor>
+      </text>
+
+      <!-- VIDEO DA CELULA ATIVA - FICA POR CIMA DO CARROSSEL -->
+      <!-- Ajustado para a posicao da celula ativa vista na sua foto: Commodore 64. -->
+      <video name="video_celula_ativa_v2" extra="true">
+         <path>${themePath}/${theme.caratulasPath}/${system.theme}.mp4</path>
+         <path>${themePath}/${theme.caratulasPath}/us/${system.theme}.mp4</path>
+         <path>${themePath}/${theme.caratulasPath}/jp/${system.theme}.mp4</path>
+
+         <!-- centro da celula ativa -->
+        <pos>0.0400 0.135</pos> 
+
+         <!-- tamanho da celula, menor que a capa para nao ficar gigante -->
+            <size>0.271 0.485</size>
+
+         <!-- muito acima do carrossel para nao ficar por tras -->
+         <zIndex>9999</zIndex>
+
+         <delay>0</delay>
+         <showSnapshotNoVideo>false</showSnapshotNoVideo>
+         <showSnapshotDelay>false</showSnapshotDelay>
+         <effect>none</effect>
+         <roundCorners>0.0200</roundCorners>
+      </video>
+
+   </view>
+
+</theme>

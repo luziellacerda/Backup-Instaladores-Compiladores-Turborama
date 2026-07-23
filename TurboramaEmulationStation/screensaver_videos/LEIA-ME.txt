@@ -1,0 +1,25 @@
+﻿TurboRama - screensaver_videos (padrao EmulationStation)
+========================================================
+
+Estrutura (nome da pasta = nome do sistema em es_systems.cfg):
+
+  screensaver_videos\
+    psx\          qualquer.mp4
+    ps3\          clip1.mp4
+    switch\       zelda.mp4
+    n64\          ...
+    windows\      ...
+
+Regras:
+- O NOME DO FICHEIRO nao importa (.mp4 .mkv .avi .webm .mov)
+- O NOME DA PASTA tem de ser o sistema ES (psx, ps3, switch, n64, ...)
+- O screensaver toca aleatoriamente de TODAS as subpastas
+- O bezel de plataforma usa o nome da pasta (ex: switch\ -> bezel Switch)
+
+Como encher:
+1) Copie videos manualmente para a pasta do sistema
+2) Ou corra: tools\TurboRamaScreenScraper\ORGANIZAR-POR-SISTEMA.bat
+   (copia de roms\<sistema>\media\videos se existir)
+
+Decoracoes no ES:
+  ScreenSaverDecorations = systems  (menu screensaver)

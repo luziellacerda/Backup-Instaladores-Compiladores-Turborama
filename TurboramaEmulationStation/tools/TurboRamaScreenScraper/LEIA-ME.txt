@@ -1,0 +1,54 @@
+TurboRama ScreenScraper Downloader
+==================================
+
+App com interface grafica para baixar VIDEOS do ScreenScraper.fr
+direto para a pasta do screensaver do TurboRama EmulationStation.
+
+Site / API (oficial):
+  https://www.screenscraper.fr/
+  https://www.screenscraper.fr/webapi2.php
+  API base: https://api.screenscraper.fr/api2/
+  - jeuRecherche.php  = pesquisar jogos
+  - jeuInfos.php      = detalhes + URLs de medias (video, box, etc.)
+
+COMO USAR
+---------
+1) Crie conta gratuita:
+   https://www.screenscraper.fr/membreinscription.php
+
+2) Peça credenciais de DEVELOPER no forum do ScreenScraper
+   (devid + devpassword). A API exige isso para scrapers.
+
+3) Execute:
+   D:\Turborama\emulationstation\tools\TurboRamaScreenScraper\ABRIR-DOWNLOADER.bat
+   (ou a copia em tools\TurboRamaScreenScraper no codigo-fonte)
+
+4) Preencha na janela:
+   - Utilizador / Senha  = conta do site (ssid / sspassword)
+   - DevID / DevPassword = credenciais de developer
+   - SoftName            = TurboRamaSSDownloader (ja vem)
+   - Pasta destino       = ...\emulationstation\screensaver_videos
+
+5) Clique "Guardar config" (cria config.json local — NAO partilhe).
+
+6) Escolha plataforma, digite o nome do jogo, "Pesquisar",
+   selecione o resultado e "Baixar VIDEO do selecionado".
+
+ONDE FICAM OS VIDEOS
+--------------------
+  D:\Turborama\emulationstation\screensaver_videos
+
+O screensaver do TurboRama toca aleatoriamente TODOS os ficheiros
+dessa pasta (qualquer nome .mp4 / video suportado).
+
+REGRAS / LIMITES
+----------------
+- Nao abuse da API (limites por conta, IP e threads)
+- Media sob Creative Commons no ScreenScraper (uso via API)
+- Preferir video-normalized (mais leve) quando existir
+- Se der erro de credenciais: confira DevID no forum e ssid/senha
+
+NOTA
+----
+Se o EmulationStation ja tiver ScreenScraperUser / ScreenScraperPass
+nas definicoes, use a MESMA conta no downloader para nao misturar limites.

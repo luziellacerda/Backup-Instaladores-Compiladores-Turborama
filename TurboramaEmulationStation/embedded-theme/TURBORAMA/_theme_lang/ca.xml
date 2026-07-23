@@ -1,0 +1,122 @@
+﻿<!-- Theme by LZ-RETRO-PC-2026
+https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X 
+-->
+<theme>
+  <formatVersion>7</formatVersion>
+  
+  <variables lang="ca">
+    <theme.welcome>Benvingut a Playstation X per</theme.welcome>
+    <theme.start>Iniciar</theme.start>
+    <theme.mostplayed>El més jugat:</theme.mostplayed>
+    <theme.items>Nombre d'elements:</theme.items>
+    <theme.collections>col·leccions</theme.collections>
+    <GamesNumber>Jocs</GamesNumber>
+    <GamesFavs>Favorits</GamesFavs>
+    <NumberPlayed>Jugats</NumberPlayed>
+    <blue>Blau</blue>
+    <black>Negre</black>
+    <red>vermell</red>
+    <yellow>groc</yellow>
+    <green>verd</green>
+    <purple>morat</purple>
+    <orange>taronja</orange>
+    <pink>rosa</pink>
+    <default>per defecte</default>
+    <big>gran</big>
+    <medium>mitjà</medium>
+    <small>petit</small>
+    <yes>Si</yes>
+    <no>No</no>
+    <none>Cap</none>
+    <never>Mai</never>
+    <always>Sempre</always>
+    <iconset>Tipus d'Icones i botons</iconset>
+    <theme.frontend>Selecciona el teu frontend preferit</theme.frontend>
+    <gameBar>Mostra l'informació de jocs</gameBar>
+    <CarouselImageSize>Mida del carrusel de sistemes</CarouselImageSize>
+    <theme.videoBackground>Mostrar vídeos a la vista de sistemes</theme.videoBackground>
+    <theme.videoRandom>Mostrar vídeo de joc aleatori</theme.videoRandom>
+    <ifnospot>Si no hi ha vídeo del sistema</ifnospot>
+    <theme.system-description>Mostrar descripcions de sistemes</theme.system-description>
+    <theme.animated-background>Fons animat (ones)</theme.animated-background>
+    <theme.backgroundVideoOption>Vídeo de fons</theme.backgroundVideoOption>
+    <theme.windowVideoOption>Vídeo en finestra</theme.windowVideoOption>
+    <theme.insideVideoOption>Dins de la quadrícula</theme.insideVideoOption>
+    <theme.smallScreenOption>Finestra petita</theme.smallScreenOption>
+    <theme.videoaudio>Activar l'àudio als vídeos de sistemes</theme.videoaudio>
+    <theme.Avatar>Escull la teva imatge d'Avatar</theme.Avatar>
+    <theme.username>Trieu un Nick</theme.username>
+    <custom>Personalitzat</custom>
+    <theme.videoGamelistDelay>Retard del Vídeo a la llista de jocs</theme.videoGamelistDelay>
+    <VideoOff>No mostrar cap vídeo</VideoOff>
+    <theme.systemConsole>Mostrar la consola i el logo a la vista de sistemes</theme.systemConsole>
+    <randomGame>Joc Aleatori</randomGame>
+    <theme.colorset>Color del tema</theme.colorset>
+    <theme.secondaryColorset>Color secundari</theme.secondaryColorset>
+    <theme.gridvideo>Mostrar vídeos dels jocs</theme.gridvideo>
+    <theme.videoSnapAudio>Activar l'àudio als vídeos dels jocs</theme.videoSnapAudio>
+    <theme.animatedList>Transicions animades a la llista de jocs</theme.animatedList>
+    <theme.animatedSystem>Transicions animades a la vista de sistemes</theme.animatedSystem>
+    <theme.aspect-ratio>Selecciona el teu tipus de pantalla</theme.aspect-ratio>
+    <theme.oversizeVideoOption>Video superposat</theme.oversizeVideoOption>
+    <theme.bato35compatilble>Només compatible amb batocera 35 o superior</theme.bato35compatilble>
+    <theme.netplay-required>Activa netplay al sistema per mostrar el vostre nom d'usuari o selecciona un altre nick a les opcions del tema</theme.netplay-required>
+    <theme.ra-required>Activa retroachievements al sistema per mostrar el teu nom d'usuari o selecciona un altre nick a les opcions del tema</theme.ra-required>
+    <theme.hotkey>Mostrar ajuda hotkey a la pant. benvinguda</theme.hotkey>
+    <theme.hotkey-x86>Mostrar ajuda ràpida hotkey</theme.hotkey-x86>
+    <theme.hotkey.gamesplash>Només a la pantalla de càrrega del joc</theme.hotkey.gamesplash>
+    <theme.hotkey.splash>Només a la pantalla de benvinguda</theme.hotkey.splash>
+    <theme.hotkey.both>A les dues pantalles</theme.hotkey.both>
+    <theme.detected>detectada</theme.detected>
+    <theme.detailedorigin>Imatge a la vista detallada</theme.detailedorigin>
+    <theme.gridMainorigin>Imatge principal a la vista de graella</theme.gridMainorigin>
+    <theme.gridorigin>Imatges de la graella</theme.gridorigin>
+    <theme.carouselMainOrigin>Imatge principal a la vista de carrusel</theme.carouselMainOrigin>
+    <theme.carouselOrigin>Imatges del carrusel</theme.carouselOrigin>
+    <theme.systemBackground>Imatge de fons a la vista de sistemes</theme.systemBackground>
+    <randomFanart>Fanart aleatori</randomFanart>
+    <theme.gamelistBackground>Imatge de fons a la llista de jocs</theme.gamelistBackground>
+    <theme.forced>forçat</theme.forced>
+    <theme.gameDescription>Mostra les descripcions dels jocs</theme.gameDescription>
+    <carouselViewName>Carrusel horitzontal</carouselViewName>
+    <ps4StylelViewName>Estil PS4</ps4StylelViewName>
+    <ps5StylelViewName>Estil PS5</ps5StylelViewName>    
+    <theme.mainImage>Imatge destacada</theme.mainImage>   
+    <theme.gridImage>Imatge del carrusel o graella</theme.gridImage>
+    <fullGridlViewName>Graella ampliada</fullGridlViewName>
+    <theme.gamesplash-type>Pantalla de càrrega de jocs</theme.gamesplash-type>
+    <image-full-size>Imatge a pantalla completa</image-full-size>
+    <theme.nav-sounds>Sons de navegació</theme.nav-sounds>
+    <singlelViewName>Joc a joc</singlelViewName>
+    <theme.box>Caixa</theme.box>
+    <theme.romFolder>Mostrar informació de la carpeta de ROMs</theme.romFolder>
+    <dim>Empal·lidit</dim>
+    <theme-lastplayedLabel>Jugat per última vegada</theme-lastplayedLabel>
+    <theme-timesPlayedLabel>Partides Jugades:</theme-timesPlayedLabel>
+    <theme-gameTimeLabel>Temps Jugat:</theme-gameTimeLabel>
+    <theme.dummydata>Mostrar versió i any a la part superior</theme.dummydata>
+    <dummydata.showversion>Només versió</dummydata.showversion>
+    <dummydata.showyear>Només any</dummydata.showyear>
+    <theme.hardwareType if="${system.hardwareType} == 'console'">Consola</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'computer'">Ordinador</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'custom collection'">Col·lecció personalitzada</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'portable'">Consola portàtil</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'system'">Sistema</theme.hardwareType>
+    <theme.hardwareType if="${system.hardwareType} == 'auto collection'">Col·lecció automàtica</theme.hardwareType>
+    <theme.thumbnail-type>Tipus de caixa de joc (prioritat)</theme.thumbnail-type>
+    <theme.showlogo>Mostrar el logo del joc</theme.showlogo>
+    <theme.topinfoarea>Àrea superior d'informació</theme.topinfoarea>
+    <theme.clean>Net / Mínim</theme.clean>
+    <theme.region>Regió</theme.region>
+    <theme.europe>Europa</theme.europe>
+    <theme.usa>Estats Units</theme.usa>
+    <theme.japan>Japó</theme.japan>
+    <theme.overlayExtra>Mostrar sobreimpressions d'arts a la vista de sistemes</theme.overlayExtra>
+    <theme.gamelistOverlayExtra>Mostrar sobreimpressions d'arts a la llista de jocs</theme.gamelistOverlayExtra>
+    <theme.nonumbers>Sense números de versió i any</theme.nonumbers>
+    <theme.highVramRequired>(requereix valors elevats de VRAM)</theme.highVramRequired>
+    <CarouselType>Estil de carrusel dels sistemes</CarouselType>
+    <theme.SystemConsole>Imatge de la consola a la vista de sistemes</theme.SystemConsole>
+    <theme.SystemLogo>Imatge del logotip a la vista de sistemes</theme.SystemLogo>
+  </variables>
+</theme>

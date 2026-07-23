@@ -1,0 +1,282 @@
+<!-- Theme by LZ-RETRO-PC-2026
+https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X 
+-->
+<theme>
+   <formatVersion>7</formatVersion>
+
+   
+      <view name="detailed">
+
+      <textlist name="gamelist">
+         <pos ifSubset="anim-list:YES">-0.5 0.134</pos>
+         <pos ifSubset="anim-list:NO">0 0.134</pos>
+         <size>0.52 0.81</size>
+         <selectorColor>${gamelistSelectorColor}</selectorColor>
+         <selectedColor>${gamelistSelectedColor}</selectedColor>
+         <extraTextColor>999999</extraTextColor>
+         <extraTextSelectedColor>dddddd</extraTextSelectedColor>
+         <selectorImagePath>${themePath}/_theme_inc/images/selector-lineas-blancas-transp50.png</selectorImagePath>
+         <horizontalMargin>0.015</horizontalMargin>
+         <primaryColor>ffffff</primaryColor>
+         <secondaryColor>ffffff</secondaryColor>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Light.ttf</fontPath>
+         <fontPath ifSubset="aspect-ratio:4-3|5-4">${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <glowColor>00000035</glowColor>
+         <glowSize ifArch="bcm2712,rpi5,windows,x86,x86_64,odroidc4,odroidxu4">1</glowSize>
+         <glowOffset ifArch="bcm2712,rpi5,windows,x86,x86_64,odroidc4,odroidxu4">3 2</glowOffset>
+         <fontSize>0.035</fontSize>
+         <alignment>left</alignment>
+         <lineSpacing>1.45</lineSpacing>
+         <scrollbarAlignment>outerright</scrollbarAlignment>
+         <scrollbarColor>${genreColor}20</scrollbarColor>
+         <scrollbarCorner>0.005</scrollbarCorner>
+         <scrollbarSize>0.0075</scrollbarSize>
+         <zIndex>52</zIndex>
+      </textlist>
+
+      <textlist name="gamelist" ifHelpPrompts="false">
+         <size>0.458 0.85</size>
+
+      </textlist>
+
+
+
+      <image name="background" extra="static">
+         <path>${themePath}/_theme_inc/images/overlay-full-grid.png</path>
+         <zIndex>51</zIndex>
+         <color ifSubset="background-list:fanart">ffffffd9</color>
+         <size>1 1</size>
+      </image>
+
+
+
+      <image name="background, background-art, overlay" extra="true">
+         <origin>0.5 0.5</origin>
+         <pos>0.5 0.5</pos>
+         <linearSmooth>true</linearSmooth>
+         <tile>false</tile>
+      </image>
+
+      <!-- stackpanel para datos de juegos -->
+
+      <stackpanel name="contenedor-gamedata" extra="true" ifSubset="info-bar:YES">
+         <separator>0.015</separator>
+         <pos>0.55 0.696</pos>
+         <y ifSubset="aspect-ratio:4-3|5-4">0.565</y>
+         <size>0.5 0.04</size>
+         <orientation>horizontal</orientation>
+         <backgroundColor>ff000000</backgroundColor>
+         <zIndex>99</zIndex>
+
+         <text name="gamedata-releaseyear">
+            <fontSize>0.023</fontSize>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <text>{game:releaseyear}</text>
+            <visible>!empty({game:releaseyear})</visible>
+            <color>${releaseColor}</color>
+         </text>
+
+         <text name="gamedata-noreleaseyear">
+            <fontSize>0.023</fontSize>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <text>------</text>
+            <visible>empty({game:releaseyear})</visible>
+            <color>${dimColor}</color>
+         </text>
+
+         <text name="gamedata-publisher-developer">
+            <fontSize>0.023</fontSize>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <text>•  {game:publisher} / {game:developer} </text>
+            <visible>{game:publisher} != {game:developer} &amp;&amp; !empty({game:publisher}) &amp;&amp; !empty({game:developer})</visible>
+            <color>ffffff</color>
+            <singleLineScroll>true</singleLineScroll>
+            <autoScrollDelay>0</autoScrollDelay>
+         </text>
+
+         <text name="gamedata-developer">
+            <fontSize>0.023</fontSize>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <text>•  {game:developer}</text>
+            <visible>{game:publisher} == {game:developer} &amp;&amp; !empty({game:publisher}) &amp;&amp; !empty({game:developer})</visible>
+            <color>ffffff</color>
+            <singleLineScroll>true</singleLineScroll>
+            <autoScrollDelay>0</autoScrollDelay>
+         </text>
+
+         <text name="gamedata-developer">
+            <fontSize>0.023</fontSize>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <text>•  {game:developer}</text>
+            <visible>empty({game:publisher}) &amp;&amp; !empty({game:developer})</visible>
+            <color>ffffff</color>
+            <singleLineScroll>true</singleLineScroll>
+            <autoScrollDelay>0</autoScrollDelay>
+         </text>
+
+         <text name="gamedata-publisher">
+            <fontSize>0.023</fontSize>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <text>•  {game:publisher}</text>
+            <visible>empty({game:developer}) &amp;&amp; !empty({game:publisher})</visible>
+            <color>ffffff</color>
+            <singleLineScroll>true</singleLineScroll>
+            <autoScrollDelay>0</autoScrollDelay>
+         </text>
+
+         <text name="gamedata-nodeveloper">
+            <fontSize>0.023</fontSize>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <text>•  -------------</text>
+            <visible>empty({game:developer}) &amp;&amp; empty({game:publisher})</visible>
+            <color>${dimColor}</color>
+         </text>
+
+         <text name="contenedor-separador1">
+            <text>•</text>
+            <alignment>center</alignment>
+            <fontSize>0.022</fontSize>
+            <color>${psx-theme-yellow}</color>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <visible>${theme.game-hasMultidisc}</visible>            
+          </text>
+          <text name="multidisc-game" ifSubset="info-bar:YES" extra="true">
+            <text>${theme.multidisc}</text>
+            <fontSize>0.024</fontSize>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <color>${psx-theme-yellow}</color>
+            <padding>0.008 0.008</padding>
+            <backgroundColor>00000066</backgroundColor>
+            <visible>${theme.game-hasMultidisc}</visible>            
+            <storyboard>
+               <animation property="opacity" from="1" to="0.6" duration="400" mode="easeInOut" autoreverse="true" repeat="forever" />      
+            </storyboard>
+         </text>
+         
+      </stackpanel>
+
+      <stackpanel name="contenedor-gamedata2" extra="true" ifSubset="info-bar:YES">
+         <separator>0.015</separator>
+         <pos>0.55 0.727</pos>
+         <y ifSubset="aspect-ratio:4-3|5-4">0.595</y>
+
+         <size>0.5 0.04</size>
+         <orientation>horizontal</orientation>
+         <backgroundColor>ff000000</backgroundColor>
+         <zIndex>99</zIndex>
+
+         <text name="game-stars">
+            <fontSize>0.023</fontSize>
+            <text>{game:stars}</text>
+            <color>${gamelist.starFill}</color>
+            <visible>!empty({game:stars})</visible>
+         </text>
+
+         <text name="game-nostars">
+            <fontSize>0.023</fontSize>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <text>------</text>
+            <visible>empty({game:stars})</visible>
+            <color>${dimColor}</color>
+         </text>
+
+         <text name="icono-players">
+            <fontPath>${themePath}/_theme_inc/fonts/players.ttf</fontPath>
+            <text>{game:playerCount}</text>
+           <alignment>center</alignment>
+           <fontSize>0.03</fontSize>
+           <color>eeeeee</color>
+           <padding>5 0</padding>
+         </text>
+         <text name="gamedata-genre">
+            <fontSize>0.023</fontSize>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <text>•  {game:genre}</text>
+            <visible>!empty({game:genre})</visible>
+            <color>${genreColor}</color>
+         </text>
+
+         <text name="gamedata-nogenre">
+            <fontSize>0.023</fontSize>
+            <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+            <text>•  -------------</text>
+            <visible>empty({game:genre})</visible>
+            <color>${dimColor}</color>
+         </text>
+      </stackpanel>
+
+
+      <image name="linea-infos" extra="true"  ifSubset="info-bar:YES">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.55 0.768</pos>
+         <pos ifSubset="aspect-ratio:4-3|5-4">0.55 0.634</pos>
+         <size>0.420 0.0011</size>
+         <size tinyScreen="true">1 0.005</size>
+         <color>555555</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>52</zIndex>
+         <visible ifSubset="game-description:no">false</visible>
+      </image>
+
+
+
+      <text name="gamedesc-detailed" extra="true">
+         <text>{game:desc}</text>
+         <color>ffffff</color>
+         <pos>0.55 0.780</pos>
+         <pos ifSubset="aspect-ratio:4-3|5-4">0.55 0.65</pos>
+         <size>0.430 0.126</size>
+         <size ifSubset="aspect-ratio:4-3|5-4">0.430 0.246</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Light.ttf</fontPath>
+         <fontSize>0.028</fontSize>
+         <fontSize ifSubset="aspect-ratio:4-3" tinyScreen="true">0.026</fontSize> 
+         <lineSpacing>1.1</lineSpacing>
+         <backgroundColor>0000FF00</backgroundColor>
+         <forceUppercase tinyScreen="true">true</forceUppercase>
+         <zIndex>52</zIndex>
+         <visible>!empty({game:desc})</visible>
+         <visible ifSubset="game-description:no">false</visible>
+         <verticalAlignment>top</verticalAlignment>
+         <autoScroll>vertical</autoScroll>
+         <glowColor>00000035</glowColor>
+         <glowSize>1</glowSize>
+         <glowOffset>3 2</glowOffset>
+      </text>
+
+      <image name="pie-barra" extra="static" ifHelpPrompts="true">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0 0.934</pos>
+         <size>1 0.2</size>
+         <color>${sistema.pie}</color>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>98</zIndex>
+      </image>
+
+      <image name="linea-inferior" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0 0.934</pos>
+         <size>1 0.002</size>
+         <size tinyScreen="true">1 0.005</size>
+         <color>${sistema.lineainferior}</color>
+         <gradientType>horizontal</gradientType>
+         <verticalAlignment>top</verticalAlignment>
+         <alignment>left</alignment>
+         <linearSmooth>true</linearSmooth>
+         <zIndex>99</zIndex>
+      </image>
+
+      <image name="linea-inferior" extra="static" ifHelpPrompts="false">
+         <y>0.995</y>
+      </image>
+
+   </view>
+
+
+
+   
+
+</theme>

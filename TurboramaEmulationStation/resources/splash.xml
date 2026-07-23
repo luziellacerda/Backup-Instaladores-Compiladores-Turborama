@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<theme>
+  <formatVersion>7</formatVersion>
+
+  <variables>
+    <bgBlack>000000</bgBlack>
+    <bezelOuter>111111</bezelOuter>
+    <bezelInner>080808</bezelInner>
+    <slotOff>121212</slotOff>
+    <slotEdge>1E1E1E</slotEdge>
+    <lemonCore>EEFF66</lemonCore>
+    <lemonBright>CCFF00</lemonBright>
+    <lemonDeep>6EDC00</lemonDeep>
+    <textWhite>FFFFFF</textWhite>
+    <textDim>8A8A8A</textDim>
+  </variables>
+
+  <view name="splash">
+
+    <splash name="splash">
+      <backgroundColor>000000FF</backgroundColor>
+    </splash>
+
+    <image name="background_black" extra="true">
+      <tile>true</tile>
+      <pos>0 0</pos>
+      <size>1 1</size>
+      <origin>0 0</origin>
+      <path>./white.png</path>
+      <color>${bgBlack}</color>
+      <colorEnd>${bgBlack}</colorEnd>
+      <zIndex>0</zIndex>
+    </image>
+
+    <!-- Bezel externo -->
+    <image name="bar_bezel" extra="true">
+      <pos>0.165 0.852</pos>
+      <size>0.670 0.048</size>
+      <origin>0 0</origin>
+      <path>./white.png</path>
+      <color>${bezelOuter}</color>
+      <roundCorners>0.035</roundCorners>
+      <zIndex>10</zIndex>
+    </image>
+
+    <!-- Canal interno -->
+    <image name="bar_channel" extra="true">
+      <pos>0.172 0.858</pos>
+      <size>0.656 0.036</size>
+      <origin>0 0</origin>
+      <path>./white.png</path>
+      <color>${bezelInner}</color>
+      <roundCorners>0.028</roundCorners>
+      <zIndex>11</zIndex>
+    </image>
+
+    <!-- 12 slots LED (apagados) -->
+    <image name="slot_00" extra="true"><pos>0.180 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+    <image name="slot_01" extra="true"><pos>0.232 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+    <image name="slot_02" extra="true"><pos>0.284 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+    <image name="slot_03" extra="true"><pos>0.336 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+    <image name="slot_04" extra="true"><pos>0.388 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+    <image name="slot_05" extra="true"><pos>0.440 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+    <image name="slot_06" extra="true"><pos>0.492 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+    <image name="slot_07" extra="true"><pos>0.544 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+    <image name="slot_08" extra="true"><pos>0.596 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+    <image name="slot_09" extra="true"><pos>0.648 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+    <image name="slot_10" extra="true"><pos>0.700 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+    <image name="slot_11" extra="true"><pos>0.752 0.862</pos><size>0.046 0.028</size><origin>0 0</origin><path>./white.png</path><color>${slotEdge}</color><colorEnd>${slotOff}</colorEnd><roundCorners>0.18</roundCorners><zIndex>12</zIndex></image>
+
+    <!-- Trilho de progresso -->
+    <image name="progressbar">
+      <origin>0 0</origin>
+      <pos>0.180 0.862</pos>
+      <size>0.618 0.028</size>
+      <color>00000001</color>
+      <colorEnd>00000001</colorEnd>
+      <roundCorners>0.18</roundCorners>
+      <zIndex>20</zIndex>
+    </image>
+
+    <!-- Energia LED: limão com núcleo claro -->
+    <image name="progressbar:active">
+      <color>${lemonCore}</color>
+      <colorEnd>${lemonDeep}</colorEnd>
+      <roundCorners>0.18</roundCorners>
+      <zIndex>21</zIndex>
+    </image>
+
+    <!-- Reflexo superior fino -->
+    <image name="bar_gloss" extra="true">
+      <pos>0.182 0.863</pos>
+      <size>0.614 0.006</size>
+      <origin>0 0</origin>
+      <path>./white.png</path>
+      <color>FFFFFF28</color>
+      <roundCorners>0.18</roundCorners>
+      <zIndex>22</zIndex>
+    </image>
+
+    <!-- Marcadores laterais -->
+    <image name="cap_left" extra="true">
+      <pos>0.168 0.872</pos>
+      <size>0.004 0.016</size>
+      <origin>0.5 0.5</origin>
+      <path>./white.png</path>
+      <color>${lemonBright}</color>
+      <zIndex>23</zIndex>
+    </image>
+    <image name="cap_right" extra="true">
+      <pos>0.832 0.872</pos>
+      <size>0.004 0.016</size>
+      <origin>0.5 0.5</origin>
+      <path>./white.png</path>
+      <color>${lemonBright}</color>
+      <zIndex>23</zIndex>
+    </image>
+
+    <text name="loading_hint" extra="true">
+      <text>CARREGANDO SISTEMAS</text>
+      <color>${textDim}</color>
+      <fontPath>./DroidSansFallbackFull.ttf</fontPath>
+      <fontSize>0.015</fontSize>
+      <pos>0.5 0.828</pos>
+      <origin>0.5 0.5</origin>
+      <alignment>center</alignment>
+      <forceUppercase>true</forceUppercase>
+      <zIndex>38</zIndex>
+    </text>
+
+    <text name="label">
+      <color>${textWhite}</color>
+      <fontPath>./DroidSansFallbackFull.ttf</fontPath>
+      <fontSize>0.034</fontSize>
+      <pos>0.5 0.792</pos>
+      <origin>0.5 0.5</origin>
+      <alignment>center</alignment>
+      <glowColor>00000055</glowColor>
+      <glowSize>1</glowSize>
+      <zIndex>40</zIndex>
+    </text>
+
+  </view>
+</theme>

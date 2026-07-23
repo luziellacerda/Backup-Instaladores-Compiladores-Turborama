@@ -1,0 +1,35 @@
+SPLASH DE JOGOS - TurboRama EmulationStation
+============================================
+
+Tutorial completo (memoria, videos, configuracoes):
+  -> Abra o arquivo TUTORIAL-COMPLETO.md nesta pasta
+
+Coloque aqui imagens ou videos exibidos ao iniciar e ao sair de jogos.
+
+Estrutura:
+  game-splashes/
+    snes/
+      entrada.mp4   (ou entrada.png / entrada.jpg / entrada.svg)
+      saida.mp4     (ou saida.png / saida.jpg / saida.svg)
+    psx/
+      entrada.mp4
+      saida.png
+    default/
+      snes.mp4      (fallback por nome do sistema)
+      entrada.png   (fallback generico)
+
+Nomes aceitos por arquivo:
+  Entrada: entrada, launch, entry  OU  {nome-do-sistema}.mp4
+  Saida:   saida, exit            OU  {nome-do-sistema}.mp4
+
+Formatos aceitos:
+  .png .jpg .jpeg .svg .mp4
+
+Prioridade de busca:
+  1. pasta do sistema em game-splashes/
+  2. pasta default/
+  3. splash padrao do tema (gamesplash.xml)
+
+Pastas verificadas:
+  - %USERPROFILE%\.emulationstation\game-splashes\
+  - pasta emulationstation\game-splashes\ (instalacao)

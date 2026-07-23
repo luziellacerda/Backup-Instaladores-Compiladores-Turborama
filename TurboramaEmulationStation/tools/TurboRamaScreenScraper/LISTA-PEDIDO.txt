@@ -1,0 +1,71 @@
+﻿LISTA PEDIDA - videos ScreenScraper para screensaver
+
+Criterios:
+- PS5 que tambem sairam para PC
+- Xbox One que tambem sairam para PC
+- PS3
+- PS2
+- Nintendo Switch
+
+Total: 48 jogos
+
+
+=== PS5_e_PC (PlayStation 5 (PS5)) ===
+ - God of War Ragnarok
+ - Marvel's Spider-Man 2
+ - Horizon Forbidden West
+ - The Last of Us Part I
+ - Ghost of Tsushima
+ - Ratchet and Clank Rift Apart
+ - Returnal
+ - Helldivers 2
+ - Final Fantasy VII Rebirth
+ - Demon's Souls
+
+=== XboxOne_e_PC (Xbox One) ===
+ - Forza Horizon 5
+ - Halo Infinite
+ - Gears 5
+ - Sea of Thieves
+ - Forza Motorsport 7
+ - Ori and the Will of the Wisps
+ - Cuphead
+ - Hellblade Senua's Sacrifice
+ - State of Decay 2
+ - Grounded
+
+=== PS3 (PlayStation 3 (PS3)) ===
+ - The Last of Us
+ - God of War III
+ - Uncharted 2
+ - Uncharted 3
+ - Metal Gear Solid 4
+ - Red Dead Redemption
+ - Gran Turismo 5
+ - Batman Arkham City
+
+=== PS2 (PlayStation 2 (PS2)) ===
+ - God of War
+ - God of War II
+ - GTA San Andreas
+ - Shadow of the Colossus
+ - Metal Gear Solid 3
+ - Resident Evil 4
+ - Final Fantasy X
+ - Kingdom Hearts II
+ - Tekken 5
+ - Gran Turismo 4
+
+=== Switch (Nintendo Switch) ===
+ - The Legend of Zelda Breath of the Wild
+ - The Legend of Zelda Tears of the Kingdom
+ - Mario Kart 8 Deluxe
+ - Super Mario Odyssey
+ - Super Smash Bros Ultimate
+ - Animal Crossing New Horizons
+ - Metroid Dread
+ - Pokemon Legends Arceus
+ - Luigi's Mansion 3
+ - Super Mario Bros Wonder
+
+Para baixar: preencha config.json e execute BAIXAR-LISTA.bat
