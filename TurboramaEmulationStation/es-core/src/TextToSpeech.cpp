@@ -5,7 +5,6 @@
 #if WIN32
 #include "SystemConf.h"
 #include <sapi.h>
-#include <sphelper.h>
 #include <thread>
 
 #pragma comment(lib, "sapi.lib")

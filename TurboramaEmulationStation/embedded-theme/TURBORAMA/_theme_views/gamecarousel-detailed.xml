@@ -1,0 +1,1171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TURBORAMA X — Cinematic Streaming v21
+  Tela 16:9 para a visualização gamecarousel.
+  Carrega as capas diretamente de media/box3d pelo nome exato da ROM.
+-->
+<theme>
+   <formatVersion>7</formatVersion>
+
+   <view name="gamecarousel">
+      <!-- ============================================================ -->
+      <!-- FUNDO CINEMATOGRÁFICO                                         -->
+      <!-- ============================================================ -->
+
+      <image name="ultraBase" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0 0</origin>
+         <pos>0 0</pos>
+         <size>1 1</size>
+         <color>${gc-base}</color>
+         <zIndex>0</zIndex>
+      </image>
+
+      <image name="md_fanart">
+         <origin>0.5 0.5</origin>
+         <pos>0.5 0.5</pos>
+         <size>1.04 1.04</size>
+         <linearSmooth>true</linearSmooth>
+         <opacity>${gc-fanart-opacity}</opacity>
+         <zIndex>1</zIndex>
+         <shader>
+            <path>${themePath}/_theme_inc/cinematic-grade.glsl</path>
+            <enabled>true</enabled>
+            <exposure>${gc-fanart-exposure}</exposure>
+            <saturation>${gc-fanart-saturation}</saturation>
+         </shader>
+      </image>
+
+      <image name="ambientHud" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0 0</origin>
+         <pos>0 0</pos>
+         <size>1 1</size>
+         <color>FFFFFFFF</color>
+         <zIndex>2</zIndex>
+         <shader>
+            <path>${themePath}/_theme_inc/hud-ambient.glsl</path>
+            <enabled>true</enabled>
+            <intensity>0.60</intensity>
+            <speed>0.003</speed>
+         </shader>
+      </image>
+
+      <image name="topShade" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0 0</origin>
+         <pos>0 0</pos>
+         <size>1 0.44</size>
+         <color>${gc-top}</color>
+         <colorEnd>${gc-top-end}</colorEnd>
+         <gradientType>vertical</gradientType>
+         <zIndex>3</zIndex>
+      </image>
+
+      <image name="bottomShade" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0 0</origin>
+         <pos>0 0.34</pos>
+         <size>1 0.66</size>
+         <color>${gc-bottom}</color>
+         <colorEnd>${gc-bottom-end}</colorEnd>
+         <gradientType>vertical</gradientType>
+         <zIndex>3</zIndex>
+      </image>
+
+      <image name="leftShade" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0 0</origin>
+         <pos>0 0</pos>
+         <size>0.42 1</size>
+         <color>${gc-side}</color>
+         <colorEnd>${gc-side-end}</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <zIndex>4</zIndex>
+      </image>
+
+      <image name="rightShade" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0 0</origin>
+         <pos>0.58 0</pos>
+         <size>0.42 1</size>
+         <color>${gc-side-end}</color>
+         <colorEnd>${gc-side}</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <zIndex>4</zIndex>
+      </image>
+
+      <!-- Camada de contraste aplicada somente por trás da interface.
+           Mantém capas, vídeo, textos e painéis nítidos mesmo em telas com
+           brilho alto ou quando o jogo não possui fanart própria. -->
+      <image name="globalDimmer" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0 0</origin>
+         <pos>0 0</pos>
+         <size>1 1</size>
+         <color>000000A8</color>
+         <zIndex>5</zIndex>
+      </image>
+
+      <!-- ============================================================ -->
+      <!-- CABEÇALHO                                                     -->
+      <!-- ============================================================ -->
+
+      <image name="brandRail" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.032 0.030</pos>
+         <size>0.004 0.054</size>
+         <color>${gc-accent-a}</color>
+         <colorEnd>${gc-accent-b}</colorEnd>
+         <gradientType>vertical</gradientType>
+         <roundCorners>0.002</roundCorners>
+         <shader>
+            <path>${themePath}/_theme_inc/hud-line-flow.glsl</path>
+            <enabled>true</enabled>
+            <speed>0.0038</speed>
+            <intensity>1.20</intensity>
+            <colorA>${gc-accent-a}</colorA>
+            <colorB>${gc-accent-b}</colorB>
+         </shader>
+         <zIndex>80</zIndex>
+      </image>
+
+      <text name="brandName" extra="static">
+         <text>TURBORAMA X</text>
+         <pos>0.047 0.029</pos>
+         <size>0.185 0.030</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.018</fontSize>
+         <color>FFFFFFFF</color>
+         <forceUppercase>true</forceUppercase>
+         <zIndex>82</zIndex>
+      </text>
+
+      <text name="systemIdentity" extra="true">
+         <text>{system:name}.upper()</text>
+         <pos>0.047 0.057</pos>
+         <size>0.185 0.024</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.014</fontSize>
+         <color>B3B3B3FF</color>
+         <singleLineScroll>true</singleLineScroll>
+         <zIndex>82</zIndex>
+      </text>
+
+      <text name="md_name">
+         <pos>0.230 0.022</pos>
+         <size>0.470 0.061</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.029</fontSize>
+         <color>FFFFFFFF</color>
+         <alignment>center</alignment>
+         <verticalAlignment>center</verticalAlignment>
+         <singleLineScroll>true</singleLineScroll>
+         <glowColor>000000A0</glowColor>
+         <glowSize>1</glowSize>
+         <glowOffset>2 2</glowOffset>
+         <zIndex>84</zIndex>
+         <storyboard event="activateNext">
+            <animation property="opacity" from="0.12" to="1" duration="180" mode="easeOutCubic" />
+            <animation property="x" from="0.247" to="0.230" duration="210" mode="easeOutCubic" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="opacity" from="0.12" to="1" duration="180" mode="easeOutCubic" />
+            <animation property="x" from="0.213" to="0.230" duration="210" mode="easeOutCubic" />
+         </storyboard>
+      </text>
+
+      <text name="libraryCount" extra="true">
+         <text>{system:total} JOGOS</text>
+         <pos>0.715 0.027</pos>
+         <size>0.155 0.027</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.016</fontSize>
+         <color>FFFFFFFF</color>
+         <alignment>right</alignment>
+         <zIndex>82</zIndex>
+      </text>
+
+      <text name="libraryMode" extra="static">
+         <text>${gc-library-label}</text>
+         <pos>0.680 0.057</pos>
+         <size>0.190 0.022</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.0115</fontSize>
+         <color>A7A7A7FF</color>
+         <alignment>right</alignment>
+         <zIndex>82</zIndex>
+      </text>
+
+      <!-- O relógio é um elemento global do tema e aparece sobre todas as
+           telas. Esta divisória reserva sua área e impede sobreposição. -->
+      <image name="clockDivider" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.887 0.027</pos>
+         <size>0.001 0.051</size>
+         <color>${gc-accent-c}</color>
+         <zIndex>81</zIndex>
+      </image>
+
+      <text name="clockCaption" extra="static">
+         <text>HORA LOCAL</text>
+         <pos>0.900 0.023</pos>
+         <size>0.068 0.018</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.0095</fontSize>
+         <color>B3B3B3FF</color>
+         <alignment>right</alignment>
+         <zIndex>82</zIndex>
+      </text>
+
+      <image name="headerSpectrum" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.032 0.09885</pos>
+         <size>0.936 0.0038</size>
+         <color>FFFFFFFF</color>
+         <colorEnd>FFFFFFFF</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <shader>
+            <path>${themePath}/_theme_inc/hud-line-spectrum.glsl</path>
+            <enabled>true</enabled>
+            <speed>0.0045</speed>
+            <intensity>1.22</intensity>
+            <colorA>${gc-accent-a}</colorA>
+            <colorB>${gc-accent-b}</colorB>
+            <colorC>${gc-accent-c}</colorC>
+         </shader>
+         <zIndex>81</zIndex>
+      </image>
+
+      <!-- ============================================================ -->
+      <!-- CARROSSEL BOX3D                                               -->
+      <!-- ============================================================ -->
+
+      <!-- Uma única faixa atmosférica organiza o carrossel sem criar
+           placas ou células atrás das capas individuais. -->
+      <image name="carouselDepth" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0 0</origin>
+         <pos>0 0.096</pos>
+         <size>1 0.304</size>
+         <color>${gc-carousel}</color>
+         <colorEnd>${gc-carousel-end}</colorEnd>
+         <gradientType>vertical</gradientType>
+         <zIndex>6</zIndex>
+      </image>
+
+      <text name="carouselEyebrow" extra="static">
+         <text>${gc-highlight-label}</text>
+         <pos>0.040 0.106</pos>
+         <size>0.160 0.025</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.015</fontSize>
+         <color>${gc-accent-c}</color>
+         <forceUppercase>true</forceUppercase>
+         <zIndex>76</zIndex>
+      </text>
+
+      <text name="carouselNavigation" extra="static">
+         <text>NAVEGAR  ◀  ▶</text>
+         <pos>0.790 0.106</pos>
+         <size>0.170 0.025</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.013</fontSize>
+         <color>${gc-accent-soft}</color>
+         <alignment>right</alignment>
+         <zIndex>76</zIndex>
+      </text>
+
+      <gamecarousel name="gamecarousel">
+         <type>horizontal</type>
+         <scrollSound>${themePath}/_theme_inc/sound-effects/ps5/system-scroll.ogg</scrollSound>
+         <!-- Área de recorte ampliada para cima e para baixo.
+              O centro (0.2605) e a altura real das capas (0.26166)
+              permanecem iguais; somente o brilho deixa de ser cortado. -->
+         <pos>0.038 0.087</pos>
+         <size>0.924 0.347</size>
+         <logoSize>0.1172 0.7013</logoSize>
+         <logoScale>1.00</logoScale>
+         <scaledLogoSpacing>0.940</scaledLogoSpacing>
+         <maxLogoCount>8</maxLogoCount>
+         <logoAlignment>center</logoAlignment>
+         <minLogoOpacity>0.44</minLogoOpacity>
+         <transitionSpeed>285</transitionSpeed>
+         <defaultTransition>slide</defaultTransition>
+         <imageSource>boxart</imageSource>
+         <color>00000000</color>
+         <!-- O carrossel inteiro fica acima das barras, painéis e textos da página.
+              O motor já desenha o item selecionado por último, garantindo que
+              capa e brilho ativos permaneçam sobre as capas vizinhas. -->
+         <zIndex>12000</zIndex>
+
+         <itemTemplate>
+            <container>
+               <scaleOrigin>0.5 0.5</scaleOrigin>
+               <rotationOrigin>0.5 0.5</rotationOrigin>
+               <zIndex>12010</zIndex>
+
+               <!-- O shader usa o canal alfa da própria capa: não existe card atrás. -->
+               <image name="selectedBox3dOutline"
+                      pos="0.5 0.50"
+                      origin="0.5 0.5"
+                      maxSize="0.980 0.960"
+                      linearSmooth="true">
+                  <path>firstfile(directory({game:path}) + "/media/box3/" + {game:stem} + ".png", directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</path>
+                  <visible>exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</visible>
+                  <color>FFFFFF00</color>
+                  <zIndex>12030</zIndex>
+                  <shader>
+                     <path>${themePath}/_theme_inc/box3d-outline.glsl</path>
+                     <enabled>false</enabled>
+                     <outlineWidth>3.8</outlineWidth>
+                     <speed>0.0038</speed>
+                     <outlineColorA>${gc-accent-c}</outlineColorA>
+                     <outlineColorB>${gc-accent-soft}</outlineColorB>
+                  </shader>
+                  <storyboard event="activate">
+                     <animation property="color" to="FFFFFFFF" duration="150" mode="easeOut" />
+                     <animation property="shader.enabled" from="0" to="1" duration="1" />
+                     <animation property="y" to="0.450" duration="210" mode="easeOutCubic" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="color" to="FFFFFF00" duration="100" mode="easeOut" />
+                     <animation property="shader.enabled" to="0" begin="100" duration="1" />
+                     <animation property="y" to="0.50" duration="150" mode="easeOut" />
+                  </storyboard>
+               </image>
+
+               <image name="gameCover"
+                      pos="0.5 0.50"
+                      origin="0.5 0.5"
+                      maxSize="0.920 0.910"
+                      linearSmooth="true">
+                  <path>firstfile(directory({game:path}) + "/media/box3/" + {game:stem} + ".png", directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</path>
+                  <visible>exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</visible>
+                  <color>FFFFFFB5</color>
+                  <saturation>0.60</saturation>
+                  <zIndex>12020</zIndex>
+                  <storyboard event="activate">
+                     <animation property="color" to="FFFFFFFF" duration="190" mode="easeOutCubic" />
+                     <animation property="saturation" to="1" duration="190" mode="easeOutCubic" />
+                     <animation property="y" to="0.450" duration="210" mode="easeOutCubic" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="color" to="FFFFFFB5" duration="150" mode="easeOut" />
+                     <animation property="saturation" to="0.60" duration="150" mode="easeOut" />
+                     <animation property="y" to="0.50" duration="150" mode="easeOut" />
+                  </storyboard>
+               </image>
+
+               <!-- Capas 2D recebem área maior sem alterar o tamanho das caixas 3D. -->
+               <image name="selectedFlatOutline"
+                      pos="0.5 0.50"
+                      origin="0.5 0.5"
+                      maxSize="1.090 0.995"
+                      linearSmooth="true">
+                  <path>firstfile({game:thumbnail}, {game:boxart})</path>
+                  <visible>!exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; (exists({game:thumbnail}) || exists({game:boxart}))</visible>
+                  <color>FFFFFF00</color>
+                  <zIndex>12030</zIndex>
+                  <shader>
+                     <path>${themePath}/_theme_inc/box3d-outline.glsl</path>
+                     <enabled>false</enabled>
+                     <outlineWidth>3.8</outlineWidth>
+                     <speed>0.0038</speed>
+                     <outlineColorA>${gc-accent-c}</outlineColorA>
+                     <outlineColorB>${gc-accent-soft}</outlineColorB>
+                  </shader>
+                  <storyboard event="activate">
+                     <animation property="color" to="FFFFFFFF" duration="150" mode="easeOut" />
+                     <animation property="shader.enabled" from="0" to="1" duration="1" />
+                     <animation property="y" to="0.450" duration="210" mode="easeOutCubic" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="color" to="FFFFFF00" duration="100" mode="easeOut" />
+                     <animation property="shader.enabled" to="0" begin="100" duration="1" />
+                     <animation property="y" to="0.50" duration="150" mode="easeOut" />
+                  </storyboard>
+               </image>
+
+               <image name="flatGameCover"
+                      pos="0.5 0.50"
+                      origin="0.5 0.5"
+                      maxSize="1.035 0.950"
+                      linearSmooth="true">
+                  <path>firstfile({game:thumbnail}, {game:boxart})</path>
+                  <visible>!exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; (exists({game:thumbnail}) || exists({game:boxart}))</visible>
+                  <color>FFFFFFB5</color>
+                  <saturation>0.60</saturation>
+                  <zIndex>12020</zIndex>
+                  <storyboard event="activate">
+                     <animation property="color" to="FFFFFFFF" duration="190" mode="easeOutCubic" />
+                     <animation property="saturation" to="1" duration="190" mode="easeOutCubic" />
+                     <animation property="y" to="0.450" duration="210" mode="easeOutCubic" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="color" to="FFFFFFB5" duration="150" mode="easeOut" />
+                     <animation property="saturation" to="0.60" duration="150" mode="easeOut" />
+                     <animation property="y" to="0.50" duration="150" mode="easeOut" />
+                  </storyboard>
+               </image>
+
+               <text name="missingCoverName"
+                     pos="0.12 0.20"
+                     size="0.76 0.56"
+                     alignment="center"
+                     verticalAlignment="center"
+                     multiLine="true">
+                  <text>{game:name}</text>
+                  <visible>!exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; !exists({game:thumbnail}) &amp;&amp; !exists({game:boxart})</visible>
+                  <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+                  <fontSize>0.017</fontSize>
+                  <lineSpacing>1.08</lineSpacing>
+                  <color>E5E5E5FF</color>
+                  <zIndex>12040</zIndex>
+               </text>
+
+               <storyboard event="activate">
+                  <animation property="scale" to="1.180" duration="210" mode="easeOutCubic" />
+                  <animation property="rotation" to="-9" duration="70" mode="easeOut" />
+                  <animation property="rotation" from="-9" to="0" begin="70" duration="180" mode="easeOutCubic" />
+               </storyboard>
+               <storyboard event="deactivate">
+                  <animation property="scale" to="1" duration="155" mode="easeOutCubic" />
+                  <animation property="rotation" to="5" duration="70" mode="easeIn" />
+                  <animation property="rotation" from="5" to="0" begin="70" duration="85" mode="easeOutCubic" />
+               </storyboard>
+            </container>
+         </itemTemplate>
+      </gamecarousel>
+
+      <image name="gamecarouselLogo">
+         <color>FFFFFFFF</color>
+         <horizontalAlignment>center</horizontalAlignment>
+         <verticalAlignment>center</verticalAlignment>
+      </image>
+
+      <text name="gamecarouselLogoText">
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.018</fontSize>
+         <color>FFFFFFFF</color>
+         <alignment>center</alignment>
+         <verticalAlignment>center</verticalAlignment>
+      </text>
+
+      <image name="carouselAxis" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.040 0.39685</pos>
+         <size>0.920 0.0038</size>
+         <color>FFFFFFFF</color>
+         <colorEnd>FFFFFFFF</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <shader>
+            <path>${themePath}/_theme_inc/hud-line-spectrum.glsl</path>
+            <enabled>true</enabled>
+            <speed>0.0052</speed>
+            <intensity>1.18</intensity>
+            <colorA>${gc-accent-a}</colorA>
+            <colorB>${gc-accent-b}</colorB>
+            <colorC>${gc-accent-c}</colorC>
+         </shader>
+         <zIndex>67</zIndex>
+      </image>
+
+      <!-- ============================================================ -->
+      <!-- ÁREA DE GAMEPLAY                                              -->
+      <!-- ============================================================ -->
+
+      <image name="mediaShadow" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.031 0.427</pos>
+         <size>0.713 0.493</size>
+         <color>000000C8</color>
+         <roundCorners>0.014</roundCorners>
+         <zIndex>10</zIndex>
+      </image>
+
+      <image name="mediaSurface" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.035 0.423</pos>
+         <size>0.705 0.490</size>
+         <color>${gc-panel}</color>
+         <colorEnd>${gc-panel-end}</colorEnd>
+         <gradientType>vertical</gradientType>
+         <roundCorners>0.013</roundCorners>
+         <zIndex>11</zIndex>
+      </image>
+
+      <image name="mediaTopLight" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.035 0.42175</pos>
+         <size>0.705 0.0045</size>
+         <color>FFFFFFFF</color>
+         <colorEnd>FFFFFFFF</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <shader>
+            <path>${themePath}/_theme_inc/hud-line-spectrum.glsl</path>
+            <enabled>true</enabled>
+            <speed>0.0048</speed>
+            <intensity>1.20</intensity>
+            <colorA>${gc-accent-a}</colorA>
+            <colorB>${gc-accent-b}</colorB>
+            <colorC>${gc-accent-c}</colorC>
+         </shader>
+         <zIndex>38</zIndex>
+      </image>
+
+      <image name="mediaSignal" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.054 0.449</pos>
+         <size>0.006 0.010</size>
+         <color>${gc-accent-c}</color>
+         <roundCorners>0.004</roundCorners>
+         <zIndex>40</zIndex>
+         <storyboard repeat="forever">
+            <animation property="opacity" from="1" to="0.35" duration="720" mode="easeInOut" autoreverse="true" />
+         </storyboard>
+      </image>
+
+      <text name="mediaCaption" extra="static">
+         <text>TRAILER / GAMEPLAY</text>
+         <pos>0.068 0.440</pos>
+         <size>0.180 0.027</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.016</fontSize>
+         <color>FFFFFFFF</color>
+         <zIndex>40</zIndex>
+      </text>
+
+      <text name="mediaStatusVideo" extra="true">
+         <text>VÍDEO DISPONÍVEL</text>
+         <pos>0.575 0.441</pos>
+         <size>0.143 0.025</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.012</fontSize>
+         <color>B3B3B3FF</color>
+         <alignment>right</alignment>
+         <visible>exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mp4") || exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".webm") || exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mkv") || exists({game:video})</visible>
+         <visible ifSubset="game-video:off">false</visible>
+         <zIndex>40</zIndex>
+      </text>
+
+      <text name="mediaStatusImage" extra="true">
+         <text>MIX DO JOGO</text>
+         <pos>0.575 0.441</pos>
+         <size>0.143 0.025</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.012</fontSize>
+         <color>B3B3B3FF</color>
+         <alignment>right</alignment>
+         <visible>!exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mp4") &amp;&amp; !exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".webm") &amp;&amp; !exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mkv") &amp;&amp; !exists({game:video}) &amp;&amp; (exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".jpeg") || exists({game:mix}))</visible>
+         <visible ifSubset="game-video:off">exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".jpeg") || exists({game:mix})</visible>
+         <zIndex>40</zIndex>
+      </text>
+
+      <!-- Pilha sincronizada: dois jogos anteriores, jogo selecionado e dois próximos.
+           O movimento de revista e todo o restante do layout são preservados. -->
+      <image name="selectedHeroPageOuterFar" extra="false">
+         <path>firstfile(directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:image})</path>
+         <origin>0.5 0.5</origin>
+         <pos>0.088 0.714</pos>
+         <maxSize>0.125 0.358</maxSize>
+         <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
+         <linearSmooth>true</linearSmooth>
+         <color>FFFFFFFF</color>
+         <opacity>0.16</opacity>
+         <rotation>-8.5</rotation>
+         <roundCorners>0.004</roundCorners>
+         <zIndex>29</zIndex>
+         <storyboard event="activateNext">
+            <animation property="opacity" from="0.01" to="0.16" duration="400" mode="easeOutCubic" />
+            <animation property="x" from="0.040" to="0.088" duration="400" mode="easeOutQuint" />
+            <animation property="y" from="0.742" to="0.714" duration="400" mode="easeOutCubic" />
+            <animation property="scale" from="0.62" to="1" duration="420" mode="easeOutQuint" />
+            <animation property="rotation" from="-15" to="-8.5" duration="400" mode="easeOutCubic" />
+            <animation property="saturation" from="0.10" to="0.46" duration="420" mode="easeOut" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="opacity" from="0.01" to="0.16" duration="400" mode="easeOutCubic" />
+            <animation property="x" from="0.182" to="0.088" duration="400" mode="easeOutQuint" />
+            <animation property="y" from="0.656" to="0.714" duration="400" mode="easeOutCubic" />
+            <animation property="scale" from="0.62" to="1" duration="420" mode="easeOutQuint" />
+            <animation property="rotation" from="-1" to="-8.5" duration="400" mode="easeOutCubic" />
+            <animation property="saturation" from="0.10" to="0.46" duration="420" mode="easeOut" />
+         </storyboard>
+      </image>
+
+      <image name="selectedHeroPageOuterNear" extra="false">
+         <path>firstfile(directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:image})</path>
+         <origin>0.5 0.5</origin>
+         <pos>0.099 0.709</pos>
+         <maxSize>0.135 0.382</maxSize>
+         <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
+         <linearSmooth>true</linearSmooth>
+         <color>6B6B6BFF</color>
+         <opacity>0.24</opacity>
+         <rotation>-7.0</rotation>
+         <roundCorners>0.004</roundCorners>
+         <zIndex>30</zIndex>
+         <storyboard event="activateNext">
+            <animation property="opacity" from="0.01" to="0.24" duration="370" mode="easeOutCubic" />
+            <animation property="x" from="0.055" to="0.099" duration="370" mode="easeOutQuint" />
+            <animation property="y" from="0.736" to="0.709" duration="370" mode="easeOutCubic" />
+            <animation property="scale" from="0.67" to="1" duration="390" mode="easeOutQuint" />
+            <animation property="rotation" from="-13" to="-7.0" duration="370" mode="easeOutCubic" />
+            <animation property="saturation" from="0.14" to="0.54" duration="390" mode="easeOut" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="opacity" from="0.01" to="0.24" duration="370" mode="easeOutCubic" />
+            <animation property="x" from="0.176" to="0.099" duration="370" mode="easeOutQuint" />
+            <animation property="y" from="0.662" to="0.709" duration="370" mode="easeOutCubic" />
+            <animation property="scale" from="0.67" to="1" duration="390" mode="easeOutQuint" />
+            <animation property="rotation" from="-1.5" to="-7.0" duration="370" mode="easeOutCubic" />
+            <animation property="saturation" from="0.14" to="0.54" duration="390" mode="easeOut" />
+         </storyboard>
+      </image>
+
+      <image name="selectedHeroPageFar" extra="false">
+         <path>firstfile(directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:image})</path>
+         <origin>0.5 0.5</origin>
+         <pos>0.110 0.704</pos>
+         <maxSize>0.145 0.406</maxSize>
+         <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
+         <linearSmooth>true</linearSmooth>
+         <color>A3A3A3FF</color>
+         <opacity>0.34</opacity>
+         <rotation>-5.5</rotation>
+         <roundCorners>0.004</roundCorners>
+         <zIndex>31</zIndex>
+         <storyboard event="activateNext">
+            <animation property="opacity" from="0.02" to="0.34" duration="340" mode="easeOutCubic" />
+            <animation property="x" from="0.070" to="0.110" duration="340" mode="easeOutQuint" />
+            <animation property="y" from="0.726" to="0.704" duration="340" mode="easeOutCubic" />
+            <animation property="scale" from="0.72" to="1" duration="360" mode="easeOutQuint" />
+            <animation property="rotation" from="-11" to="-5.5" duration="340" mode="easeOutCubic" />
+            <animation property="saturation" from="0.20" to="0.62" duration="360" mode="easeOut" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="opacity" from="0.02" to="0.34" duration="340" mode="easeOutCubic" />
+            <animation property="x" from="0.176" to="0.110" duration="340" mode="easeOutQuint" />
+            <animation property="y" from="0.666" to="0.704" duration="340" mode="easeOutCubic" />
+            <animation property="scale" from="0.72" to="1" duration="360" mode="easeOutQuint" />
+            <animation property="rotation" from="11" to="-5.5" duration="340" mode="easeOutCubic" />
+            <animation property="saturation" from="0.20" to="0.62" duration="360" mode="easeOut" />
+         </storyboard>
+      </image>
+
+      <image name="selectedHeroPageNear" extra="false">
+         <path>firstfile(directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:image})</path>
+         <origin>0.5 0.5</origin>
+         <pos>0.121 0.699</pos>
+         <maxSize>0.155 0.428</maxSize>
+         <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
+         <linearSmooth>true</linearSmooth>
+         <color>E6E6E6FF</color>
+         <opacity>0.60</opacity>
+         <rotation>-2.7</rotation>
+         <roundCorners>0.004</roundCorners>
+         <zIndex>32</zIndex>
+         <storyboard event="activateNext">
+            <animation property="opacity" from="0.04" to="0.60" duration="300" mode="easeOutCubic" />
+            <animation property="x" from="0.088" to="0.121" duration="300" mode="easeOutQuint" />
+            <animation property="y" from="0.720" to="0.699" duration="300" mode="easeOutCubic" />
+            <animation property="scale" from="0.80" to="1" duration="320" mode="easeOutQuint" />
+            <animation property="rotation" from="-7" to="-2.7" duration="300" mode="easeOutCubic" />
+            <animation property="saturation" from="0.30" to="0.78" duration="320" mode="easeOut" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="opacity" from="0.04" to="0.60" duration="300" mode="easeOutCubic" />
+            <animation property="x" from="0.166" to="0.121" duration="300" mode="easeOutQuint" />
+            <animation property="y" from="0.673" to="0.699" duration="300" mode="easeOutCubic" />
+            <animation property="scale" from="0.80" to="1" duration="320" mode="easeOutQuint" />
+            <animation property="rotation" from="7" to="-2.7" duration="300" mode="easeOutCubic" />
+            <animation property="saturation" from="0.30" to="0.78" duration="320" mode="easeOut" />
+         </storyboard>
+      </image>
+
+      <image name="selectedHeroCover" extra="false">
+         <path>firstfile(directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:image})</path>
+         <origin>0.5 0.5</origin>
+         <pos>0.132 0.694</pos>
+         <maxSize>0.165 0.450</maxSize>
+         <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
+         <linearSmooth>true</linearSmooth>
+         <color>FFFFFFFF</color>
+         <roundCorners>0.004</roundCorners>
+         <zIndex>34</zIndex>
+         <storyboard event="activateNext">
+            <animation property="opacity" from="0.08" to="1" duration="260" mode="easeOutCubic" />
+            <animation property="x" from="0.108" to="0.132" duration="260" mode="easeOutQuint" />
+            <animation property="y" from="0.712" to="0.694" duration="260" mode="easeOutCubic" />
+            <animation property="scale" from="0.88" to="1" duration="280" mode="easeOutQuint" />
+            <animation property="rotation" from="-1.8" to="0" duration="260" mode="easeOutCubic" />
+            <animation property="saturation" from="0.48" to="1" duration="300" mode="easeOut" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="opacity" from="0.08" to="1" duration="260" mode="easeOutCubic" />
+            <animation property="x" from="0.156" to="0.132" duration="260" mode="easeOutQuint" />
+            <animation property="y" from="0.676" to="0.694" duration="260" mode="easeOutCubic" />
+            <animation property="scale" from="0.88" to="1" duration="280" mode="easeOutQuint" />
+            <animation property="rotation" from="1.8" to="0" duration="260" mode="easeOutCubic" />
+            <animation property="saturation" from="0.48" to="1" duration="300" mode="easeOut" />
+         </storyboard>
+      </image>
+
+      <!-- Pós-processamento seguro: realça os contornos já renderizados da
+           capa. Não cria outra imagem e não possui textura-base branca. -->
+      <screenshader name="selectedHeroNeonEdge" extra="true">
+         <path>${themePath}/_theme_inc/hero-neon-edge.glsl</path>
+         <pos>0.034 0.460</pos>
+         <size>0.189 0.468</size>
+         <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
+         <zIndex>35</zIndex>
+      </screenshader>
+
+      <image name="videoViewport" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0.5 0.5</origin>
+         <pos>0.4725 0.694</pos>
+         <size>0.495 0.420</size>
+         <color>000000FF</color>
+         <roundCorners>0.009</roundCorners>
+         <zIndex>18</zIndex>
+      </image>
+
+      <video name="gameplayFolderVideo" extra="true">
+         <path>firstfile(directory({game:path}) + "/media/videos/" + {game:stem} + ".mp4", directory({game:path}) + "/media/videos/" + {game:stem} + ".webm", directory({game:path}) + "/media/videos/" + {game:stem} + ".mkv", {game:video})</path>
+         <origin>0.5 0.5</origin>
+         <pos>0.4725 0.694</pos>
+         <minSize>0.487 0.410</minSize>
+         <delay>${subset.video-gamelist-delay}</delay>
+         <audio>${subset.videosnap-audio}</audio>
+         <showSnapshotNoVideo>false</showSnapshotNoVideo>
+         <showSnapshotDelay>true</showSnapshotDelay>
+         <effect>none</effect>
+         <loops>-1</loops>
+         <visible>exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mp4") || exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".webm") || exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mkv") || exists({game:video})</visible>
+         <visible ifSubset="game-video:off">false</visible>
+         <roundCorners>0.008</roundCorners>
+         <zIndex>32</zIndex>
+      </video>
+
+      <image name="selectedMediaMix" extra="true">
+         <path>firstfile(directory({game:path}) + "/media/mix/" + {game:stem} + ".png", directory({game:path}) + "/media/mix/" + {game:stem} + ".jpg", directory({game:path}) + "/media/mix/" + {game:stem} + ".jpeg", {game:mix})</path>
+         <origin>0.5 0.5</origin>
+         <pos>0.4725 0.694</pos>
+         <maxSize>0.487 0.410</maxSize>
+         <visible>exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".jpeg") || exists({game:mix})</visible>
+         <linearSmooth>true</linearSmooth>
+         <roundCorners>0.008</roundCorners>
+         <zIndex>26</zIndex>
+      </image>
+
+      <text name="missingMediaMessage" extra="true">
+         <text>MÍDIA NÃO DISPONÍVEL</text>
+         <pos>0.255 0.681</pos>
+         <size>0.435 0.033</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.019</fontSize>
+         <color>${gc-accent-b}</color>
+         <alignment>center</alignment>
+         <visible>!exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mp4") &amp;&amp; !exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".webm") &amp;&amp; !exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mkv") &amp;&amp; !exists({game:video}) &amp;&amp; !exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".jpg") &amp;&amp; !exists(directory({game:path}) + "/media/mix/" + {game:stem} + ".jpeg") &amp;&amp; !exists({game:mix})</visible>
+         <zIndex>27</zIndex>
+      </text>
+
+      <!-- ============================================================ -->
+      <!-- DOSSIÊ DO JOGO                                                -->
+      <!-- ============================================================ -->
+
+      <image name="infoShadow" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.751 0.427</pos>
+         <size>0.218 0.493</size>
+         <color>000000C8</color>
+         <roundCorners>0.014</roundCorners>
+         <zIndex>10</zIndex>
+      </image>
+
+      <image name="infoSurface" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.755 0.423</pos>
+         <size>0.210 0.490</size>
+         <color>${gc-panel}</color>
+         <colorEnd>${gc-panel-end}</colorEnd>
+         <gradientType>vertical</gradientType>
+         <roundCorners>0.013</roundCorners>
+         <zIndex>11</zIndex>
+      </image>
+
+      <image name="infoTopLight" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.755 0.42175</pos>
+         <size>0.210 0.0045</size>
+         <color>FFFFFFFF</color>
+         <colorEnd>FFFFFFFF</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <shader>
+            <path>${themePath}/_theme_inc/hud-line-spectrum.glsl</path>
+            <enabled>true</enabled>
+            <speed>0.0055</speed>
+            <intensity>1.20</intensity>
+            <colorA>${gc-accent-a}</colorA>
+            <colorB>${gc-accent-b}</colorB>
+            <colorC>${gc-accent-c}</colorC>
+         </shader>
+         <zIndex>38</zIndex>
+      </image>
+
+      <text name="infoCaption" extra="static">
+         <text>DETALHES</text>
+         <pos>0.772 0.440</pos>
+         <size>0.110 0.028</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.014</fontSize>
+         <color>FFFFFFFF</color>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="ratingStars" extra="true">
+         <text>{game:stars}</text>
+         <pos>0.884 0.440</pos>
+         <size>0.066 0.028</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.0145</fontSize>
+         <color>${gc-accent-c}</color>
+         <alignment>right</alignment>
+         <visible>!empty({game:stars})</visible>
+         <zIndex>42</zIndex>
+      </text>
+
+      <image name="infoHeadingLine" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.772 0.476</pos>
+         <size>0.178 0.0015</size>
+         <color>454545B0</color>
+         <zIndex>42</zIndex>
+      </image>
+
+      <text name="descriptionLabel" extra="static">
+         <text>SINOPSE</text>
+         <pos>0.772 0.491</pos>
+         <size>0.120 0.022</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.012</fontSize>
+         <color>${gc-accent-b}</color>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="md_description">
+         <pos>0.772 0.516</pos>
+         <size>0.178 0.120</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Light.ttf</fontPath>
+         <fontSize>0.0127</fontSize>
+         <lineSpacing>1.10</lineSpacing>
+         <color>E5E5E5FF</color>
+         <verticalAlignment>top</verticalAlignment>
+         <autoScroll>vertical</autoScroll>
+         <zIndex>42</zIndex>
+         <storyboard event="activateNext">
+            <animation property="opacity" from="0" to="1" duration="240" mode="easeOut" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="opacity" from="0" to="1" duration="240" mode="easeOut" />
+         </storyboard>
+      </text>
+
+      <text name="missingDescription" extra="true">
+         <text>Sinopse ainda não disponível para este jogo.</text>
+         <pos>0.772 0.516</pos>
+         <size>0.178 0.060</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Light.ttf</fontPath>
+         <fontSize>0.0135</fontSize>
+         <color>999999FF</color>
+         <visible>empty({game:desc})</visible>
+         <zIndex>42</zIndex>
+      </text>
+
+      <image name="metadataDivider" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.772 0.649</pos>
+         <size>0.178 0.0015</size>
+         <color>${gc-accent-a}</color>
+         <colorEnd>${gc-accent-b}</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <zIndex>42</zIndex>
+      </image>
+
+      <image name="metadataBandOne" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.766 0.663</pos>
+         <size>0.190 0.060</size>
+         <color>${gc-band}</color>
+         <colorEnd>${gc-band-end}</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <roundCorners>0.006</roundCorners>
+         <zIndex>16</zIndex>
+      </image>
+
+      <image name="metadataBandTwo" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.766 0.730</pos>
+         <size>0.190 0.060</size>
+         <color>${gc-band}</color>
+         <colorEnd>${gc-band-end}</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <roundCorners>0.006</roundCorners>
+         <zIndex>16</zIndex>
+      </image>
+
+      <image name="metadataBandThree" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.766 0.797</pos>
+         <size>0.190 0.060</size>
+         <color>${gc-band}</color>
+         <colorEnd>${gc-band-end}</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <roundCorners>0.006</roundCorners>
+         <zIndex>16</zIndex>
+      </image>
+
+      <text name="developerLabel" extra="static">
+         <text>DESENVOLVEDOR</text>
+         <pos>0.775 0.672</pos>
+         <size>0.078 0.018</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.009</fontSize>
+         <color>A3A3A3FF</color>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="md_developer">
+         <pos>0.775 0.693</pos>
+         <size>0.078 0.025</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.0128</fontSize>
+         <color>FFFFFFFF</color>
+         <singleLineScroll>true</singleLineScroll>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="publisherLabel" extra="static">
+         <text>PUBLICADORA</text>
+         <pos>0.868 0.672</pos>
+         <size>0.078 0.018</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.009</fontSize>
+         <color>A3A3A3FF</color>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="md_publisher">
+         <pos>0.868 0.693</pos>
+         <size>0.078 0.025</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.0128</fontSize>
+         <color>FFFFFFFF</color>
+         <singleLineScroll>true</singleLineScroll>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="genreLabel" extra="static">
+         <text>GÊNERO</text>
+         <pos>0.775 0.739</pos>
+         <size>0.098 0.018</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.009</fontSize>
+         <color>A3A3A3FF</color>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="md_genre">
+         <pos>0.775 0.760</pos>
+         <size>0.098 0.025</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.0128</fontSize>
+         <color>FFFFFFFF</color>
+         <singleLineScroll>true</singleLineScroll>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="releaseLabel" extra="static">
+         <text>LANÇAMENTO</text>
+         <pos>0.886 0.739</pos>
+         <size>0.060 0.018</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.009</fontSize>
+         <color>A3A3A3FF</color>
+         <alignment>right</alignment>
+         <zIndex>42</zIndex>
+      </text>
+
+      <datetime name="md_releasedate">
+         <pos>0.886 0.760</pos>
+         <size>0.060 0.025</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.0128</fontSize>
+         <color>FFFFFFFF</color>
+         <alignment>right</alignment>
+         <format>%d/%m/%Y</format>
+         <zIndex>42</zIndex>
+      </datetime>
+
+      <text name="playersLabel" extra="static">
+         <text>JOGADORES</text>
+         <pos>0.775 0.806</pos>
+         <size>0.045 0.017</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.0085</fontSize>
+         <color>A3A3A3FF</color>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="md_players">
+         <pos>0.775 0.827</pos>
+         <size>0.045 0.025</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.013</fontSize>
+         <color>FFFFFFFF</color>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="languageLabel" extra="true">
+         <text>IDIOMA</text>
+         <pos>0.837 0.806</pos>
+         <size>0.045 0.017</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.0085</fontSize>
+         <color>A3A3A3FF</color>
+         <visible>!empty({game:lang})</visible>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="languageValue" extra="true">
+         <text>{game:lang}.upper()</text>
+         <pos>0.837 0.827</pos>
+         <size>0.045 0.025</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.013</fontSize>
+         <color>FFFFFFFF</color>
+         <visible>!empty({game:lang})</visible>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="playCountLabel" extra="static">
+         <text>EXECUÇÕES</text>
+         <pos>0.899 0.806</pos>
+         <size>0.047 0.017</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.0085</fontSize>
+         <color>A3A3A3FF</color>
+         <alignment>right</alignment>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="md_playcount">
+         <pos>0.899 0.827</pos>
+         <size>0.047 0.025</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.013</fontSize>
+         <color>FFFFFFFF</color>
+         <alignment>right</alignment>
+         <zIndex>42</zIndex>
+      </text>
+
+      <image name="activityBand" extra="true">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.766 0.866</pos>
+         <size>0.190 0.035</size>
+         <color>${gc-band}</color>
+         <colorEnd>${gc-band-end}</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <roundCorners>0.006</roundCorners>
+         <visible>{game:gametime} &gt; 0 ? 1 : 0</visible>
+         <zIndex>16</zIndex>
+      </image>
+
+      <text name="gameTimeLabel" extra="true">
+         <text>TEMPO DE JOGO</text>
+         <pos>0.775 0.875</pos>
+         <size>0.061 0.018</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.0085</fontSize>
+         <color>A3A3A3FF</color>
+         <visible>{game:gametime} &gt; 0 ? 1 : 0</visible>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="gameTimeValue" extra="true">
+         <text>{game:gametime}.expandseconds()</text>
+         <pos>0.838 0.875</pos>
+         <size>0.046 0.018</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.0105</fontSize>
+         <color>E5E5E5FF</color>
+         <visible>{game:gametime} &gt; 0 ? 1 : 0</visible>
+         <zIndex>42</zIndex>
+      </text>
+
+      <text name="lastPlayedValue" extra="true">
+         <text>{game:lastplayed}.elapsed().proper()</text>
+         <pos>0.891 0.875</pos>
+         <size>0.055 0.018</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.0105</fontSize>
+         <color>E5E5E5FF</color>
+         <alignment>right</alignment>
+         <visible>{game:gametime} &gt; 0 ? 1 : 0</visible>
+         <zIndex>42</zIndex>
+      </text>
+
+      <!-- ============================================================ -->
+      <!-- RODAPÉ                                                        -->
+      <!-- ============================================================ -->
+
+      <image name="footerSurface" extra="static" ifHelpPrompts="true">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0 0.943</pos>
+         <size>1 0.057</size>
+         <color>${gc-footer}</color>
+         <zIndex>96</zIndex>
+      </image>
+
+      <image name="footerSpectrum" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0 0.9410</pos>
+         <size>1 0.0038</size>
+         <color>FFFFFFFF</color>
+         <colorEnd>FFFFFFFF</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <shader>
+            <path>${themePath}/_theme_inc/hud-line-spectrum.glsl</path>
+            <enabled>true</enabled>
+            <speed>0.0042</speed>
+            <intensity>1.14</intensity>
+            <colorA>${gc-accent-a}</colorA>
+            <colorB>${gc-accent-b}</colorB>
+            <colorC>${gc-accent-c}</colorC>
+         </shader>
+         <zIndex>99</zIndex>
+      </image>
+
+      <text name="footerSystem" extra="true">
+         <text>'' + {system:name}.upper() + '  /  ' + {system:total} + ' ITENS'</text>
+         <pos>0.770 0.960</pos>
+         <size>0.195 0.022</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.0125</fontSize>
+         <color>A7A7A7FF</color>
+         <alignment>right</alignment>
+         <visible>false</visible>
+         <zIndex>100</zIndex>
+      </text>
+
+      <helpsystem name="help">
+         <pos>0.025 0.960</pos>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.017</fontSize>
+         <textColor>E5E5E5FF</textColor>
+         <iconColor>${gc-accent-b}</iconColor>
+      </helpsystem>
+   </view>
+</theme>

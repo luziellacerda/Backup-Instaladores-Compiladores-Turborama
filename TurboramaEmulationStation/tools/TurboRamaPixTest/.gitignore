@@ -1,0 +1,5 @@
+bin/
+obj/
+runtime/
+.dotnet-local/
+.nuget-local/

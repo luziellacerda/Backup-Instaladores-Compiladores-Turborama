@@ -4,6 +4,7 @@
 
 #include "views/gamelist/ISimpleGameListView.h"
 #include "components/CarouselComponent.h"
+#include "components/ImageComponent.h"
 #include "DetailedContainer.h"
 
 class CarouselGameListView : public ISimpleGameListView
@@ -44,9 +45,24 @@ protected:
 	virtual void addPlaceholder();
 
 	void updateInfoPanel();
+	void updateSelectedHeroCovers(FileData* selected, int moveBy);
+	bool applySelectedHeroCoverTheme(const std::shared_ptr<ThemeData>& theme, ImageComponent& image, const std::string& element);
+	FileData* getNeighbourGame(int offset);
+	std::string getSelectedHeroCoverPath(FileData* file) const;
+	void playSelectedHeroCoverStoryboard(ImageComponent& image, int moveBy);
 
 	CarouselComponent mList;
 	DetailedContainerHost mDetails;
+	ImageComponent mSelectedHeroPageOuterFar;
+	ImageComponent mSelectedHeroPageOuterNear;
+	ImageComponent mSelectedHeroPageFar;
+	ImageComponent mSelectedHeroPageNear;
+	ImageComponent mSelectedHeroCover;
+	bool mSelectedHeroPageOuterFarEnabled;
+	bool mSelectedHeroPageOuterNearEnabled;
+	bool mSelectedHeroPageFarEnabled;
+	bool mSelectedHeroPageNearEnabled;
+	bool mSelectedHeroCoverEnabled;
 };
 
 #endif // ES_APP_VIEWS_GAME_LIST_BASIC_GAME_LIST_VIEW_H

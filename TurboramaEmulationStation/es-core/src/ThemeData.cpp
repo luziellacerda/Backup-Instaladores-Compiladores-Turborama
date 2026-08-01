@@ -336,6 +336,8 @@ std::map<std::string, std::map<std::string, ThemeData::ElementPropertyType>> The
 	 	{ "visible", BOOLEAN },
 		{ "scale", FLOAT },
 		{ "opacity", FLOAT },
+		{ "rotation", FLOAT },
+		{ "rotationOrigin", NORMALIZED_PAIR },
 		{ "clipChildren", BOOLEAN },
 		{ "scaleOrigin", NORMALIZED_PAIR },
 		{ "padding", NORMALIZED_RECT },

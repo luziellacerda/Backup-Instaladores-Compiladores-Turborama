@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TurboRama PIX — Teste</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <span class="eyebrow">TURBORAMA • AMBIENTE SEGURO</span>
+      <h1>PIX para adicionar tempo</h1>
+      <p>Protótipo local. Nenhuma cobrança real será criada e nenhum dinheiro será movimentado.</p>
+    </header>
+
+    <section class="counter card">
+      <div>
+        <span class="label">CONTADOR DE TESTE</span>
+        <strong id="remaining">00:00:00</strong>
+        <small id="counter-state">Pausado</small>
+      </div>
+      <div class="counter-actions">
+        <button id="start-counter" class="secondary">Iniciar</button>
+        <button id="pause-counter" class="secondary">Pausar</button>
+        <button id="reset-counter" class="danger">Zerar teste</button>
+        <label>Velocidade de teste
+          <select id="speed"><option value="1">Normal</option><option value="60">60×</option><option value="300">300×</option></select>
+        </label>
+      </div>
+    </section>
+
+    <section id="step-select" class="card">
+      <span class="label">ESCOLHA O TEMPO</span>
+      <h2>Quanto tempo deseja adicionar?</h2>
+      <div id="packages" class="packages"></div>
+      <label class="session">Identificação da sessão de teste
+        <input id="session-id" maxlength="64" value="visitante" autocomplete="off">
+      </label>
+    </section>
+
+    <section id="step-payment" class="card hidden">
+      <span class="label">PIX DE TESTE</span>
+      <h2 id="payment-title">Pagamento de teste</h2>
+      <div class="payment-grid">
+        <canvas id="test-qr" width="260" height="260" aria-label="Código visual de teste"></canvas>
+        <div>
+          <p class="amount" id="payment-amount">R$ 0,00</p>
+          <p id="payment-description"></p>
+          <label>Código PIX de teste
+            <textarea id="pix-code" readonly></textarea>
+          </label>
+          <button id="copy-code" class="secondary">Copiar código</button>
+          <button id="approve-payment">Simular pagamento aprovado</button>
+          <button id="cancel-payment" class="ghost">Cancelar</button>
+        </div>
+      </div>
+      <p class="notice">Este QR não é pagável. A versão final trocará somente o provedor simulado pela API PIX real.</p>
+    </section>
+
+    <section class="card">
+      <span class="label">EVENTOS DO TESTE</span>
+      <ul id="logs" class="logs"></ul>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

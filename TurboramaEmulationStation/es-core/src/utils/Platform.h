@@ -24,7 +24,8 @@ namespace Utils
 			SHUTDOWN = 2,
 			REBOOT = 3,
 			FAST_SHUTDOWN = 4,
-			FAST_REBOOT = 5
+			FAST_REBOOT = 5,
+			EXIT_ONLY = 6
 		};
 
 		class ProcessStartInfo

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<theme>
+   <formatVersion>7</formatVersion>
+   <variables>
+      <gc-design-name>XBOX 360</gc-design-name>
+      <gc-highlight-label>XBOX 360  /  DESTAQUES</gc-highlight-label>
+      <gc-library-label>XBOX 360  /  BIBLIOTECA</gc-library-label>
+      <gc-accent-a>FFFFFFFF</gc-accent-a>
+      <gc-accent-b>E50914FF</gc-accent-b>
+      <gc-accent-c>FFB300FF</gc-accent-c>
+      <gc-accent-soft>FFF1A8FF</gc-accent-soft>
+      <gc-base>050505FF</gc-base>
+      <gc-top>050505F8</gc-top>
+      <gc-top-end>08080838</gc-top-end>
+      <gc-bottom>08080838</gc-bottom>
+      <gc-bottom-end>030303FB</gc-bottom-end>
+      <gc-side>030303F2</gc-side>
+      <gc-side-end>10101012</gc-side-end>
+      <gc-carousel>10101078</gc-carousel>
+      <gc-carousel-end>050505B8</gc-carousel-end>
+      <gc-panel>0A0A0AF6</gc-panel>
+      <gc-panel-end>181818F4</gc-panel-end>
+      <gc-band>141414E6</gc-band>
+      <gc-band-end>1B1B1BE0</gc-band-end>
+      <gc-footer>050505FC</gc-footer>
+      <gc-fanart-opacity>0.44</gc-fanart-opacity>
+      <gc-fanart-exposure>0.74</gc-fanart-exposure>
+      <gc-fanart-saturation>0.66</gc-fanart-saturation>
+   </variables>
+</theme>

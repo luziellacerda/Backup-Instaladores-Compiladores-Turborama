@@ -98,6 +98,21 @@ void GuiCreditOperatorPanel::rebuild()
 	mMenu.addGroup(_("TURBO SISTEMA"));
 	mMenu.addEntry(_("Abrir Turbo Sistema..."), false, [this] { doOpenTurboSistema(); });
 	mMenu.addEntry(_("Trocar de usuario..."), false, [this] { doSwitchUser(); });
+	mMenu.addEntry(_("Encerrar processo..."), false, [this] {
+		mWindow->pushGui(new GuiMsgBox(mWindow,
+			_("Encerrar o processo do EmulationStation?\n\nO computador permanecera ligado."),
+			_("SIM, ENCERRAR"), [this] {
+				CreditManager::getInstance().flushNow();
+				if (Utils::Platform::quitES(Utils::Platform::QuitMode::EXIT_ONLY) != 0)
+				{
+					mWindow->pushGui(new GuiMsgBox(mWindow,
+						_("Nao foi possivel preparar a saida segura.\n\n"
+							"O EmulationStation continuara aberto e o computador nao sera desligado."),
+						_("OK"), nullptr));
+				}
+			},
+			_("NAO"), nullptr));
+	});
 
 	mMenu.addButton(_("FECHAR"), "back", [this] { delete this; });
 

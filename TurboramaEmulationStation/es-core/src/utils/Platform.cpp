@@ -212,8 +212,89 @@ namespace Utils
 
 		static QuitMode quitMode = QuitMode::QUIT;
 
+		static bool prepareExitOnlyMaintenance()
+		{
+#ifdef WIN32
+			const std::string stateDirectory = "C:\\TurboRama\\State";
+			const std::string lockPath = stateDirectory + "\\maintenance.lock";
+			const std::string temporaryPath = stateDirectory + "\\maintenance.lock.emulationstation.tmp";
+			const std::string powerRequestPath = stateDirectory + "\\power-request.txt";
+
+			if (!CreateDirectoryA(stateDirectory.c_str(), nullptr) &&
+				GetLastError() != ERROR_ALREADY_EXISTS)
+			{
+				LOG(LogError) << "Cannot prepare safe EmulationStation exit: failed to create "
+					<< stateDirectory << " (Windows error " << GetLastError() << ")";
+				return false;
+			}
+
+			// A stale shutdown/reboot request has priority in the Launcher. Remove
+			// it before installing the maintenance marker and fail closed if the
+			// file cannot be removed.
+			const DWORD powerRequestAttributes = GetFileAttributesA(powerRequestPath.c_str());
+			if (powerRequestAttributes != INVALID_FILE_ATTRIBUTES &&
+				!DeleteFileA(powerRequestPath.c_str()))
+			{
+				LOG(LogError) << "Cannot prepare safe EmulationStation exit: failed to remove "
+					<< powerRequestPath << " (Windows error " << GetLastError() << ")";
+				return false;
+			}
+
+			if (GetFileAttributesA(powerRequestPath.c_str()) != INVALID_FILE_ATTRIBUTES)
+			{
+				LOG(LogError) << "Cannot prepare safe EmulationStation exit: stale request remains at "
+					<< powerRequestPath;
+				return false;
+			}
+
+			std::ofstream marker(temporaryPath, std::ios::binary | std::ios::trunc);
+			if (!marker.is_open())
+			{
+				LOG(LogError) << "Cannot prepare safe EmulationStation exit: failed to open "
+					<< temporaryPath;
+				return false;
+			}
+
+			marker << "reason=emulationstation-maintenance-exit\r\n"
+				<< "user=EmulationStation\r\n"
+				<< "at=exit-only\r\n";
+			marker.flush();
+			const bool markerWritten = marker.good();
+			marker.close();
+
+			if (!markerWritten)
+			{
+				DeleteFileA(temporaryPath.c_str());
+				LOG(LogError) << "Cannot prepare safe EmulationStation exit: failed to write "
+					<< temporaryPath;
+				return false;
+			}
+
+			if (!MoveFileExA(
+				temporaryPath.c_str(),
+				lockPath.c_str(),
+				MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+			{
+				const DWORD error = GetLastError();
+				DeleteFileA(temporaryPath.c_str());
+				LOG(LogError) << "Cannot prepare safe EmulationStation exit: failed to install "
+					<< lockPath << " (Windows error " << error << ")";
+				return false;
+			}
+
+			LOG(LogInfo) << "Safe maintenance exit marker created: " << lockPath;
+#endif
+			return true;
+		}
+
 		int quitES(QuitMode mode)
 		{
+			// EXIT_ONLY must be distinguishable from a crash/ordinary frontend exit.
+			// The TurboRama Launcher consumes this dedicated maintenance marker and
+			// exits without invoking any Windows shutdown or reboot sequence.
+			if (mode == QuitMode::EXIT_ONLY && !prepareExitOnlyMaintenance())
+				return -1;
+
 			quitMode = mode;
 
 			switch (quitMode)
@@ -253,6 +334,10 @@ namespace Utils
 
 			switch (quitMode)
 			{
+			case QuitMode::EXIT_ONLY:
+				LOG(LogInfo) << "Exiting EmulationStation only";
+				break;
+
 			case QuitMode::QUIT:
 				Scripting::fireEvent("quit");
 				break;

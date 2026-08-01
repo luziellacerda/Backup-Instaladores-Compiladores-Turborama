@@ -255,7 +255,7 @@ https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X
 	</subset>
 
 	<!--OPCIONES DE SNAPVIDEO-->
-	<subset name="game-video" displayName="${theme.gridvideo}" appliesTo="detailed, grid, ps4Style, ps5Style, carousel, full-grid, single">
+	<subset name="game-video" displayName="${theme.gridvideo}" appliesTo="detailed, grid, ps4Style, ps5Style, carousel, gamecarousel, full-grid, single">
 		<include tinyScreen="true" name="oversize" displayName="${theme.oversizeVideoOption}" />
 		<include name="default" displayName="${default}" />
 		<include name="window" displayName="${theme.windowVideoOption}" />
@@ -266,13 +266,13 @@ https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X
 	</subset>
 
 	<!--AUDIO VIDEOSNAP ON/OFF-->
-	<subset name="videosnap-audio" displayName="${theme.videoSnapAudio}" appliesTo="detailed, grid, ps4Style, ps5Style, carousel, full-grid, single">
+	<subset name="videosnap-audio" displayName="${theme.videoSnapAudio}" appliesTo="detailed, grid, ps4Style, ps5Style, carousel, gamecarousel, full-grid, single">
 		<include name="true" displayName="${yes}" />
 		<include name="false" displayName="${no}" />
 	</subset>
 
 	<!--OPCIONES DE RETARDO DE VIDEO-->
-	<subset name="video-gamelist-delay" displayName="${theme.videoGamelistDelay}" appliesTo="detailed, grid, ps4Style, ps5Style, carousel, full-grid, single" ifSubset="game-video:window|background|inside|oversize|default">
+	<subset name="video-gamelist-delay" displayName="${theme.videoGamelistDelay}" appliesTo="detailed, grid, ps4Style, ps5Style, carousel, gamecarousel, full-grid, single" ifSubset="game-video:window|background|inside|oversize|default">
 		<include name="1" displayName="1s" />
 		<include name="2" displayName="2s" />
 		<include name="3" displayName="3s" />
@@ -474,6 +474,11 @@ https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X
 <!-- INCLUDES GENERALES -->
 
 	<include>./_theme_views/Tuboramadetailed.xml</include>
+	<!-- A paleta geral sempre carrega primeiro. Quando existe um XML para
+	     ${system.theme}, ele substitui somente cores e identidade visual. -->
+	<include>./_theme_views/gamecarousel-systems/general.xml</include>
+	<include>./_theme_views/gamecarousel-systems/${system.theme}.xml</include>
+	<include>./_theme_views/gamecarousel-detailed.xml</include>
 	<include>./_theme_views/grid.xml</include>
 	<include ifSubset="overlay-gamelist-arts:YES">${themePath}/_theme_options/gamelist-overlay.xml</include>
 	<include>./_theme_views/turborama.xml</include>
