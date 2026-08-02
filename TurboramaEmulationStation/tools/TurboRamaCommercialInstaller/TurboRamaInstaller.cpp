@@ -13,7 +13,7 @@
 
 namespace
 {
-	const wchar_t* kTitle = L"TurboRama - Sistema PIX Comercial";
+	const wchar_t* kTitle = L"TurboRama - Sistema PIX Comercial v14";
 
 	std::wstring join(const std::wstring& left, const std::wstring& right)
 	{
@@ -113,8 +113,8 @@ namespace
 	{
 		const std::wstring directory = join(target, L".emulationstation\\pix");
 		if (!ensureDirectory(directory)) return;
-		const std::wstring file = join(directory, L"installation-v13.log");
-		const std::wstring text = L"TurboRama PIX Comercial v13 instalado com sucesso.\r\nBackup: " + backup + L"\r\n";
+		const std::wstring file = join(directory, L"installation-v14.log");
+		const std::wstring text = L"TurboRama PIX Comercial v14 instalado com sucesso.\r\nBackup: " + backup + L"\r\n";
 		HANDLE handle = CreateFileW(file.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 		if (handle == INVALID_HANDLE_VALUE) return;
 		DWORD written = 0;
@@ -176,7 +176,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 	stopExactProcess(join(target, L"pix-agent\\runtime\\dotnet.exe"));
 	stopExactProcess(join(target, L"pix-agent\\TurboRamaPixAgent.exe"));
 
-	const std::wstring backup = join(target, L"backups\\PIX-COMERCIAL-v13-" + timestamp());
+	const std::wstring backup = join(target, L"backups\\PIX-COMERCIAL-v14-" + timestamp());
 	if (!ensureDirectory(backup) || !CopyFileW(targetExecutable.c_str(), join(backup, L"emulationstation.exe").c_str(), FALSE))
 	{
 		if (!silentTest) MessageBoxW(nullptr, L"Nao foi possivel criar o backup. A instalacao foi cancelada sem alterar o sistema.", kTitle, MB_OK | MB_ICONERROR);
@@ -190,7 +190,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 	if (!runAndWait(sevenZip, arguments, exitCode) || exitCode != 0
 		|| !exists(targetExecutable)
 		|| !exists(join(target, L"pix-agent\\TurboRamaPixAgent.dll"))
-		|| !exists(join(target, L"pix-agent\\runtime\\dotnet.exe")))
+		|| !exists(join(target, L"pix-agent\\runtime\\dotnet.exe"))
+		|| !exists(join(target, L"CONFIGURAR-ACCESS-TOKEN-PIX.exe")))
 	{
 		CopyFileW(join(backup, L"emulationstation.exe").c_str(), targetExecutable.c_str(), FALSE);
 		if (!silentTest) MessageBoxW(nullptr, L"A instalacao falhou. O executavel anterior foi restaurado pelo backup.", kTitle, MB_OK | MB_ICONERROR);
@@ -201,6 +202,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 	if (!silentTest && MessageBoxW(nullptr,
 		L"INSTALACAO CONCLUIDA.\n\n"
 		L"Proprietario: pressione START, informe a senha e abra CONFIGURACAO PIX DO PROPRIETARIO.\n\n"
+		L"Para colar ou importar o Access Token pelo Windows, use D:\\emulationstation\\CONFIGURAR-ACCESS-TOKEN-PIX.exe.\n\n"
 		L"Cliente: pressione SELECT para comprar tempo com PIX, sem senha.\n\n"
 		L"Deseja abrir o EmulationStation agora?",
 		kTitle, MB_YESNO | MB_ICONINFORMATION | MB_DEFBUTTON1) == IDYES)

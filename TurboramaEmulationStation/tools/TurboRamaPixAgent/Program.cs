@@ -93,25 +93,13 @@ if (command.SetToken)
 
 var provider = PixProviderFactory.Create(options, secrets);
 
-// Quando o cadastro foi salvo pela tela protegida do EmulationStation, o agente
-// resolve o CEP e cria/reaproveita loja e PDV de forma idempotente. O cliente
-// nunca ve nem altera estes dados.
+// O cadastro pode ser salvo sem internet. A criacao/confirmacao da loja e do
+// PDV e retomada automaticamente a cada 15 segundos ate a conexao voltar.
+OwnerInfrastructureCoordinator? ownerInfrastructure = null;
 if (ownerSettings is not null && ownerSettings.Enabled && provider is MercadoPagoPixProvider ownerMercadoPago)
 {
-    try
-    {
-        OwnerSetupStatus.Publish(paths, "configuring", "Localizando endereco e preparando loja e caixa PIX.");
-        var setup = await ownerSettings.BuildSetupRequestAsync(CancellationToken.None);
-        var setupResult = await ownerMercadoPago.EnsureInfrastructureAsync(setup, CancellationToken.None);
-        OwnerSetupStatus.Publish(paths, "ready",
-            $"Loja {setupResult.Store.ExternalId} e caixa {setupResult.PointOfSale.ExternalId} confirmados.");
-    }
-    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or HttpRequestException
-        or MercadoPagoApiException or InvalidOperationException or SecurityException)
-    {
-        OwnerSetupStatus.Publish(paths, "error", ex.Message);
-        Console.Error.WriteLine($"Falha no cadastro do estabelecimento PIX: {ex.Message}");
-    }
+    ownerInfrastructure = new OwnerInfrastructureCoordinator(ownerSettings, ownerMercadoPago, paths);
+    await ownerInfrastructure.TryEnsureAsync(force: true, CancellationToken.None);
 }
 
 if (command.MercadoPagoInventory || !string.IsNullOrWhiteSpace(command.MercadoPagoSetupFile))
@@ -193,7 +181,15 @@ try
     {
         try
         {
-            if (DateTimeOffset.UtcNow >= nextHealthCheck)
+            if (ownerInfrastructure is not null && !ownerInfrastructure.Ready)
+                await ownerInfrastructure.TryEnsureAsync(force: false, cancellation.Token);
+
+            if (ownerInfrastructure is { Ready: false })
+            {
+                providerHealthy = false;
+                nextHealthCheck = DateTimeOffset.UtcNow.AddSeconds(10);
+            }
+            else if (DateTimeOffset.UtcNow >= nextHealthCheck)
             {
                 try
                 {
@@ -214,7 +210,7 @@ try
             }
             PixPublicContract.Publish(options, paths, provider.Name,
                 provider.Name == "mock" || !string.IsNullOrWhiteSpace(secrets.Load()), providerHealthy,
-                providerHealthy ? "online" : "provider_unavailable");
+                providerHealthy ? "online" : ownerInfrastructure is { Ready: false } ? "owner_setup_pending" : "provider_unavailable");
             if (providerHealthy) await engine.RunOnceAsync(cancellation.Token);
             else if (command.Once) return 13;
         }
@@ -541,10 +537,11 @@ sealed record PixOwnerSettings
         }).Normalize();
     }
 
-    public async Task<MercadoPagoSetupRequest> BuildSetupRequestAsync(CancellationToken token)
+    public async Task<MercadoPagoSetupRequest> BuildSetupRequestAsync(PixPaths paths, CancellationToken token)
     {
         Validate();
-        var address = await BrazilianPostalAddress.ResolveAsync(PostalCode, StreetNumber, token);
+        var address = await BrazilianPostalAddress.ResolveAsync(PostalCode, StreetNumber,
+            Path.Combine(paths.Root, "owner-address-cache.json"), token);
         return new MercadoPagoSetupRequest
         {
             ExpectedAccountId = AccountId.Trim(),
@@ -579,10 +576,12 @@ sealed record BrazilianPostalAddress(string Street, string City, string State, d
         ["SE"] = "Sergipe", ["TO"] = "Tocantins"
     };
 
-    public static async Task<BrazilianPostalAddress> ResolveAsync(string postalCode, string streetNumber, CancellationToken token)
+    public static async Task<BrazilianPostalAddress> ResolveAsync(string postalCode, string streetNumber, string cacheFile, CancellationToken token)
     {
         var cep = new string(postalCode.Where(char.IsAsciiDigit).ToArray());
         if (cep.Length != 8) throw new InvalidOperationException("CEP deve conter 8 numeros.");
+        var cached = TryLoadCache(cacheFile, cep, streetNumber);
+        if (cached is not null) return cached;
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("TurboRamaPixAgent/1.0");
 
@@ -636,7 +635,43 @@ sealed record BrazilianPostalAddress(string Street, string City, string State, d
         if (Math.Abs(latitude) < 0.00001 && Math.Abs(longitude) < 0.00001)
             throw new InvalidOperationException("O endereco foi localizado pelo CEP, mas as coordenadas nao puderam ser verificadas. Tente novamente com internet ativa.");
         var state = States.TryGetValue(stateCode, out var fullState) ? fullState : stateCode;
-        return new BrazilianPostalAddress(street.Trim(), city.Trim(), state, latitude, longitude);
+        var result = new BrazilianPostalAddress(street.Trim(), city.Trim(), state, latitude, longitude);
+        SaveCache(cacheFile, cep, streetNumber, result);
+        return result;
+    }
+
+    private static BrazilianPostalAddress? TryLoadCache(string file, string postalCode, string streetNumber)
+    {
+        try
+        {
+            if (!File.Exists(file) || new FileInfo(file).Length is <= 0 or > 16_384) return null;
+            var cache = JsonSerializer.Deserialize<PostalAddressCache>(File.ReadAllText(file, Encoding.UTF8), Json.Options);
+            if (cache is null || cache.SchemaVersion != 1 || cache.PostalCode != postalCode
+                || !cache.StreetNumber.Equals(streetNumber.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
+            if (string.IsNullOrWhiteSpace(cache.Street) || string.IsNullOrWhiteSpace(cache.City) || string.IsNullOrWhiteSpace(cache.State)
+                || !double.IsFinite(cache.Latitude) || !double.IsFinite(cache.Longitude)
+                || Math.Abs(cache.Latitude) < 0.00001 || Math.Abs(cache.Longitude) < 0.00001) return null;
+            return new BrazilianPostalAddress(cache.Street, cache.City, cache.State, cache.Latitude, cache.Longitude);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return null; }
+    }
+
+    private static void SaveCache(string file, string postalCode, string streetNumber, BrazilianPostalAddress address)
+    {
+        var temp = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            var cache = new PostalAddressCache(1, postalCode, streetNumber.Trim(), address.Street, address.City,
+                address.State, address.Latitude, address.Longitude, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+            {
+                JsonSerializer.Serialize(stream, cache, Json.Options);
+                stream.Flush(flushToDisk: true);
+            }
+            File.Move(temp, file, true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        finally { try { if (File.Exists(temp)) File.Delete(temp); } catch (IOException) { } }
     }
 
     private static string String(JsonElement objectValue, string property)
@@ -652,6 +687,9 @@ sealed record BrazilianPostalAddress(string Street, string City, string State, d
     }
 }
 
+sealed record PostalAddressCache(int SchemaVersion, string PostalCode, string StreetNumber, string Street,
+    string City, string State, double Latitude, double Longitude, long UpdatedAtUnixSeconds);
+
 static class OwnerSetupStatus
 {
     public static void Publish(PixPaths paths, string state, string message)
@@ -662,6 +700,67 @@ static class OwnerSetupStatus
             message = message.Length > 500 ? message[..500] : message,
             updatedAtUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
         });
+}
+
+sealed class OwnerInfrastructureCoordinator
+{
+    private readonly PixOwnerSettings _settings;
+    private readonly MercadoPagoPixProvider _provider;
+    private readonly PixPaths _paths;
+    private DateTimeOffset _nextAttempt = DateTimeOffset.MinValue;
+    private string _lastError = "";
+
+    public OwnerInfrastructureCoordinator(PixOwnerSettings settings, MercadoPagoPixProvider provider, PixPaths paths)
+        => (_settings, _provider, _paths) = (settings, provider, paths);
+
+    public bool Ready { get; private set; }
+
+    public async Task<bool> TryEnsureAsync(bool force, CancellationToken token)
+    {
+        if (Ready) return true;
+        if (!force && DateTimeOffset.UtcNow < _nextAttempt) return false;
+        _nextAttempt = DateTimeOffset.UtcNow.AddSeconds(15);
+        try
+        {
+            OwnerSetupStatus.Publish(_paths, "configuring", "Conferindo loja e caixa PIX. Se estiver sem internet, o sistema tentara novamente automaticamente.");
+
+            // Se a loja e o PDV ja existem, nao dependemos novamente de CEP ou geocodificacao.
+            var inventory = await _provider.GetInfrastructureAsync(token);
+            if (!inventory.AccountId.Equals(_settings.AccountId.Trim(), StringComparison.Ordinal))
+                throw new SecurityException("O Access Token pertence a outra conta do Mercado Pago.");
+            var store = inventory.Stores.FirstOrDefault(item => item.ExternalId.Equals(_settings.StoreExternalId.Trim(), StringComparison.OrdinalIgnoreCase));
+            var pointOfSale = inventory.PointsOfSale.FirstOrDefault(item => item.ExternalId.Equals(_settings.PosExternalId.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (store is not null && pointOfSale is not null)
+            {
+                if (!pointOfSale.StoreId.Equals(store.Id, StringComparison.Ordinal))
+                    throw new SecurityException("O caixa PIX informado pertence a outra loja.");
+                Ready = true;
+                _lastError = "";
+                OwnerSetupStatus.Publish(_paths, "ready", $"Loja {store.ExternalId} e caixa {pointOfSale.ExternalId} confirmados.");
+                return true;
+            }
+
+            var setup = await _settings.BuildSetupRequestAsync(_paths, token);
+            var result = await _provider.EnsureInfrastructureAsync(setup, token);
+            Ready = true;
+            _lastError = "";
+            OwnerSetupStatus.Publish(_paths, "ready", $"Loja {result.Store.ExternalId} e caixa {result.PointOfSale.ExternalId} confirmados.");
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or HttpRequestException
+            or TaskCanceledException or MercadoPagoApiException or InvalidOperationException or SecurityException)
+        {
+            var connectionFailure = ex is HttpRequestException or TaskCanceledException;
+            var message = connectionFailure
+                ? "Cadastro salvo. Sem conexao com os servicos PIX; nova tentativa automatica em 15 segundos."
+                : ex.Message;
+            OwnerSetupStatus.Publish(_paths, connectionFailure ? "waiting_network" : "error", message);
+            if (!message.Equals(_lastError, StringComparison.Ordinal))
+                Console.Error.WriteLine($"Falha no cadastro do estabelecimento PIX: {message}");
+            _lastError = message;
+            return false;
+        }
+    }
 }
 
 sealed record MercadoPagoStoreInfo(string Id, string ExternalId, string Name);
@@ -1806,6 +1905,7 @@ static class PixSelfTest
             var read = JsonSerializer.Deserialize<PixCreditEvent>(File.ReadAllText(file), Json.Options);
             if (read is null || !PixEventSigner.Verify(read, key)) throw new InvalidOperationException("gravacao atomica");
             File.Delete(file);
+            TestPostalAddressCache(paths);
             TestMercadoPagoResponses();
             TestMercadoPagoHealth(options, paths);
             TestAdapterResponses(options, paths);
@@ -1817,6 +1917,20 @@ static class PixSelfTest
             Console.Error.WriteLine($"SELF-TEST PIX: FALHOU - {ex.Message}");
             return 20;
         }
+    }
+
+    private static void TestPostalAddressCache(PixPaths paths)
+    {
+        var cacheFile = Path.Combine(paths.Root, "owner-address-cache.json");
+        paths.WriteAtomically(cacheFile, new PostalAddressCache(1, "57084648", "52", "Rua de Teste", "Maceio",
+            "Alagoas", -9.6001, -35.7001, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+        try
+        {
+            var address = BrazilianPostalAddress.ResolveAsync("57084-648", "52", cacheFile, CancellationToken.None).GetAwaiter().GetResult();
+            if (address.Street != "Rua de Teste" || address.City != "Maceio" || Math.Abs(address.Latitude + 9.6001) > 0.000001)
+                throw new InvalidOperationException("cache de endereco");
+        }
+        finally { try { if (File.Exists(cacheFile)) File.Delete(cacheFile); } catch (IOException) { } }
     }
 
     private static void TestMercadoPagoResponses()

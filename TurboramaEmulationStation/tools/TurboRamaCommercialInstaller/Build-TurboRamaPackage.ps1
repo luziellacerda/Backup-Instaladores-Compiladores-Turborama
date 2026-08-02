@@ -19,9 +19,9 @@ try {
     }
     $writer = [IO.BinaryWriter]::new($stream, [Text.Encoding]::ASCII, $true)
     try {
-        $magic = [Text.Encoding]::ASCII.GetBytes("TRPIXV13PACKAGE`0")
+        $magic = [Text.Encoding]::ASCII.GetBytes("TRPIXV14PACKAGE`0")
         $writer.Write($magic)
-        $writer.Write([uint32]13)
+        $writer.Write([uint32]14)
         $writer.Write([uint64](Get-Item -LiteralPath $Installer).Length)
         $writer.Write([uint64](Get-Item -LiteralPath $SevenZip).Length)
         $writer.Write([uint64](Get-Item -LiteralPath $Payload).Length)

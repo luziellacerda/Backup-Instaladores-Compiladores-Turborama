@@ -26,8 +26,8 @@ struct TurboRamaPackageFooter
 
 namespace
 {
-	const wchar_t* kTitle = L"TurboRama - Sistema PIX Comercial";
-	const char kMagic[16] = { 'T','R','P','I','X','V','1','3','P','A','C','K','A','G','E','\0' };
+	const wchar_t* kTitle = L"TurboRama - Sistema PIX Comercial v14";
+	const char kMagic[16] = { 'T','R','P','I','X','V','1','4','P','A','C','K','A','G','E','\0' };
 
 	std::wstring join(const std::wstring& left, const std::wstring& right)
 	{
@@ -129,7 +129,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		DWORD read = 0;
 		valid = SetFilePointerEx(source, footerPosition, nullptr, FILE_BEGIN) != FALSE
 			&& ReadFile(source, &footer, sizeof(footer), &read, nullptr) != FALSE && read == sizeof(footer)
-			&& memcmp(footer.magic, kMagic, sizeof(kMagic)) == 0 && footer.version == 13;
+			&& memcmp(footer.magic, kMagic, sizeof(kMagic)) == 0 && footer.version == 14;
 	}
 	const std::uint64_t packageSize = footer.installerSize + footer.sevenZipSize + footer.payloadSize;
 	valid = valid && packageSize > 0 && packageSize <= (std::uint64_t)fileSize.QuadPart - sizeof(footer);
