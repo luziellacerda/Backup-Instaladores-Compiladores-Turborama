@@ -178,7 +178,10 @@ bool CreditManager::atomicWriteText(const std::string& path, const std::string& 
 		LOG(LogError) << "[CreditManager] write open failed: " << tmp;
 		// last resort direct write
 		Utils::FileSystem::writeAllText(path, content);
-		return Utils::FileSystem::exists(path);
+		const bool verified = Utils::FileSystem::readAllText(path) == content;
+		if (!verified)
+			LOG(LogError) << "[CreditManager] direct write verification failed: " << path;
+		return verified;
 	}
 	const size_t n = content.size();
 	const size_t w = fwrite(content.data(), 1, n, f);
@@ -214,7 +217,7 @@ bool CreditManager::atomicWriteText(const std::string& path, const std::string& 
 	// Ultimate fallback: overwrite in place
 	Utils::FileSystem::writeAllText(path, content);
 	Utils::FileSystem::removeFile(tmp);
-	const bool ok = Utils::FileSystem::exists(path);
+	const bool ok = Utils::FileSystem::readAllText(path) == content;
 	if (!ok)
 		LOG(LogError) << "[CreditManager] all write strategies failed: " << path;
 	return ok;
@@ -467,6 +470,7 @@ void CreditManager::load()
 	mTotalCoinsAccepted = 0;
 	mTotalMinutesSold = 0;
 	mTotalSecondsPlayed = 0;
+	mAppliedPixTransactions.clear();
 	mSessionRunning = false;
 	mSessionPaused = false;
 	mInGame = false;
@@ -496,6 +500,9 @@ void CreditManager::load()
 				mTotalMinutesSold = parseDigitsLong(val);
 			else if (key == "totalsecondsplayed")
 				mTotalSecondsPlayed = parseDigitsLong(val);
+			else if (key == "pixtransaction" && isValidPixTransactionId(val)
+				&& mAppliedPixTransactions.size() < kMaxAppliedPixTransactions)
+				mAppliedPixTransactions.push_back(val);
 		}
 	}
 
@@ -532,7 +539,7 @@ void CreditManager::load()
 		<< " remaining=" << mRemainingSeconds;
 }
 
-void CreditManager::persistCreditUnlocked() const
+bool CreditManager::persistCreditUnlocked() const
 {
 	// Guarda total de moedas + snapshot do saldo ativo (backup)
 	// SEMPRE locale C — nunca "1.234" / "1,234"
@@ -543,10 +550,12 @@ void CreditManager::persistCreditUnlocked() const
 		<< "totalMinutesSold=" << mTotalMinutesSold << "\n"
 		<< "totalSecondsPlayed=" << mTotalSecondsPlayed << "\n"
 		<< "currentPlayer=" << mCurrentPlayer << "\n";
-	atomicWriteText(creditFilePath(), out.str());
+	for (const auto& transactionId : mAppliedPixTransactions)
+		out << "pixTransaction=" << transactionId << "\n";
+	return atomicWriteText(creditFilePath(), out.str());
 }
 
-void CreditManager::persistPlayersUnlocked() const
+bool CreditManager::persistPlayersUnlocked() const
 {
 	auto out = makePlainOut();
 	out << "# TurboRama Locadora - jogadores\n"
@@ -560,7 +569,7 @@ void CreditManager::persistPlayersUnlocked() const
 			<< ";totalMinutesPurchased=" << p.totalMinutesPurchased
 			<< "\n";
 	}
-	atomicWriteText(playersFilePath(), out.str());
+	return atomicWriteText(playersFilePath(), out.str());
 }
 
 void CreditManager::save() const
@@ -617,8 +626,8 @@ void CreditManager::updateLowTimeWarningsUnlocked()
 
 	const long r = mRemainingSeconds;
 
-	// Com mais de 2 min: limpa estagio (pode avisar de novo se o tempo baixar outra vez)
-	if (r > 120)
+	// Com mais de 15 min: limpa estagio (pode avisar de novo se o tempo baixar outra vez)
+	if (r > 900)
 	{
 		mLowTimeWarnStage = 0;
 		return;
@@ -626,29 +635,39 @@ void CreditManager::updateLowTimeWarningsUnlocked()
 
 	// Ordem do mais urgente para o menos — se o tempo "pular" varios limiares
 	// (ex.: saiu do jogo), mostra o aviso mais critico ainda nao exibido.
-	if (r <= 0 && mLowTimeWarnStage < 5)
+	if (r <= 0 && mLowTimeWarnStage < 7)
 	{
-		mPendingLowTimeWarning = "TEMPO ESGOTADO! Insira credito / chame o balcao.";
-		mLowTimeWarnStage = 5;
+		mPendingLowTimeWarning = "TEMPO ESGOTADO! Pressione START e escolha COMPRAR TEMPO COM PIX.";
+		mLowTimeWarnStage = 7;
 	}
-	else if (r <= 10 && mLowTimeWarnStage < 4)
+	else if (r <= 10 && mLowTimeWarnStage < 6)
 	{
 		mPendingLowTimeWarning = "ATENCAO: restam apenas 10 SEGUNDOS!";
-		mLowTimeWarnStage = 4;
+		mLowTimeWarnStage = 6;
 	}
-	else if (r <= 30 && mLowTimeWarnStage < 3)
+	else if (r <= 30 && mLowTimeWarnStage < 5)
 	{
 		mPendingLowTimeWarning = "ATENCAO: restam 30 segundos de credito!";
-		mLowTimeWarnStage = 3;
+		mLowTimeWarnStage = 5;
 	}
-	else if (r <= 60 && mLowTimeWarnStage < 2)
+	else if (r <= 60 && mLowTimeWarnStage < 4)
 	{
 		mPendingLowTimeWarning = "ATENCAO: resta 1 MINUTO de credito!";
-		mLowTimeWarnStage = 2;
+		mLowTimeWarnStage = 4;
 	}
-	else if (r <= 120 && mLowTimeWarnStage < 1)
+	else if (r <= 120 && mLowTimeWarnStage < 3)
 	{
 		mPendingLowTimeWarning = "ATENCAO: restam 2 MINUTOS de credito!";
+		mLowTimeWarnStage = 3;
+	}
+	else if (r <= 300 && mLowTimeWarnStage < 2)
+	{
+		mPendingLowTimeWarning = "ATENCAO: restam 5 MINUTOS! START > COMPRAR TEMPO COM PIX.";
+		mLowTimeWarnStage = 2;
+	}
+	else if (r <= 900 && mLowTimeWarnStage < 1)
+	{
+		mPendingLowTimeWarning = "ATENCAO: restam 15 MINUTOS! START > COMPRAR TEMPO COM PIX.";
 		mLowTimeWarnStage = 1;
 	}
 }
@@ -768,8 +787,8 @@ bool CreditManager::addCoin()
 		<< " max=" << mMaxRemainingSeconds
 		<< " player=" << mCurrentPlayer;
 
-	// Credito subiu: rearmar avisos se passou de 2 min
-	if (mRemainingSeconds > 120)
+	// Credito subiu: rearmar avisos se voltou a 15 min ou mais
+	if (mRemainingSeconds >= 900)
 		resetLowTimeWarningsUnlocked();
 	else
 		updateLowTimeWarningsUnlocked();
@@ -835,7 +854,7 @@ bool CreditManager::addMinutes(int minutes)
 		<< "min before=" << before << " after=" << mRemainingSeconds
 		<< " max=" << mMaxRemainingSeconds << " player=" << mCurrentPlayer;
 
-	if (mRemainingSeconds > 120)
+	if (mRemainingSeconds >= 900)
 		resetLowTimeWarningsUnlocked();
 	else
 		updateLowTimeWarningsUnlocked();
@@ -843,6 +862,69 @@ bool CreditManager::addMinutes(int minutes)
 	persistCreditUnlocked();
 	persistPlayersUnlocked();
 	return true;
+}
+
+bool CreditManager::isValidPixTransactionId(const std::string& transactionId)
+{
+	if (transactionId.empty() || transactionId.size() > 64)
+		return false;
+	for (const char ch : transactionId)
+	{
+		const bool allowed = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+			|| (ch >= '0' && ch <= '9') || ch == '-' || ch == '_';
+		if (!allowed)
+			return false;
+	}
+	return true;
+}
+
+PixCreditResult CreditManager::applyPixCredit(const std::string& transactionId, int minutes)
+{
+	std::lock_guard<std::mutex> lock(mMutex);
+	if (!mEnabled || !isValidPixTransactionId(transactionId) || minutes < 1 || minutes > 480)
+		return PixCreditResult::Rejected;
+	if (std::find(mAppliedPixTransactions.begin(), mAppliedPixTransactions.end(), transactionId) != mAppliedPixTransactions.end())
+		return PixCreditResult::AlreadyApplied;
+
+	// O evento so pode ser marcado como processado depois que o ledger principal
+	// estiver realmente gravado. Mantemos uma copia para desfazer tudo se o disco falhar.
+	const long before = mRemainingSeconds;
+	const long previousTotalMinutesSold = mTotalMinutesSold;
+	const bool previousSessionRunning = mSessionRunning;
+	const bool previousSessionPaused = mSessionPaused;
+	const int previousLowTimeWarnStage = mLowTimeWarnStage;
+	const std::string previousPendingLowTimeWarning = mPendingLowTimeWarning;
+	const std::vector<CreditPlayer> previousPlayers = mPlayers;
+	const std::vector<std::string> previousTransactions = mAppliedPixTransactions;
+	long sum = mRemainingSeconds + (long)minutes * 60L;
+	if (sum < mRemainingSeconds) sum = mMaxRemainingSeconds;
+	mRemainingSeconds = std::min(sum, mMaxRemainingSeconds);
+	recordSaleUnlocked(minutes);
+	mSessionRunning = true;
+	mSessionPaused = false;
+	syncActivePlayerWalletUnlocked();
+	mAppliedPixTransactions.push_back(transactionId);
+	if (mAppliedPixTransactions.size() > kMaxAppliedPixTransactions)
+		mAppliedPixTransactions.erase(mAppliedPixTransactions.begin());
+	if (mRemainingSeconds >= 900) resetLowTimeWarningsUnlocked(); else updateLowTimeWarningsUnlocked();
+	if (!persistCreditUnlocked())
+	{
+		mRemainingSeconds = before;
+		mTotalMinutesSold = previousTotalMinutesSold;
+		mSessionRunning = previousSessionRunning;
+		mSessionPaused = previousSessionPaused;
+		mLowTimeWarnStage = previousLowTimeWarnStage;
+		mPendingLowTimeWarning = previousPendingLowTimeWarning;
+		mPlayers = previousPlayers;
+		mAppliedPixTransactions = previousTransactions;
+		LOG(LogError) << "[CreditManager] PIX nao aplicado: falha ao persistir ledger tx=" << transactionId;
+		return PixCreditResult::Rejected;
+	}
+	if (!persistPlayersUnlocked())
+		LOG(LogError) << "[CreditManager] PIX aplicado no ledger, mas carteira de jogadores aguarda nova sincronizacao tx=" << transactionId;
+	LOG(LogInfo) << "[CreditManager] PIX +" << minutes << "min tx=" << transactionId
+		<< " before=" << before << " after=" << mRemainingSeconds;
+	return PixCreditResult::Applied;
 }
 
 void CreditManager::addPlayedToCurrentUnlocked(long seconds)
@@ -1109,7 +1191,7 @@ bool CreditManager::switchToPlayer(const std::string& name)
 	persistPlayersUnlocked();
 
 	// Novo jogador: rearmar avisos conforme o saldo dele
-	if (mRemainingSeconds > 120)
+	if (mRemainingSeconds >= 900)
 		resetLowTimeWarningsUnlocked();
 	else
 	{

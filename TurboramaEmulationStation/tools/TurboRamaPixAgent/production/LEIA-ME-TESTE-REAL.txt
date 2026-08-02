@@ -1,0 +1,52 @@
+TURBORAMA PIX - TESTE REAL NO SANDBOX MERCADO PAGO
+===================================================
+
+OBJETIVO
+Usar a API oficial do Mercado Pago de ponta a ponta sem movimentar dinheiro real:
+criar/reaproveitar loja e PDV, gerar uma order, exibir QR, simular o pagamento e
+confirmar a liberacao dos minutos no EmulationStation.
+
+PREPARAR LOJA E PDV
+1. Extraia todo o ZIP.
+2. Execute CONFIGURAR-MERCADOPAGO-TESTE.cmd.
+3. Informe o User ID exibido em Credenciais de teste.
+4. Pode aceitar estes identificadores sugeridos:
+   Loja: LZLOJA01
+   Caixa/PDV: LZPIXCOMP
+5. Informe somente CEP e numero. Rua, cidade, estado e coordenadas serao resolvidos
+   automaticamente. Confira o endereco mostrado antes de confirmar.
+   O CEP 57084-648 possui fallback local verificado para Rua Radialista Alves
+   Correia, Benedito Bentes, Maceio/AL, inclusive quando as APIs de CEP estiverem
+   temporariamente indisponiveis.
+6. Quando perguntado sobre o Access Token protegido, mantenha-o somente se ele for
+   o Access Token DE TESTE da mesma aplicacao. Caso contrario, escolha N e cole o
+   Access Token de teste. Nao use Public Key, senha ou codigo de verificacao.
+
+PROTECOES
+- O User ID informado precisa ser exatamente o dono do Access Token. Se divergir,
+  a API oficial de lojas devolve 403 e o assistente bloqueia tudo antes de criar
+  qualquer cadastro. A configuracao de sandbox nao depende da consulta /users/me
+  do Mercado Livre, que pode ser recusada pelas politicas do token de teste.
+- Se loja ou PDV ja existirem, eles sao reaproveitados. O processo nao os duplica.
+- O PDV e criado com fixed_amount=true, conforme exigido pelo fluxo integrado.
+- O campo MCC/category e omitido para a atividade de jogos. A API aplica a
+  categoria generica, evitando rejeitar o PDV com POS_UNKNOWN_MCC.
+- O Access Token permanece protegido pelo Windows e nao e salvo no arquivo do tema.
+- O assistente nao fecha o EmulationStation e nao desliga/reinicia o computador.
+- Em caso de recusa, a mensagem informa a rota exata (consulta de lojas, criacao
+  da loja ou criacao do PDV) para permitir um diagnostico objetivo.
+
+REALIZAR O TESTE COMPLETO
+1. Aguarde a mensagem AMBIENTE REAL DE TESTES PREPARADO.
+2. No EmulationStation, abra START > COMPRAR TEMPO COM PIX.
+3. Escolha o pacote de menor valor e gere o QR.
+4. No celular, entre no aplicativo Mercado Pago com a conta COMPRADOR de teste.
+5. Escaneie o QR e conclua usando um meio de pagamento de teste.
+6. Confirme que a order muda para aprovada e que os minutos aparecem no contador.
+7. Confirme também os avisos quando restarem 15 e 5 minutos.
+
+IMPORTANTE
+Credenciais de teste e producao podem comecar com APP_USR. O que define a conta e
+o ambiente e o Access Token selecionado no painel. Nao divulgue token, senha ou
+codigo de verificacao. Somente depois de todos os testes aprovados deve-se preparar
+a troca controlada para credenciais de producao e realizar uma venda real minima.

@@ -1,0 +1,11 @@
+appsettings.json
+secret.dat
+secret.dat.*
+bridge.key
+.agent.lock
+runtime*/
+.dotnet-home/
+.nuget-packages/
+.nuget-local/
+bin/
+obj/

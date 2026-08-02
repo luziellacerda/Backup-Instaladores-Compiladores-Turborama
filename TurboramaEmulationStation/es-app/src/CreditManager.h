@@ -29,6 +29,8 @@ struct CreditAccountingTotals
 	long estimatedRevenueCents = 0;
 };
 
+enum class PixCreditResult { Applied, AlreadyApplied, Rejected };
+
 class CreditManager
 {
 public:
@@ -51,6 +53,7 @@ public:
 	bool hasCredit() const;
 	bool addCoin();
 	bool addMinutes(int minutes);
+	PixCreditResult applyPixCredit(const std::string& transactionId, int minutes);
 
 	void tick(int deltaMs);
 	void beginGameSession();
@@ -130,8 +133,8 @@ private:
 	void loadConfig();
 	void loadPlayers();
 	void clamp();
-	void persistCreditUnlocked() const;
-	void persistPlayersUnlocked() const;
+	bool persistCreditUnlocked() const;
+	bool persistPlayersUnlocked() const;
 	void persistConfigUnlocked() const;
 	void addPlayedToCurrentUnlocked(long seconds);
 	void applyConsumeUnlocked(long seconds, const char* reason);
@@ -140,6 +143,7 @@ private:
 	void updateLowTimeWarningsUnlocked();
 	void resetLowTimeWarningsUnlocked();
 	void recordSaleUnlocked(int minutes);
+	static bool isValidPixTransactionId(const std::string& transactionId);
 
 	static long parseDigitsLong(const std::string& val);
 	static std::string sanitizePlayerName(const std::string& name);
@@ -174,6 +178,7 @@ private:
 	std::vector<CreditPlayer> mPlayers;
 	std::string mCurrentPlayer;
 	std::string mAdminPasswordHash;
+	std::vector<std::string> mAppliedPixTransactions;
 
 	int mLowTimeWarnStage;
 	std::string mPendingLowTimeWarning;
@@ -183,4 +188,6 @@ private:
 	static const int kSaveIntervalMs = 5000;
 	static const int kSchemaVersion = 4;
 	static const int kMinPasswordLen = 4;
+	// Mantem anos de pagamentos no ledger para impedir reaplicacao de eventos antigos.
+	static const size_t kMaxAppliedPixTransactions = 100000;
 };

@@ -138,8 +138,12 @@ set(ES_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LibretroRatio.h # batocera
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Win32ApiSystem.h # batocera
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CreditManager.h # turborama arcade credit
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/PixBridge.h # turborama pix bridge
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/PixAgentManager.h # configuracao e ciclo de vida do agente pix
     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditPlayerSelect.h # locadora player picker
     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditOperatorPanel.h # locadora painel profissional
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixPurchase.h # compra publica de tempo PIX
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixOwnerSettings.h # cadastro protegido do proprietario
 )
 
 set(ES_SOURCES
@@ -243,8 +247,12 @@ set(ES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LibretroRatio.cpp # batocera
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Win32ApiSystem.cpp # batocera
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CreditManager.cpp # turborama arcade credit
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/PixBridge.cpp # turborama pix bridge
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/PixAgentManager.cpp # configuracao e ciclo de vida do agente pix
     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditPlayerSelect.cpp # locadora player picker
     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditOperatorPanel.cpp # locadora painel profissional
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixPurchase.cpp # compra publica de tempo PIX
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixOwnerSettings.cpp # cadastro protegido do proprietario
 )
 
 #-------------------------------------------------------------------------------

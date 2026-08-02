@@ -25,6 +25,9 @@
 **/venv/
 **/TestResults/
 **/publish/
+**/.dotnet-cli/
+**/.dotnet-home/
+**/.nuget-packages/
 
 # --- Nested git (nao versionar como submodule) ---
 **/.git/
@@ -58,6 +61,13 @@
 *.cab
 *.apk
 *.ipa
+
+# --- Credenciais e estado local do sistema PIX ---
+**/secret.dat
+**/secret.dat.*
+**/bridge.key
+**/.agent.lock
+TurboramaEmulationStation/runtime/
 
 # --- Logs / cache / temporarios ---
 *.log

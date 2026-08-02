@@ -48,6 +48,8 @@
 #include "CreditManager.h"
 #include "guis/GuiCreditPlayerSelect.h"
 #include "guis/GuiCreditOperatorPanel.h"
+#include "guis/GuiPixPurchase.h"
+#include "guis/GuiPixOwnerSettings.h"
 // forward usavel via include acima para dynamic_cast no callback da senha
 #include "guis/GuiWifi.h"
 #include "guis/GuiBluetoothPair.h"
@@ -226,6 +228,9 @@ GuiMenu::GuiMenu(Window *window, bool animate) : GuiComponent(window), mMenu(win
 
 	// Locadora: menu de credito (F11/painel) escondido — so contabilidade no Start se necessario
 	// addEntry(_("LOCADORA / CREDITO"), true, [this] { requestCreditSettingsAccess(); }, "iconGames");
+	// Este menu inteiro ja foi liberado pela senha do START. A compra do cliente
+	// fica fora daqui e e aberta diretamente pelo SELECT, sem senha.
+	addEntry(_("CONFIGURACAO PIX DO PROPRIETARIO"), true, [this] { mWindow->pushGui(new GuiPixOwnerSettings(mWindow)); }, "iconSystem");
 	addEntry(_("CONTABILIDADE LOCADORA"), true, [this] { requestCreditAccountingAccess(); }, "iconSystem");
 
 #ifdef WIN32

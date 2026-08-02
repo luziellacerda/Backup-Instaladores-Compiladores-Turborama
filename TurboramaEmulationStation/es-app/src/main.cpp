@@ -46,6 +46,8 @@
 #include "ZaparooSupport.h"
 #include "utils/ThreadPool.h"
 #include "CreditManager.h"
+#include "PixBridge.h"
+#include "PixAgentManager.h"
 #include "guis/GuiMenu.h"
 
 #ifdef WIN32
@@ -472,7 +474,47 @@ void launchStartupGame()
 // #include "utils/MathExpr.h"
 
 int main(int argc, char* argv[])
-{	
+{
+	if (argc == 3 && strcmp(argv[1], "--pix-agent-start-once") == 0)
+	{
+		Paths::setExePath(argv[0]);
+		Paths::setHomePath(argv[2]);
+		Utils::FileSystem::createDirectory(Utils::FileSystem::combine(argv[2], ".emulationstation"));
+		Log::init();
+		std::string error;
+		const bool started = PixAgentManager::startIfConfigured(&error);
+		if (!started && !error.empty()) LOG(LogError) << "[PIX] " << error;
+		Log::close();
+		return started ? 0 : 23;
+	}
+	if (argc == 4 && strcmp(argv[1], "--pix-verify-event") == 0)
+		return PixBridge::verifyApprovedEventFileForTest(argv[2], argv[3]) ? 0 : 20;
+	if (argc == 3 && strcmp(argv[1], "--pix-process-once") == 0)
+	{
+		Paths::setExePath(argv[0]);
+		Paths::setHomePath(argv[2]);
+		Utils::FileSystem::createDirectory(Utils::FileSystem::combine(argv[2], ".emulationstation"));
+		Log::init();
+		PixBridge::processApprovedCredits();
+		CreditManager::getInstance().flushNow();
+		Log::close();
+		return 0;
+	}
+	if (argc == 5 && strcmp(argv[1], "--pix-create-request") == 0)
+	{
+		Paths::setExePath(argv[0]);
+		Paths::setHomePath(argv[2]);
+		Utils::FileSystem::createDirectory(Utils::FileSystem::combine(argv[2], ".emulationstation"));
+		PixPackage package;
+		try { package.minutes = std::stoi(argv[3]); package.amountCents = std::stoll(argv[4]); }
+		catch (...) { return 22; }
+		std::string requestId, error;
+		const bool created = PixBridge::createPurchaseRequest(package, requestId, error);
+		if (!created)
+			Utils::FileSystem::writeAllText(Utils::FileSystem::combine(argv[2], "pix-create-error.txt"), error);
+		return created ? 0 : 21;
+	}
+
 	// Utils::MathExpr::performUnitTests();
 
 	// signal(SIGABRT, signalHandler);
@@ -541,6 +583,15 @@ int main(int argc, char* argv[])
 	Log::init();	
 
 	LOG(LogInfo) << "EmulationStation - v" << PROGRAM_VERSION_STRING << ", built " << PROGRAM_BUILT_STRING;
+
+	// O servico PIX acompanha o EmulationStation. Dados e credenciais ficam na
+	// pasta persistente .emulationstation/pix e sobrevivem a reinicializacoes.
+	// Se o proprietario ainda nao configurou o PIX, nada externo e iniciado.
+	{
+		std::string pixStartError;
+		if (!PixAgentManager::startIfConfigured(&pixStartError) && !pixStartError.empty())
+			LOG(LogInfo) << "[PIX] " << pixStartError;
+	}
 
 	//always close the log on exit
 	atexit(&onExit);

@@ -33,6 +33,9 @@
 #include "guis/GuiNetPlay.h"
 #include "Gamelist.h"
 #include "CreditManager.h"
+#include "PixBridge.h"
+#include "PixAgentManager.h"
+#include "guis/GuiPixPurchase.h"
 #include "resources/Font.h"
 
 ViewController* ViewController::sInstance = nullptr;
@@ -908,6 +911,15 @@ bool ViewController::input(InputConfig* config, Input input)
 		return true;
 	}
 
+	// TurboRama comercial: SELECT pertence ao cliente e abre somente a compra PIX.
+	// Nenhuma senha ou configuracao administrativa fica acessivel por este atalho.
+	if(config->isMappedTo("select", input) && input.value != 0)
+	{
+		if (dynamic_cast<GuiPixPurchase*>(mWindow->peekGui()) == nullptr)
+			mWindow->pushGui(new GuiPixPurchase(mWindow));
+		return true;
+	}
+
 	// Next song
 	if (((mState.viewing != GAME_LIST && config->isMappedTo("l3", input)) || config->isMappedTo("r3", input)) && input.value != 0)
 	{		
@@ -949,6 +961,27 @@ void ViewController::update(int deltaTime)
 	// Skip absurd frames (paused debugger / post-game) — tick also caps
 	if (deltaTime > 0 && deltaTime < 60000)
 		CreditManager::getInstance().tick(deltaTime);
+
+	// Ponte PIX: o agente externo entrega somente pagamentos confirmados.
+	// A protecao de duplicidade fica no CreditManager e sobrevive a reinicios.
+	static int pixPollAccumMs = 0;
+	pixPollAccumMs += deltaTime;
+	if (pixPollAccumMs >= 2000)
+	{
+		pixPollAccumMs = 0;
+		for (const auto& message : PixBridge::processApprovedCredits())
+			mWindow->displayNotificationMessage(message, 7);
+	}
+
+	// Supervisao leve: se o agente for encerrado por falha, antivirus ou queda,
+	// o EmulationStation o inicia novamente sem reiniciar o computador.
+	static int pixAgentWatchdogMs = 0;
+	pixAgentWatchdogMs += deltaTime;
+	if (pixAgentWatchdogMs >= 15000)
+	{
+		pixAgentWatchdogMs = 0;
+		PixAgentManager::startIfConfigured(nullptr);
+	}
 
 	// Baloes de aviso do sistema (GuiInfoPopup) quando o tempo esta acabando
 	{
