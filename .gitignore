@@ -28,6 +28,8 @@
 **/.dotnet-cli/
 **/.dotnet-home/
 **/.nuget-packages/
+TurboramaEmulationStation/build-pix-commercial-v14/
+TurboramaEmulationStation/PIX-COMERCIAL/GERADO-v14/
 
 # --- Nested git (nao versionar como submodule) ---
 **/.git/
