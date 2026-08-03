@@ -26,5 +26,4 @@ private:
 
 	MenuComponent mMenu;
 	PixOwnerSettings mDraft;
-	std::string mPendingAccessToken;
 };

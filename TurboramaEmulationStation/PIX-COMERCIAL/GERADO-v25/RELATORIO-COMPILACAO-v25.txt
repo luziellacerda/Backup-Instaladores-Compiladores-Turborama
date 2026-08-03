@@ -1,0 +1,12 @@
+﻿TURBORAMA PIX COMERCIAL v25 - COMPILACAO APROVADA
+Data: 2026-08-03 17:59:35
+Instalador: C:\Users\Admin\Documents\Codex\2026-07-27\referenced-chatgpt-conversation-this-is-untrusted\downloads\TurboramaEmulationStation-repo\TurboramaEmulationStation\PIX-COMERCIAL\GERADO-v25\INSTALAR-TURBORAMA-PIX-COMERCIAL-v25-ULTRA-FINAL.exe
+SHA256: D47535D7A7E0AC7632C618F7B5578CB27C1757D2AB0907722F9C3CFB325A3EC4
+Configurador de proprietario: compilado e testado
+Editor seguro de Access Token: compilado e testado
+User ID: reconhecido automaticamente pelo Access Token
+Loja e PDV: criacao/reaproveitamento idempotente testado
+Mercado Pago e adaptador bancario: contratos testados
+CEP: endereco e coordenadas reais resolvidos automaticamente por fontes redundantes e cache
+Testes de cobranca: somente simuladores locais; nenhuma cobranca real foi criada
+Credenciais privadas incluidas: NAO

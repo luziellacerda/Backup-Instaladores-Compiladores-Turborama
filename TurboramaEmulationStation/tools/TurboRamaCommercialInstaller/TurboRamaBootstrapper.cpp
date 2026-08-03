@@ -10,6 +10,15 @@
 
 #pragma comment(lib, "bcrypt.lib")
 
+#ifndef TURBORAMA_RELEASE_NUMBER
+#define TURBORAMA_RELEASE_NUMBER 16
+#endif
+#define TR_STRINGIFY_DETAIL(value) #value
+#define TR_STRINGIFY(value) TR_STRINGIFY_DETAIL(value)
+#define TR_WIDEN_DETAIL(value) L##value
+#define TR_WIDEN(value) TR_WIDEN_DETAIL(value)
+#define TR_WSTRINGIFY(value) TR_WIDEN(TR_STRINGIFY(value))
+
 #pragma pack(push, 1)
 struct TurboRamaPackageFooter
 {
@@ -26,7 +35,7 @@ struct TurboRamaPackageFooter
 
 namespace
 {
-	const wchar_t* kTitle = L"TurboRama - Sistema PIX Comercial v14";
+	const wchar_t* kTitle = L"TurboRama - Sistema PIX Comercial v" TR_WSTRINGIFY(TURBORAMA_RELEASE_NUMBER);
 	const char kMagic[16] = { 'T','R','P','I','X','V','1','4','P','A','C','K','A','G','E','\0' };
 
 	std::wstring join(const std::wstring& left, const std::wstring& right)
@@ -38,7 +47,7 @@ namespace
 	{
 		wchar_t temp[MAX_PATH + 1]{};
 		if (GetTempPathW(MAX_PATH, temp) == 0) return {};
-		return join(temp, L"TurboRamaPixV13-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
+		return join(temp, L"TurboRamaPixV" TR_WSTRINGIFY(TURBORAMA_RELEASE_NUMBER) L"-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
 	}
 
 	bool sameHash(const unsigned char* left, const unsigned char* right)

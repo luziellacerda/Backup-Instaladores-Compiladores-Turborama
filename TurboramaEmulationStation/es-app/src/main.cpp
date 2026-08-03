@@ -489,6 +489,15 @@ int main(int argc, char* argv[])
 	}
 	if (argc == 4 && strcmp(argv[1], "--pix-verify-event") == 0)
 		return PixBridge::verifyApprovedEventFileForTest(argv[2], argv[3]) ? 0 : 20;
+	if (argc == 4 && strcmp(argv[1], "--pix-test-qr-cache") == 0)
+	{
+		// Teste de integracao isolado para a publicacao tardia do QR.
+		Paths::setExePath(argv[0]);
+		Paths::setHomePath(argv[2]);
+		const bool passed = PixBridge::runQrCacheRegressionTest();
+		Utils::FileSystem::writeAllText(argv[3], passed ? "QR_CACHE_TEST=OK\n" : "QR_CACHE_TEST=FAILED\n");
+		return passed ? 0 : 24;
+	}
 	if (argc == 3 && strcmp(argv[1], "--pix-process-once") == 0)
 	{
 		Paths::setExePath(argv[0]);

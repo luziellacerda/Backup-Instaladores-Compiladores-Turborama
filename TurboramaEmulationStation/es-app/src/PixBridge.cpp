@@ -35,6 +35,54 @@ namespace
 		return separator == std::string::npos ? path : path.substr(separator + 1);
 	}
 
+	bool endsWith(const std::string& value, const std::string& suffix)
+	{
+		return value.size() >= suffix.size()
+			&& value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+	}
+
+	bool readQrPng(const std::string& path, std::vector<unsigned char>& data)
+	{
+		data.clear();
+		std::ifstream input(path, std::ios::binary | std::ios::ate);
+		if (!input) return false;
+		const std::streamoff length = input.tellg();
+		// Um QR normal ocupa poucos KB. O limite tambem impede que um arquivo
+		// local inesperado consuma memoria da interface.
+		if (length < 64 || length > 2 * 1024 * 1024) return false;
+		input.seekg(0, std::ios::beg);
+		data.resize((size_t)length);
+		if (!input.read((char*)data.data(), length)) { data.clear(); return false; }
+		static const unsigned char signature[] = { 137, 80, 78, 71, 13, 10, 26, 10 };
+		if (data.size() < sizeof(signature)
+			|| !std::equal(signature, signature + sizeof(signature), data.begin()))
+		{
+			data.clear();
+			return false;
+		}
+		return true;
+	}
+
+	std::string safeRejectedReason(const std::string& value)
+	{
+		std::string clean;
+		clean.reserve(std::min<size_t>(value.size(), 300));
+		for (const unsigned char character : value)
+		{
+			if (character >= 32 && character != 127) clean.push_back((char)character);
+			if (clean.size() >= 300) break;
+		}
+		const std::string prefix = "APP_USR-";
+		const size_t start = clean.find(prefix);
+		if (start != std::string::npos)
+		{
+			size_t end = start;
+			while (end < clean.size() && (std::isalnum((unsigned char)clean[end]) || clean[end] == '-' || clean[end] == '_')) end++;
+			clean.replace(start, end - start, "[Access Token oculto]");
+		}
+		return clean;
+	}
+
 	bool extractString(const std::string& json, const std::string& name, const std::string& pattern, std::string& value)
 	{
 		std::smatch match;
@@ -61,6 +109,26 @@ namespace
 		if (!std::regex_search(json, match, expression)) return false;
 		value = match[1].str() == "true";
 		return true;
+	}
+
+	bool readOwnerSetupMessage(std::string& message)
+	{
+		message.clear();
+		const std::string json = Utils::FileSystem::readAllText(Utils::FileSystem::combine(pixRoot(), "owner-setup-status.json"));
+		if (json.empty() || json.size() > 4096) return false;
+		long long schema = 0, updated = 0;
+		std::string state, candidate;
+		if (!extractLong(json, "schemaVersion", schema) || schema != 1
+			|| !extractLong(json, "updatedAtUnixSeconds", updated)
+			|| !extractString(json, "state", "[A-Za-z_]{1,32}", state)
+			|| !extractString(json, "message", "[^\\\"\\\\\\r\\n]{1,500}", candidate)) return false;
+		const long long now = (long long)std::time(nullptr);
+		if (updated < now - 120 || updated > now + 120) return false;
+		if (state != "error" && state != "waiting_network" && state != "configuring") return false;
+		for (const unsigned char character : candidate)
+			if (character < 32 || character == 127) return false;
+		message = candidate;
+		return !message.empty();
 	}
 
 	std::string utcIso8601()
@@ -206,6 +274,63 @@ namespace
 		return difference == 0;
 	}
 
+	bool readSignedQrMatrix(const std::string& path, const std::string& requestId,
+		const std::string& root, std::vector<unsigned char>& modules, int& moduleCount)
+	{
+		modules.clear();
+		moduleCount = 0;
+		const std::string text = Utils::FileSystem::readAllText(path);
+		if (text.size() < 200 || text.size() > 70000) return false;
+
+		std::vector<std::string> lines;
+		std::istringstream input(text);
+		std::string line;
+		while (std::getline(input, line))
+		{
+			if (!line.empty() && line.back() == '\r') line.pop_back();
+			lines.push_back(line);
+		}
+		if (!lines.empty() && lines.back().empty()) lines.pop_back();
+		if (lines.size() < 25 || lines[0] != "TURBORAMA_QR_MATRIX_V1" || lines[1] != requestId
+			|| !std::regex_match(lines[2], std::regex("[0-9]{2,3}"))
+			|| !std::regex_match(lines[3], std::regex("[A-Fa-f0-9]{64}"))) return false;
+
+		int size = 0;
+		try { size = std::stoi(lines[2]); }
+		catch (...) { return false; }
+		if (size < 21 || size > 256 || lines.size() != (size_t)size + 4) return false;
+
+		std::string grid;
+		modules.reserve((size_t)size * size);
+		for (int row = 0; row < size; ++row)
+		{
+			const std::string& values = lines[(size_t)row + 4];
+			if (values.size() != (size_t)size) { modules.clear(); return false; }
+			if (row > 0) grid.push_back('\n');
+			grid += values;
+			for (const char value : values)
+			{
+				if (value != '0' && value != '1') { modules.clear(); return false; }
+				modules.push_back(value == '1' ? 1 : 0);
+			}
+		}
+
+		const std::vector<unsigned char> key = decodeBase64(
+			Utils::FileSystem::readAllText(Utils::FileSystem::combine(root, "bridge.key")));
+		if (key.size() != 32) { modules.clear(); return false; }
+		std::string signature = lines[3];
+		std::transform(signature.begin(), signature.end(), signature.begin(),
+			[](unsigned char ch) { return (char)std::tolower(ch); });
+		const std::string canonical = "1\n" + requestId + "\n" + std::to_string(size) + "\n" + grid;
+		if (!constantTimeEqual(hmacSha256Hex(key, canonical), signature))
+		{
+			modules.clear();
+			return false;
+		}
+		moduleCount = size;
+		return true;
+	}
+
 	struct ApprovedCredit
 	{
 		std::string transactionId;
@@ -238,7 +363,11 @@ namespace
 
 	bool verifyCredit(const ApprovedCredit& credit, const std::string& root, const std::vector<unsigned char>& key)
 	{
-		if (credit.provider == "mock" && !Utils::FileSystem::exists(Utils::FileSystem::combine(root, "allow-mock-credit"))) return false;
+		// A ponte PIX e alimentada por outro processo. Nao use o cache global do
+		// EmulationStation para arquivos que podem aparecer enquanto a interface
+		// esta aberta, pois um primeiro resultado "nao existe" fica armazenado.
+		if (credit.provider == "mock" && !Utils::FileSystem::exists(
+			Utils::FileSystem::combine(root, "allow-mock-credit"), false)) return false;
 		const long long now = (long long)std::time(nullptr);
 		if (credit.approvedAt < 1577836800LL || credit.approvedAt > now + 600) return false;
 		const std::string payload = "1\n" + credit.transactionId + "\n" + std::to_string(credit.minutes) + "\n"
@@ -295,7 +424,11 @@ bool PixBridge::loadPublicOptions(PixPublicOptions& options, std::string& error)
 	}
 	if (!options.ready)
 	{
-		error = options.provider == "mercadopago" ? "PIX aguardando configuracao do Mercado Pago" : "PIX indisponivel";
+		// A interface do cliente deve informar o motivo atual do agente, sem
+		// expor qualquer credencial. Antes esta tela dizia apenas "configurando"
+		// mesmo quando o token ou a conexao tinham falhado.
+		if (!readOwnerSetupMessage(error))
+			error = options.provider == "mercadopago" ? "PIX aguardando configuracao do Mercado Pago" : "PIX indisponivel";
 		return false;
 	}
 	return true;
@@ -339,18 +472,28 @@ PixPurchaseInfo PixBridge::getPurchaseInfo(const std::string& requestId)
 	PixPurchaseInfo info;
 	if (!std::regex_match(requestId, std::regex("[A-Za-z0-9_-]{1,64}"))) return info;
 	const std::string root = pixRoot();
-	if (Utils::FileSystem::exists(Utils::FileSystem::combine(root, "processed/" + requestId + ".credit.json")))
+	if (Utils::FileSystem::exists(Utils::FileSystem::combine(root,
+		"processed/" + requestId + ".credit.json"), false))
 	{
 		info.state = PixPurchaseState::Completed;
 		return info;
 	}
-	if (Utils::FileSystem::exists(Utils::FileSystem::combine(root, "approved/" + requestId + ".credit.json")))
+	if (Utils::FileSystem::exists(Utils::FileSystem::combine(root,
+		"approved/" + requestId + ".credit.json"), false))
 	{
 		info.state = PixPurchaseState::Approved;
 		return info;
 	}
 	const std::string qr = Utils::FileSystem::combine(root, "qr/" + requestId + ".png");
-	if (Utils::FileSystem::exists(qr)) info.qrImagePath = qr;
+	if (Utils::FileSystem::exists(qr, false))
+	{
+		info.qrImagePath = qr;
+		readQrPng(qr, info.qrImageData);
+	}
+	const std::string matrix = Utils::FileSystem::combine(root, "qr/" + requestId + ".matrix");
+	if (Utils::FileSystem::exists(matrix, false)
+		&& readSignedQrMatrix(matrix, requestId, root, info.qrModules, info.qrModuleCount))
+		info.qrMatrixPath = matrix;
 	const std::string session = Utils::FileSystem::readAllText(Utils::FileSystem::combine(root, "sessions/" + requestId + ".session.json"));
 	std::string status;
 	if (!session.empty() && extractString(session, "status", "pending|approved|completed|cancelled|security_error", status))
@@ -362,12 +505,18 @@ PixPurchaseInfo PixBridge::getPurchaseInfo(const std::string& requestId)
 		return info;
 	}
 	for (const auto& file : Utils::FileSystem::getDirContent(Utils::FileSystem::combine(root, "rejected"), false, false))
-		if (filenameOf(file).find(requestId + ".request.json") != std::string::npos)
+	{
+		const std::string name = filenameOf(file);
+		if (endsWith(name, ".request.json") && name.find(requestId + ".request.json") != std::string::npos)
 		{
 			info.state = PixPurchaseState::Rejected;
+			const std::string reason = Utils::FileSystem::readAllText(file + ".reason.txt");
+			if (reason.size() <= 1024) info.error = safeRejectedReason(reason);
 			return info;
 		}
-	if (Utils::FileSystem::exists(Utils::FileSystem::combine(root, "requests/" + requestId + ".request.json")))
+	}
+	if (Utils::FileSystem::exists(Utils::FileSystem::combine(root,
+		"requests/" + requestId + ".request.json"), false))
 		info.state = PixPurchaseState::Generating;
 	return info;
 }
@@ -378,6 +527,47 @@ bool PixBridge::verifyApprovedEventFileForTest(const std::string& file, const st
 	const std::vector<unsigned char> key = decodeBase64(
 		Utils::FileSystem::readAllText(Utils::FileSystem::combine(root, "bridge.key")));
 	return key.size() == 32 && readApprovedCredit(file, credit) && verifyCredit(credit, root, key);
+}
+
+bool PixBridge::runQrCacheRegressionTest()
+{
+	const std::string root = pixRoot();
+	for (const char* directory : { "qr", "sessions", "approved", "processed", "rejected", "requests" })
+		Utils::FileSystem::createDirectory(Utils::FileSystem::combine(root, directory));
+
+	const std::string requestId = "pix-cache-regression-v22";
+	const std::string matrix = Utils::FileSystem::combine(root, "qr/" + requestId + ".matrix");
+	Utils::FileSystem::removeFile(matrix);
+	// 32 bytes nulos em Base64. Esta chave existe somente na pasta descartavel
+	// recebida pelo argumento de teste e nunca toca a instalacao do cliente.
+	const std::string keyText = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+	if (!writeAtomically(Utils::FileSystem::combine(root, "bridge.key"), keyText)) return false;
+	const std::vector<unsigned char> key = decodeBase64(keyText);
+	if (key.size() != 32) return false;
+
+	// Esta chamada registra no cache global que o QR ainda nao existe.
+	const PixPurchaseInfo before = getPurchaseInfo(requestId);
+	if (before.qrModuleCount != 0 || !before.qrModules.empty()) return false;
+
+	const int size = 21;
+	std::string grid;
+	for (int row = 0; row < size; ++row)
+	{
+		if (row > 0) grid.push_back('\n');
+		for (int column = 0; column < size; ++column)
+			grid.push_back(((row * 3 + column * 5) % 7) < 3 ? '1' : '0');
+	}
+	const std::string canonical = "1\n" + requestId + "\n" + std::to_string(size) + "\n" + grid;
+	const std::string contents = "TURBORAMA_QR_MATRIX_V1\n" + requestId + "\n"
+		+ std::to_string(size) + "\n" + hmacSha256Hex(key, canonical) + "\n" + grid + "\n";
+	// writeAtomically usa MoveFileEx, como o agente externo, e deliberadamente
+	// nao limpa o cache privado do frontend.
+	if (!writeAtomically(matrix, contents)) return false;
+
+	const PixPurchaseInfo after = getPurchaseInfo(requestId);
+	return after.qrModuleCount == size
+		&& after.qrModules.size() == (size_t)size * size
+		&& after.qrMatrixPath == matrix;
 }
 
 std::vector<std::string> PixBridge::processApprovedCredits()
@@ -417,7 +607,7 @@ std::vector<std::string> PixBridge::processApprovedCredits()
 		}
 
 		const std::string destination = Utils::FileSystem::combine(processed, fileName);
-		if (Utils::FileSystem::exists(destination))
+		if (Utils::FileSystem::exists(destination, false))
 		{
 			ApprovedCredit previous;
 			if (readApprovedCredit(destination, previous) && previous.transactionId == credit.transactionId

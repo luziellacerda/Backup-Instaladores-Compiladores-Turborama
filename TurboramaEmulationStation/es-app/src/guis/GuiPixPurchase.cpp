@@ -1,12 +1,14 @@
 #include "guis/GuiPixPurchase.h"
 
 #include "LocaleES.h"
+#include "Log.h"
 #include "Window.h"
 #include "guis/GuiMsgBox.h"
 #include "renderers/Renderer.h"
 #include "resources/Font.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
 #include <sstream>
 
@@ -23,6 +25,8 @@ GuiPixPurchase::GuiPixPurchase(Window* window)
 	setSize((float)Renderer::getScreenWidth(), (float)Renderer::getScreenHeight());
 	addChild(&mMenu); addChild(&mPanel); addChild(&mTitle); addChild(&mStatus);
 	addChild(&mPackageText); addChild(&mQrImage); addChild(&mInstruction);
+	mQrImage.setAllowFading(false);
+	mQrImage.setIsLinear(false);
 	mPanel.setVisible(false); mTitle.setVisible(false); mStatus.setVisible(false);
 	mPackageText.setVisible(false); mQrImage.setVisible(false); mInstruction.setVisible(false);
 	buildPackageMenu();
@@ -87,6 +91,10 @@ void GuiPixPurchase::startPurchase(const PixPackage& package)
 void GuiPixPurchase::showWaitingLayout()
 {
 	mMenu.setVisible(false);
+	mLoadedQrPath.clear();
+	mQrModules.clear();
+	mQrModuleCount = 0;
+	mQrImage.setVisible(false);
 	const float width = (float)Renderer::getScreenWidth(), height = (float)Renderer::getScreenHeight();
 	mPanel.setPosition(width * 0.17f, height * 0.055f); mPanel.setSize(width * 0.66f, height * 0.86f);
 	mPanel.setCornerSize(height * 0.025f, height * 0.025f); mPanel.setVisible(true);
@@ -94,7 +102,9 @@ void GuiPixPurchase::showWaitingLayout()
 	mStatus.setPosition(width * 0.20f, height * 0.19f); mStatus.setSize(width * 0.60f, height * 0.07f); mStatus.setVisible(true);
 	mPackageText.setText(std::to_string(mSelectedPackage.minutes) + _(" MINUTOS  |  ") + formatPrice(mSelectedPackage.amountCents));
 	mPackageText.setPosition(width * 0.20f, height * 0.255f); mPackageText.setSize(width * 0.60f, height * 0.065f); mPackageText.setVisible(true);
-	mQrImage.setPosition(width * 0.365f, height * 0.325f); mQrImage.setMaxSize(width * 0.27f, height * 0.43f);
+	mQrAreaPosition = Vector2f(width * 0.365f, height * 0.325f);
+	mQrAreaSize = std::min(width * 0.27f, height * 0.43f);
+	mQrImage.setPosition(mQrAreaPosition.x(), mQrAreaPosition.y()); mQrImage.setMaxSize(mQrAreaSize, mQrAreaSize);
 	mInstruction.setPosition(width * 0.22f, height * 0.765f); mInstruction.setSize(width * 0.56f, height * 0.105f); mInstruction.setVisible(true);
 	updateHelpPrompts();
 }
@@ -102,9 +112,27 @@ void GuiPixPurchase::showWaitingLayout()
 void GuiPixPurchase::pollPurchase()
 {
 	const PixPurchaseInfo info = PixBridge::getPurchaseInfo(mRequestId);
-	if (!info.qrImagePath.empty() && info.qrImagePath != mLoadedQrPath)
+	if (info.qrModuleCount > 0
+		&& info.qrModules.size() == (size_t)info.qrModuleCount * info.qrModuleCount
+		&& info.qrMatrixPath != mLoadedQrPath)
 	{
-		mLoadedQrPath = info.qrImagePath; mQrImage.setImage(mLoadedQrPath); mQrImage.setVisible(true);
+		mQrModules = info.qrModules;
+		mQrModuleCount = info.qrModuleCount;
+		mLoadedQrPath = info.qrMatrixPath;
+		mQrImage.setVisible(false);
+		LOG(LogInfo) << "[PIX] matriz autenticada do QR carregada: " << mQrModuleCount << "x" << mQrModuleCount;
+	}
+	else if (mQrModules.empty() && !info.qrImageData.empty() && info.qrImagePath != mLoadedQrPath)
+	{
+		// Carrega diretamente os bytes ja lidos e validados pela ponte. O fluxo
+		// anterior entregava somente o caminho de um PNG recem-criado; nesta
+		// versao do frontend o cache de texturas mantinha a area do QR vazia.
+		mQrImage.setImage((const char*)info.qrImageData.data(), info.qrImageData.size());
+		if (mQrImage.hasImage())
+		{
+			mLoadedQrPath = info.qrImagePath;
+			mQrImage.setVisible(true);
+		}
 	}
 	const int remainingSeconds = std::max(0, mOptions.paymentExpirationMinutes * 60 - mElapsedMs / 1000);
 	const std::string clock = std::to_string(remainingSeconds / 60) + ':' + (remainingSeconds % 60 < 10 ? "0" : "") + std::to_string(remainingSeconds % 60);
@@ -123,8 +151,47 @@ void GuiPixPurchase::pollPurchase()
 		finishWithMessage(_("PAGAMENTO CONFIRMADO!\n\nO tempo foi adicionado e ja esta disponivel para jogar."), true); break;
 	case PixPurchaseState::Cancelled: finishWithMessage(_("Este QR PIX expirou ou foi cancelado. Nenhum tempo foi cobrado."), false); break;
 	case PixPurchaseState::SecurityError:
-	case PixPurchaseState::Rejected: finishWithMessage(_("O pedido PIX nao pode ser validado. Nenhum tempo foi liberado."), false); break;
+		finishWithMessage(_("O pedido PIX nao pode ser validado. Nenhum tempo foi liberado."), false); break;
+	case PixPurchaseState::Rejected:
+		finishWithMessage(info.error.empty()
+			? _("O Mercado Pago recusou este pedido PIX. Nenhum tempo foi liberado.")
+			: _("O Mercado Pago recusou este pedido PIX. Nenhum tempo foi liberado.\n\nDetalhe: ") + info.error, false);
+		break;
 	case PixPurchaseState::Unknown: mStatus.setText(mElapsedMs < 15000 ? _("ENVIANDO PEDIDO AO SERVICO PIX...") : _("SERVICO PIX DEMORANDO. AGUARDE OU VOLTE.")); break;
+	}
+}
+
+void GuiPixPurchase::renderQrMatrix(const Transform4x4f& transform)
+{
+	if (mQrModuleCount <= 0 || mQrAreaSize <= 0
+		|| mQrModules.size() != (size_t)mQrModuleCount * mQrModuleCount) return;
+	const float moduleSize = std::floor(mQrAreaSize / mQrModuleCount);
+	if (moduleSize < 1.f) return;
+	const float renderedSize = moduleSize * mQrModuleCount;
+	const float x = mQrAreaPosition.x() + (mQrAreaSize - renderedSize) * 0.5f;
+	const float y = mQrAreaPosition.y() + (mQrAreaSize - renderedSize) * 0.5f;
+	const float border = std::max(4.f, moduleSize);
+	Renderer::setMatrix(transform);
+	Renderer::drawRect(x - border, y - border, renderedSize + border * 2.f,
+		renderedSize + border * 2.f, 0xFFFFFFFF);
+
+	// Desenha cada sequencia escura como um unico retangulo. Assim o QR fica
+	// nitido e o numero de chamadas ao renderer permanece pequeno.
+	for (int row = 0; row < mQrModuleCount; ++row)
+	{
+		int runStart = -1;
+		for (int column = 0; column <= mQrModuleCount; ++column)
+		{
+			const bool dark = column < mQrModuleCount
+				&& mQrModules[(size_t)row * mQrModuleCount + column] != 0;
+			if (dark && runStart < 0) runStart = column;
+			else if (!dark && runStart >= 0)
+			{
+				Renderer::drawRect(x + runStart * moduleSize, y + row * moduleSize,
+					(column - runStart) * moduleSize, moduleSize, 0x000000FF);
+				runStart = -1;
+			}
+		}
 	}
 }
 
@@ -162,6 +229,7 @@ void GuiPixPurchase::render(const Transform4x4f& parentTrans)
 	Transform4x4f trans = parentTrans * getTransform();
 	if (mWaiting) { Renderer::setMatrix(trans); Renderer::drawRect(0.f, 0.f, mSize.x(), mSize.y(), 0x020711E8); }
 	renderChildren(trans);
+	if (mWaiting) renderQrMatrix(trans);
 }
 
 std::vector<HelpPrompt> GuiPixPurchase::getHelpPrompts()

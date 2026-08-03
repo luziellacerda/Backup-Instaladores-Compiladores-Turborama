@@ -1,17 +1,25 @@
-# Editor externo do Access Token PIX
+# Editor seguro do Access Token PIX
 
-Utilitário gráfico nativo para o proprietário colar ou importar de um arquivo TXT o Access Token do Mercado Pago.
+Aplicativo gráfico nativo para o proprietário colar ou importar de um arquivo TXT o Access Token do Mercado Pago.
 
-- Grava em `D:\emulationstation\.emulationstation\pix\secret.dat`.
-- Usa Windows DPAPI com a mesma entropia do EmulationStation e do agente PIX.
-- Nunca grava o token em texto simples.
-- Cria backup da credencial anterior.
-- Reinicia somente o agente PIX depois de salvar.
-- Não altera ROMs, temas, créditos ou `owner-settings.json`.
+- Interface comercial com identidade LZ Games / TurboRama.
+- O token fica mascarado por padrão e pode ser exibido temporariamente.
+- Valida o formato `APP_USR-` antes do envio.
+- Cifra a credencial com a chave pública do agente PIX.
+- Aguarda a confirmação do agente antes de informar sucesso.
+- O agente protege a credencial pelo Windows para esta máquina e usuário.
+- Nunca grava o Access Token como texto comum.
+- Não altera ROMs, temas, créditos ou o cadastro do proprietário.
 
 Compilação no Prompt de Ferramentas Nativas x64 do Visual Studio:
 
 ```text
 rc TurboRamaPixCredentialEditor.rc
-cl /std:c++17 /EHsc /O2 /W4 TurboRamaPixCredentialEditor.cpp TurboRamaPixCredentialEditor.res /link user32.lib gdi32.lib crypt32.lib comdlg32.lib shell32.lib /SUBSYSTEM:WINDOWS /OUT:CONFIGURAR-ACCESS-TOKEN-PIX.exe
+cl /std:c++17 /utf-8 /EHsc /O2 /W4 TurboRamaPixCredentialEditor.cpp TurboRamaPixCredentialEditor.res /link user32.lib gdi32.lib crypt32.lib advapi32.lib bcrypt.lib comdlg32.lib shell32.lib /SUBSYSTEM:WINDOWS /OUT:CONFIGURAR-ACCESS-TOKEN-PIX.exe
+```
+
+Autoteste sem credenciais reais:
+
+```text
+CONFIGURAR-ACCESS-TOKEN-PIX.exe --self-test
 ```

@@ -7,6 +7,7 @@ struct PixOwnerSettings
 {
 	int schemaVersion = 1;
 	bool enabled = false;
+	std::string provider = "mercadopago";
 	std::string accountId;
 	std::string storeExternalId = "TURBORAMALOJA01";
 	std::string storeName = "TurboRama";
@@ -15,6 +16,8 @@ struct PixOwnerSettings
 	std::string postalCode;
 	std::string streetNumber;
 	std::string reference = "TurboRama";
+	std::string adapterBaseUrl = "http://127.0.0.1:8765/";
+	std::string adapterProviderId = "meu-banco";
 	std::map<int, long long> pricesCents = {
 		{ 15, 750 }, { 30, 1500 }, { 45, 2250 }, { 60, 3000 }, { 120, 6000 }
 	};

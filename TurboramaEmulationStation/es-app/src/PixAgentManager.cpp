@@ -206,6 +206,7 @@ PixOwnerSettings PixAgentManager::loadOwnerSettings()
 		rapidjson::Document document;
 		if (document.Parse(text.c_str()).HasParseError() || !document.IsObject()) return settings;
 		settings.enabled = jsonBool(document, "enabled");
+		settings.provider = jsonString(document, "provider", settings.provider);
 		settings.accountId = jsonString(document, "accountId");
 		settings.storeExternalId = jsonString(document, "storeExternalId", settings.storeExternalId);
 		settings.storeName = jsonString(document, "storeName", settings.storeName);
@@ -214,6 +215,8 @@ PixOwnerSettings PixAgentManager::loadOwnerSettings()
 		settings.postalCode = jsonString(document, "postalCode");
 		settings.streetNumber = jsonString(document, "streetNumber");
 		settings.reference = jsonString(document, "reference", settings.reference);
+		settings.adapterBaseUrl = jsonString(document, "adapterBaseUrl", settings.adapterBaseUrl);
+		settings.adapterProviderId = jsonString(document, "adapterProviderId", settings.adapterProviderId);
 		if (document.HasMember("packagePricesCents") && document["packagePricesCents"].IsObject())
 		{
 			for (const int minutes : { 15, 30, 45, 60, 120 })
@@ -230,14 +233,40 @@ PixOwnerSettings PixAgentManager::loadOwnerSettings()
 
 bool PixAgentManager::validateOwnerSettings(const PixOwnerSettings& settings, std::string& error)
 {
-	if (settings.accountId.size() < 5 || settings.accountId.size() > 24
+	for (const int minutes : { 15, 30, 45, 60, 120 })
+	{
+		auto found = settings.pricesCents.find(minutes);
+		if (found == settings.pricesCents.end() || found->second < 50 || found->second > 100000000)
+		{
+			error = "Todos os pacotes precisam de um preco valido.";
+			return false;
+		}
+	}
+	std::string provider = settings.provider;
+	std::transform(provider.begin(), provider.end(), provider.begin(), [](unsigned char ch) { return (char)std::tolower(ch); });
+	if (provider != "mercadopago" && provider != "adapter")
+		error = "Selecione Mercado Pago ou Adaptador bancario.";
+	else if (provider == "adapter")
+	{
+		if (settings.adapterProviderId.size() < 2 || settings.adapterProviderId.size() > 64
+			|| !std::all_of(settings.adapterProviderId.begin(), settings.adapterProviderId.end(), [](unsigned char ch) {
+				return std::isalnum(ch) != 0 || ch == '-' || ch == '_';
+			}))
+			error = "Informe um identificador valido para o adaptador bancario.";
+		else if (settings.adapterBaseUrl.rfind("https://", 0) != 0
+			&& settings.adapterBaseUrl.rfind("http://127.0.0.1", 0) != 0
+			&& settings.adapterBaseUrl.rfind("http://localhost", 0) != 0)
+			error = "O adaptador deve usar HTTPS ou HTTP local neste computador.";
+		return error.empty();
+	}
+	else if (settings.accountId.size() < 5 || settings.accountId.size() > 24
 		|| !std::all_of(settings.accountId.begin(), settings.accountId.end(), [](unsigned char ch) { return std::isdigit(ch) != 0; }))
 		error = "Informe o User ID numerico da conta Mercado Pago.";
 	else if (!onlyLettersAndNumbers(settings.storeExternalId, 60))
 		error = "O identificador da loja deve ter somente letras e numeros.";
 	else if (settings.storeName.size() < 2 || settings.storeName.size() >= 60)
 		error = "Informe um nome valido para a loja.";
-	else if (!onlyLettersAndNumbers(settings.posExternalId, 39))
+	else if (!onlyLettersAndNumbers(settings.posExternalId, 40))
 		error = "O identificador do caixa deve ter somente letras e numeros.";
 	else if (settings.posName.size() < 2 || settings.posName.size() >= 45)
 		error = "Informe um nome valido para o caixa.";
@@ -248,18 +277,6 @@ bool PixAgentManager::validateOwnerSettings(const PixOwnerSettings& settings, st
 		if (cep.size() != 8) error = "Informe um CEP com 8 numeros.";
 		else if (settings.streetNumber.empty() || settings.streetNumber.size() > 20) error = "Informe o numero do estabelecimento.";
 		else if (settings.reference.empty() || settings.reference.size() > 120) error = "Informe uma referencia do estabelecimento.";
-		else
-		{
-			for (const int minutes : { 15, 30, 45, 60, 120 })
-			{
-				auto found = settings.pricesCents.find(minutes);
-				if (found == settings.pricesCents.end() || found->second < 50 || found->second > 100000000)
-				{
-					error = "Todos os pacotes precisam de um preco valido.";
-					break;
-				}
-			}
-		}
 	}
 	return error.empty();
 }
@@ -308,12 +325,11 @@ bool PixAgentManager::saveOwnerSettings(const PixOwnerSettings& requested, const
 		return std::isdigit(ch) == 0;
 	}), settings.postalCode.end());
 	if (!validateOwnerSettings(settings, error)) return false;
-	if (newAccessToken.empty() && !hasProtectedToken())
+	if (!newAccessToken.empty())
 	{
-		error = "Informe o Access Token do Mercado Pago.";
+		error = "Por seguranca, cole o Access Token somente em CONFIGURAR-ACCESS-TOKEN-PIX.exe.";
 		return false;
 	}
-	if (!newAccessToken.empty() && !protectAndSaveToken(newAccessToken, error)) return false;
 
 	rapidjson::StringBuffer buffer;
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
@@ -321,6 +337,7 @@ bool PixAgentManager::saveOwnerSettings(const PixOwnerSettings& requested, const
 	writer.Key("schemaVersion"); writer.Int(1);
 	writer.Key("enabled"); writer.Bool(true);
 	auto write = [&writer](const char* name, const std::string& value) { writer.Key(name); writer.String(value.c_str()); };
+	write("provider", settings.provider);
 	write("accountId", settings.accountId);
 	write("storeExternalId", settings.storeExternalId);
 	write("storeName", settings.storeName);
@@ -329,6 +346,8 @@ bool PixAgentManager::saveOwnerSettings(const PixOwnerSettings& requested, const
 	write("postalCode", settings.postalCode);
 	write("streetNumber", settings.streetNumber);
 	write("reference", settings.reference);
+	write("adapterBaseUrl", settings.adapterBaseUrl);
+	write("adapterProviderId", settings.adapterProviderId);
 	writer.Key("packagePricesCents"); writer.StartObject();
 	for (const auto& price : settings.pricesCents) { writer.Key(std::to_string(price.first).c_str()); writer.Int64(price.second); }
 	writer.EndObject();
@@ -340,7 +359,6 @@ bool PixAgentManager::startIfConfigured(std::string* error)
 {
 	const PixOwnerSettings settings = loadOwnerSettings();
 	if (!settings.enabled) { if (error) *error = "PIX ainda nao foi configurado pelo proprietario."; return false; }
-	if (!hasProtectedToken()) { if (error) *error = "Access Token PIX ainda nao foi configurado."; return false; }
 	const std::string executable = agentExecutable();
 	if (!agentIsInstalled()) { if (error) *error = "Agente PIX nao foi instalado."; return false; }
 #ifdef _WIN32
@@ -403,7 +421,6 @@ std::string PixAgentManager::statusText()
 {
 	const PixOwnerSettings settings = loadOwnerSettings();
 	if (!settings.enabled) return "NAO CONFIGURADO";
-	if (!hasProtectedToken()) return "FALTA ACCESS TOKEN";
 	if (!agentIsInstalled()) return "AGENTE NAO INSTALADO";
 	const std::string setupText = Utils::FileSystem::readAllText(setupStatusFile());
 	if (!setupText.empty() && setupText.size() < 32768)
@@ -411,11 +428,22 @@ std::string PixAgentManager::statusText()
 		rapidjson::Document setup;
 		if (!setup.Parse(setupText.c_str()).HasParseError() && setup.IsObject())
 		{
-			const std::string state = jsonString(setup, "state");
-			if (state == "error") return "ERRO: " + jsonString(setup, "message", "CONFIGURACAO RECUSADA");
-			if (state == "configuring") return "CONFIGURANDO MERCADO PAGO...";
+			// Um status antigo nao pode mascarar a situacao atual para sempre.
+			// O agente atualiza este arquivo a cada tentativa; depois de dois
+			// minutos a interface ignora a copia antiga e mostra a ausencia de
+			// token ou de resposta do agente, em vez de "CONFIGURANDO" infinito.
+			const long long updated = jsonLong(setup, "updatedAtUnixSeconds");
+			const long long now = (long long)std::time(nullptr);
+			if (jsonLong(setup, "schemaVersion") == 1 && updated >= now - 120 && updated <= now + 120)
+			{
+				const std::string state = jsonString(setup, "state");
+				if (state == "error") return "ERRO: " + jsonString(setup, "message", "CONFIGURACAO RECUSADA");
+				if (state == "waiting_network") return "SEM CONEXAO: " + jsonString(setup, "message", "AGUARDANDO INTERNET");
+				if (state == "configuring") return "CONFIGURANDO: " + jsonString(setup, "message", "MERCADO PAGO...");
+			}
 		}
 	}
+	if (!hasProtectedToken()) return "FALTA ACCESS TOKEN - USE O EDITOR DO WINDOWS";
 	const std::string text = Utils::FileSystem::readAllText(statusFile());
 	if (text.empty() || text.size() > 16384) return "AGENTE SEM RESPOSTA";
 	rapidjson::Document document;

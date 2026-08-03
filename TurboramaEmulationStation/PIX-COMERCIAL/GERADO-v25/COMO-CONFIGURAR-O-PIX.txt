@@ -1,0 +1,39 @@
+﻿TURBORAMA / LZ GAMES - CONFIGURAÇÃO COMERCIAL PIX v25
+
+INSTALAÇÃO
+1. Execute INSTALAR-TURBORAMA-PIX-COMERCIAL-v25-ULTRA-FINAL.exe.
+2. Abra D:\emulationstation\CONFIGURAR-USER-TOKEN-PIX.exe.
+3. Escolha Mercado Pago ou Outro banco / Adaptador.
+4. Para Mercado Pago, cole somente o Access Token. Não use Public Key,
+   Client ID, Client Secret nem ID da aplicação no lugar do Access Token.
+5. Informe estabelecimento, caixa, CEP, número, referência e preços.
+6. Clique em VALIDAR E ATIVAR PIX.
+
+CEP E ENDEREÇO
+- O proprietário informa somente CEP e número/complemento.
+- O programa consulta fontes redundantes para obter rua, cidade, estado e a
+  localização exigida internamente pela API do Mercado Pago.
+- Não existe campo de latitude/longitude para o usuário preencher.
+- O endereço confirmado fica em cache; falhas temporárias podem ser retomadas
+  sem digitar novamente o cadastro.
+- Uma localização recusada pelo provedor não é reutilizada indefinidamente.
+- OpenStreetMap/Nominatim é usado somente como último recurso, com cache e
+  limite de requisições. Uma instância própria pode ser configurada pela
+  variável TURBORAMA_PIX_NOMINATIM_BASE_URL.
+
+CONTA, LOJA E PDV
+- O User ID real é identificado pelo próprio Access Token.
+- Loja e PDV existentes são reaproveitados sem duplicação.
+- Ao trocar de conta ou mudar de teste para produção, o programa prepara Loja
+  e PDV vinculados à nova credencial; recursos do sandbox não servem em produção.
+
+SEGURANÇA
+- O Access Token é protegido pelo Windows e não entra no instalador ou JSON.
+- Os autotestes são locais e simulados; não criam cobrança nem movimentam dinheiro.
+- Credenciais que já foram publicadas devem ser revogadas e substituídas.
+
+DOCUMENTAÇÃO OFICIAL CONSULTADA
+https://www.mercadopago.com.br/developers/pt/docs/qr-code/create-store-and-pos
+https://www.mercadopago.com.br/developers/pt/docs/qr-code/go-to-production
+https://docs.awesomeapi.com.br/api-cep/api-busca-de-enderecos
+https://operations.osmfoundation.org/policies/nominatim/

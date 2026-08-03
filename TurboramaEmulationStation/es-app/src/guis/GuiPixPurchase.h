@@ -22,6 +22,7 @@ private:
 	void startPurchase(const PixPackage& package);
 	void showWaitingLayout();
 	void pollPurchase();
+	void renderQrMatrix(const Transform4x4f& transform);
 	void finishWithMessage(const std::string& message, bool success);
 	void closePurchase();
 	std::string formatPrice(long long cents) const;
@@ -37,6 +38,10 @@ private:
 	PixPackage mSelectedPackage;
 	std::string mRequestId;
 	std::string mLoadedQrPath;
+	std::vector<unsigned char> mQrModules;
+	Vector2f mQrAreaPosition = Vector2f::Zero();
+	float mQrAreaSize = 0;
+	int mQrModuleCount = 0;
 	int mPollElapsedMs = 0;
 	int mElapsedMs = 0;
 	bool mWaiting = false;

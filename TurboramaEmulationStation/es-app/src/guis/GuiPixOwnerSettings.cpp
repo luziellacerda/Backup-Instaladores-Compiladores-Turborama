@@ -92,30 +92,48 @@ void GuiPixOwnerSettings::rebuild()
 	mMenu.clear();
 	mMenu.setSubTitle(std::string(_("STATUS: ")) + PixAgentManager::statusText());
 
-	mMenu.addGroup(_("DADOS DO PROPRIETARIO / MERCADO PAGO"));
-	mMenu.addEntry(std::string(_("USER ID DA CONTA: ")) + (mDraft.accountId.empty() ? _("NAO INFORMADO") : mDraft.accountId), true,
-		[this] { editText(_("USER ID NUMERICO DO MERCADO PAGO"), mDraft.accountId, false, [this](const std::string& value) { mDraft.accountId = value; }); });
-	mMenu.addEntry(std::string(_("IDENTIFICADOR DA LOJA: ")) + mDraft.storeExternalId, true,
-		[this] { editText(_("IDENTIFICADOR DA LOJA - SOMENTE LETRAS E NUMEROS"), mDraft.storeExternalId, false, [this](const std::string& value) { mDraft.storeExternalId = value; }); });
-	mMenu.addEntry(std::string(_("NOME DA LOJA: ")) + mDraft.storeName, true,
-		[this] { editText(_("NOME DO ESTABELECIMENTO"), mDraft.storeName, false, [this](const std::string& value) { mDraft.storeName = value; }); });
-	mMenu.addEntry(std::string(_("IDENTIFICADOR DO CAIXA: ")) + mDraft.posExternalId, true,
-		[this] { editText(_("IDENTIFICADOR DO CAIXA - SOMENTE LETRAS E NUMEROS"), mDraft.posExternalId, false, [this](const std::string& value) { mDraft.posExternalId = value; }); });
-	mMenu.addEntry(std::string(_("NOME DO CAIXA: ")) + mDraft.posName, true,
-		[this] { editText(_("NOME DO CAIXA PIX"), mDraft.posName, false, [this](const std::string& value) { mDraft.posName = value; }); });
+	mMenu.addGroup(_("PROVEDOR PIX"));
+	mMenu.addEntry(std::string(_("PROVEDOR ATIVO: ")) + (mDraft.provider == "adapter" ? _("OUTRO BANCO / ADAPTADOR") : _("MERCADO PAGO")), true,
+		[this] { mDraft.provider = mDraft.provider == "adapter" ? "mercadopago" : "adapter"; rebuild(); });
 
-	mMenu.addGroup(_("ENDERECO DO ESTABELECIMENTO"));
-	mMenu.addEntry(std::string(_("CEP: ")) + (mDraft.postalCode.empty() ? _("NAO INFORMADO") : mDraft.postalCode), true,
-		[this] { editText(_("CEP - 8 NUMEROS"), mDraft.postalCode, false, [this](const std::string& value) { mDraft.postalCode = value; }); });
-	mMenu.addEntry(std::string(_("NUMERO / COMPLEMENTO: ")) + (mDraft.streetNumber.empty() ? _("NAO INFORMADO") : mDraft.streetNumber), true,
-		[this] { editText(_("NUMERO OU NUMERO COM COMPLEMENTO"), mDraft.streetNumber, false, [this](const std::string& value) { mDraft.streetNumber = value; }); });
-	mMenu.addEntry(std::string(_("REFERENCIA: ")) + mDraft.reference, true,
-		[this] { editText(_("REFERENCIA DO ESTABELECIMENTO"), mDraft.reference, false, [this](const std::string& value) { mDraft.reference = value; }); });
+	if (mDraft.provider == "adapter")
+	{
+		mMenu.addGroup(_("ADAPTADOR BANCARIO"));
+		mMenu.addEntry(std::string(_("ENDERECO DO ADAPTADOR: ")) + mDraft.adapterBaseUrl, true,
+			[this] { editText(_("URL HTTPS OU ENDERECO LOCAL DO ADAPTADOR"), mDraft.adapterBaseUrl, false, [this](const std::string& value) { mDraft.adapterBaseUrl = value; }); });
+		mMenu.addEntry(std::string(_("IDENTIFICADOR DO PROVEDOR: ")) + mDraft.adapterProviderId, true,
+			[this] { editText(_("IDENTIFICADOR DO ADAPTADOR"), mDraft.adapterProviderId, false, [this](const std::string& value) { mDraft.adapterProviderId = value; }); });
+	}
+	else
+	{
+		mMenu.addGroup(_("DADOS DO PROPRIETARIO / MERCADO PAGO"));
+		mMenu.addEntry(std::string(_("USER ID RECONHECIDO PELO TOKEN: ")) + (mDraft.accountId.empty() ? _("AGUARDANDO CONFIGURADOR") : mDraft.accountId), false);
+		mMenu.addEntry(std::string(_("LOJA GERENCIADA AUTOMATICAMENTE: ")) + mDraft.storeExternalId, false);
+		mMenu.addEntry(std::string(_("NOME DA LOJA: ")) + mDraft.storeName, true,
+			[this] { editText(_("NOME DO ESTABELECIMENTO"), mDraft.storeName, false, [this](const std::string& value) { mDraft.storeName = value; }); });
+		mMenu.addEntry(std::string(_("CAIXA/PDV GERENCIADO AUTOMATICAMENTE: ")) + mDraft.posExternalId, false);
+		mMenu.addEntry(std::string(_("NOME DO CAIXA: ")) + mDraft.posName, true,
+			[this] { editText(_("NOME DO CAIXA PIX"), mDraft.posName, false, [this](const std::string& value) { mDraft.posName = value; }); });
+
+		mMenu.addGroup(_("ENDERECO DO ESTABELECIMENTO"));
+		mMenu.addEntry(std::string(_("CEP: ")) + (mDraft.postalCode.empty() ? _("NAO INFORMADO") : mDraft.postalCode), true,
+			[this] { editText(_("CEP - 8 NUMEROS"), mDraft.postalCode, false, [this](const std::string& value) { mDraft.postalCode = value; }); });
+		mMenu.addEntry(std::string(_("NUMERO / COMPLEMENTO: ")) + (mDraft.streetNumber.empty() ? _("NAO INFORMADO") : mDraft.streetNumber), true,
+			[this] { editText(_("NUMERO OU NUMERO COM COMPLEMENTO"), mDraft.streetNumber, false, [this](const std::string& value) { mDraft.streetNumber = value; }); });
+		mMenu.addEntry(std::string(_("REFERENCIA: ")) + mDraft.reference, true,
+			[this] { editText(_("REFERENCIA DO ESTABELECIMENTO"), mDraft.reference, false, [this](const std::string& value) { mDraft.reference = value; }); });
+	}
 
 	mMenu.addGroup(_("CREDENCIAL PROTEGIDA"));
-	const bool tokenReady = !mPendingAccessToken.empty() || PixAgentManager::hasProtectedToken();
-	mMenu.addEntry(std::string(_("ACCESS TOKEN: ")) + (tokenReady ? _("CONFIGURADO E PROTEGIDO") : _("NAO CONFIGURADO")), true,
-		[this] { editText(_("ACCESS TOKEN - INICIA COM APP_USR-"), "", true, [this](const std::string& value) { mPendingAccessToken = value; }); });
+	mMenu.addEntry(_("CONTA E CREDENCIAL: USAR CONFIGURADOR DO WINDOWS"), true,
+		[this] {
+			mWindow->pushGui(new GuiMsgBox(mWindow,
+				_("Por seguranca, a credencial nao e digitada com o controle.\n\n"
+					"No Windows, abra:\nD:\\emulationstation\\CONFIGURAR-USER-TOKEN-PIX.exe\n\n"
+					"O programa identifica a conta real, cria ou reaproveita Loja e PDV, valida tudo e salva a credencial protegida. "
+					"Nao informe Client ID, Public Key ou ID da aplicacao como User ID."),
+				_("OK"), nullptr, ICON_INFORMATION));
+		});
 
 	mMenu.addGroup(_("PRECOS PARA O CLIENTE"));
 	for (const int minutes : { 15, 30, 45, 60, 120 })
@@ -143,16 +161,15 @@ void GuiPixOwnerSettings::rebuild()
 void GuiPixOwnerSettings::saveAndActivate()
 {
 	mWindow->pushGui(new GuiMsgBox(mWindow,
-		_("Salvar os dados deste estabelecimento e ativar o PIX?\n\n"
-			"O Access Token sera criptografado pelo Windows e nao aparecera no menu do cliente."),
+		_("Salvar as alteracoes deste estabelecimento e ativar o PIX?\n\n"
+			"Para trocar conta, credencial, Loja ou PDV, use CONFIGURAR-USER-TOKEN-PIX.exe no Windows."),
 		_("SIM, ATIVAR"), [this] {
 			std::string error;
-			if (!PixAgentManager::saveOwnerSettings(mDraft, mPendingAccessToken, error))
+			if (!PixAgentManager::saveOwnerSettings(mDraft, "", error))
 			{
 				mWindow->pushGui(new GuiMsgBox(mWindow, error, _("OK"), nullptr, ICON_ERROR));
 				return;
 			}
-			mPendingAccessToken.clear();
 			mDraft = PixAgentManager::loadOwnerSettings();
 			if (!PixAgentManager::restartIfConfigured(error))
 			{
@@ -162,7 +179,7 @@ void GuiPixOwnerSettings::saveAndActivate()
 				return;
 			}
 			mWindow->pushGui(new GuiMsgBox(mWindow,
-				_("DADOS SALVOS.\n\nO sistema esta localizando o endereco pelo CEP e configurando a loja e o caixa no Mercado Pago. Aguarde alguns segundos e use VERIFICAR SERVICO PIX."),
+				_("DADOS SALVOS.\n\nO EmulationStation preservou a conta e o provedor atuais. Para trocar o proprietario ou validar uma nova credencial, abra CONFIGURAR-USER-TOKEN-PIX.exe no Windows."),
 				_("OK"), [this] { rebuild(); }, ICON_INFORMATION));
 		},
 		_("CANCELAR"), nullptr, ICON_QUESTION));
