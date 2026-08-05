@@ -6,14 +6,21 @@
 #
 # Com conta: pesquisa o nome no ScreenScraper e baixa o video.
 # Sem conta: usa so IDs ja conhecidos na lista.
-# Destino: D:\Turborama\emulationstation\screensaver_videos
+# Destino padrao: <instalacao TurboRama>\screensaver_videos
 # ============================================================
 
 $ErrorActionPreference = "Continue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Destino   = "D:\Turborama\emulationstation\screensaver_videos"
+$InstallRoot = $env:TURBORAMA_INSTALL_ROOT
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
+  $InstallRoot = @('D:\emulationstation', 'D:\Turborama\emulationstation') |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_ 'emulationstation.exe') -PathType Leaf } |
+    Select-Object -First 1
+}
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) { $InstallRoot = 'D:\emulationstation' }
+$Destino = Join-Path ([IO.Path]::GetFullPath($InstallRoot)) 'screensaver_videos'
 $ConfigPath = Join-Path $ScriptDir "config.json"
 $Headers = @{
   "User-Agent" = "TurboRamaSSDownloader/2.0"

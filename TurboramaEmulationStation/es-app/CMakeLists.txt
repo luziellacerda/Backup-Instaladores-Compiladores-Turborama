@@ -281,19 +281,37 @@ endif()
 #-------------------------------------------------------------------------------
 # Pack embedded theme into Windows resource binary
 if(MSVC)
-	find_package(Python3 COMPONENTS Interpreter QUIET)
-	if(Python3_FOUND)
-		file(GLOB_RECURSE EMBEDDED_THEME_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/embedded-theme/*")
-		set(EMBEDDED_THEME_BIN "${CMAKE_CURRENT_SOURCE_DIR}/src/embedded_theme.bin")
-		add_custom_command(
-			OUTPUT "${EMBEDDED_THEME_BIN}"
-			COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/pack_embedded_theme.py"
-			DEPENDS "${CMAKE_SOURCE_DIR}/tools/pack_embedded_theme.py" ${EMBEDDED_THEME_FILES}
-			WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-			COMMENT "Packing embedded theme into executable resource"
-		)
-		list(APPEND ES_SOURCES "${EMBEDDED_THEME_BIN}")
+	find_program(TURBORAMA_POWERSHELL_EXECUTABLE NAMES powershell.exe powershell)
+	if(NOT TURBORAMA_POWERSHELL_EXECUTABLE)
+		message(FATAL_ERROR
+			"Windows PowerShell 5.1 is required to generate embedded_theme.bin. "
+			"The build refuses to reuse an old theme resource.")
 	endif()
+
+	set(EMBEDDED_THEME_PACKER "${CMAKE_SOURCE_DIR}/tools/Pack-EmbeddedTheme.ps1")
+	if(NOT EXISTS "${EMBEDDED_THEME_PACKER}")
+		message(FATAL_ERROR "Embedded theme packer not found: ${EMBEDDED_THEME_PACKER}")
+	endif()
+
+	file(GLOB_RECURSE EMBEDDED_THEME_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/embedded-theme/*")
+	set(EMBEDDED_THEME_BIN "${CMAKE_CURRENT_BINARY_DIR}/generated/embedded_theme.bin")
+	add_custom_command(
+		OUTPUT "${EMBEDDED_THEME_BIN}"
+		COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+		COMMAND "${TURBORAMA_POWERSHELL_EXECUTABLE}" -NoLogo -NoProfile -ExecutionPolicy Bypass
+			-File "${EMBEDDED_THEME_PACKER}"
+			-Source "${CMAKE_SOURCE_DIR}/embedded-theme"
+			-Output "${EMBEDDED_THEME_BIN}"
+		DEPENDS "${EMBEDDED_THEME_PACKER}" ${EMBEDDED_THEME_FILES}
+		WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+		COMMENT "Packing deterministic embedded theme into executable resource"
+		VERBATIM
+	)
+	add_custom_target(turborama_embedded_theme DEPENDS "${EMBEDDED_THEME_BIN}")
+	set_source_files_properties("${EMBEDDED_THEME_BIN}" PROPERTIES GENERATED TRUE)
+	set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/EmulationStation.rc" PROPERTIES
+		OBJECT_DEPENDS "${EMBEDDED_THEME_BIN}"
+		COMPILE_DEFINITIONS "TURBORAMA_EMBEDDED_THEME_BIN=\"${EMBEDDED_THEME_BIN}\"")
 endif()
 
 #-------------------------------------------------------------------------------
@@ -301,6 +319,9 @@ endif()
 include_directories(${COMMON_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_executable(emulationstation ${ES_SOURCES} ${ES_HEADERS})
 target_link_libraries(emulationstation ${COMMON_LIBRARIES} es-core)
+if(MSVC)
+	add_dependencies(emulationstation turborama_embedded_theme)
+endif()
 
 # TurboRama: copiar pasta screensaver_videos para junto do EXE compilado
 set(TURBORAMA_SCREENSAVER_VIDEOS_SRC "${CMAKE_SOURCE_DIR}/screensaver_videos")

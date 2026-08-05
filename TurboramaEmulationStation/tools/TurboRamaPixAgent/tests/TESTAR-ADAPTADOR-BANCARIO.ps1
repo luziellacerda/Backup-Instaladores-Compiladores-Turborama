@@ -116,13 +116,27 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Health check falhou: $LASTEXITCODE" }
 
     $requestId = 'PIXADAPTERE2E'
+    $beneficiaryType = 'player'
+    $beneficiaryId = 'player_ADAPTERE2E_0123456789abcdef'
     $requestDirectory = Join-Path $bridge 'requests'
     New-Item -ItemType Directory -Force -Path $requestDirectory | Out-Null
+    $requestedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $expiresAt = $requestedAt + 15 * 60
+    $canonical = "2`n$requestId`n15`n750`n$requestedAt`n$expiresAt`n$beneficiaryType`n$beneficiaryId"
+    $signingKey = [Convert]::FromBase64String((Get-Content -LiteralPath (Join-Path $bridge 'bridge.key') -Raw).Trim())
+    $hmac = [Security.Cryptography.HMACSHA256]::new($signingKey)
+    try { $signature = ([BitConverter]::ToString($hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonical)))).Replace('-', '').ToLowerInvariant() }
+    finally { $hmac.Dispose(); [Array]::Clear($signingKey, 0, $signingKey.Length) }
     $request = @{
+        schemaVersion = 2
         id = $requestId
         minutes = 15
         amountCents = 750
-        requestedAt = [DateTimeOffset]::UtcNow.ToString('o')
+        requestedAtUnixSeconds = $requestedAt
+        expiresAtUnixSeconds = $expiresAt
+        beneficiaryType = $beneficiaryType
+        beneficiaryId = $beneficiaryId
+        signature = $signature
     }
     $request | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $requestDirectory "$requestId.request.json") -Encoding UTF8
 
@@ -139,7 +153,16 @@ try {
     $creditFile = Join-Path $bridge "approved\$requestId.credit.json"
     if (-not (Test-Path -LiteralPath $creditFile)) { throw 'Credito assinado nao foi publicado.' }
     $credit = Get-Content -LiteralPath $creditFile -Raw | ConvertFrom-Json
-    if ($credit.provider -ne 'adapter' -or [int]$credit.minutes -ne 15 -or [long]$credit.amountCents -ne 750 -or $credit.signature -notmatch '^[a-f0-9]{64}$') {
+    $expectedEventExpiry = [long]$credit.approvedAtUnixSeconds + 30 * 24 * 60 * 60
+    $invalidCredit = [int]$credit.schemaVersion -ne 2 `
+        -or $credit.provider -ne 'adapter' `
+        -or [int]$credit.minutes -ne 15 `
+        -or [long]$credit.amountCents -ne 750 `
+        -or $credit.beneficiaryType -ne $beneficiaryType `
+        -or $credit.beneficiaryId -ne $beneficiaryId `
+        -or $credit.signature -notmatch '^[a-f0-9]{64}$' `
+        -or [long]$credit.eventExpiresAtUnixSeconds -ne $expectedEventExpiry
+    if ($invalidCredit) {
         throw 'Credito publicado contem dados invalidos.'
     }
     if (Test-Path -LiteralPath $qrFile) { throw 'QR nao foi removido depois da aprovacao.' }

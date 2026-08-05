@@ -19,7 +19,7 @@ public:
 private:
 	void buildPackageMenu();
 	void confirmPackage(const PixPackage& package);
-	void startPurchase(const PixPackage& package);
+	void startPurchase(const PixPackage& package, const PixBeneficiary& beneficiary);
 	void showWaitingLayout();
 	void pollPurchase();
 	void renderQrMatrix(const Transform4x4f& transform);
@@ -36,6 +36,7 @@ private:
 	TextComponent mInstruction;
 	PixPublicOptions mOptions;
 	PixPackage mSelectedPackage;
+	PixBeneficiary mBeneficiary;
 	std::string mRequestId;
 	std::string mLoadedQrPath;
 	std::vector<unsigned char> mQrModules;

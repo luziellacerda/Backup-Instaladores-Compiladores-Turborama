@@ -2,6 +2,7 @@
 #ifndef ES_CORE_PLATFORM_H
 #define ES_CORE_PLATFORM_H
 
+#include <functional>
 #include <string>
 
 #ifdef WIN32
@@ -40,6 +41,10 @@ namespace Utils
 			bool waitForExit;
 			bool showWindow;
 			Window* window;
+			// Chamado durante a espera com segundos decorridos. Se retornar false,
+			// o Job Object do processo e encerrado quando a opcao abaixo estiver ativa.
+			std::function<bool(long)> pollCallback;
+			bool killProcessTreeOnCallbackFalse;
 #ifndef WIN32
 			std::string stderrFilename;
 			std::string stdoutFilename;

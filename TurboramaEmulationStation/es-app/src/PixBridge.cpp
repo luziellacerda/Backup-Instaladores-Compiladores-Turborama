@@ -41,6 +41,23 @@ namespace
 			&& value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
 	}
 
+	bool readTextLimited(const std::string& path, size_t maximumBytes, std::string& text)
+	{
+		text.clear();
+		std::ifstream input(path, std::ios::binary | std::ios::ate);
+		if (!input) return false;
+		const std::streamoff length = input.tellg();
+		if (length < 0 || (unsigned long long)length > maximumBytes) return false;
+		input.seekg(0, std::ios::beg);
+		text.resize((size_t)length);
+		if (length > 0 && !input.read(&text[0], (std::streamsize)length))
+		{
+			text.clear();
+			return false;
+		}
+		return true;
+	}
+
 	bool readQrPng(const std::string& path, std::vector<unsigned char>& data)
 	{
 		data.clear();
@@ -85,37 +102,41 @@ namespace
 
 	bool extractString(const std::string& json, const std::string& name, const std::string& pattern, std::string& value)
 	{
-		std::smatch match;
 		const std::regex expression("\\\"" + name + "\\\"\\s*:\\s*\\\"(" + pattern + ")\\\"");
-		if (!std::regex_search(json, match, expression)) return false;
-		value = match[1].str();
+		std::sregex_iterator match(json.begin(), json.end(), expression), end;
+		if (match == end) return false;
+		value = (*match)[1].str();
+		if (++match != end) return false;
 		return true;
 	}
 
 	bool extractLong(const std::string& json, const std::string& name, long long& value)
 	{
-		std::smatch match;
 		const std::regex expression("\\\"" + name + "\\\"\\s*:\\s*([0-9]{1,18})");
-		if (!std::regex_search(json, match, expression)) return false;
-		try { value = std::stoll(match[1].str()); }
+		std::sregex_iterator match(json.begin(), json.end(), expression), end;
+		if (match == end) return false;
+		try { value = std::stoll((*match)[1].str()); }
 		catch (...) { return false; }
+		if (++match != end) return false;
 		return true;
 	}
 
 	bool extractBool(const std::string& json, const std::string& name, bool& value)
 	{
-		std::smatch match;
 		const std::regex expression("\\\"" + name + "\\\"\\s*:\\s*(true|false)");
-		if (!std::regex_search(json, match, expression)) return false;
-		value = match[1].str() == "true";
+		std::sregex_iterator match(json.begin(), json.end(), expression), end;
+		if (match == end) return false;
+		value = (*match)[1].str() == "true";
+		if (++match != end) return false;
 		return true;
 	}
 
 	bool readOwnerSetupMessage(std::string& message)
 	{
 		message.clear();
-		const std::string json = Utils::FileSystem::readAllText(Utils::FileSystem::combine(pixRoot(), "owner-setup-status.json"));
-		if (json.empty() || json.size() > 4096) return false;
+		std::string json;
+		if (!readTextLimited(Utils::FileSystem::combine(pixRoot(), "owner-setup-status.json"), 4096, json)
+			|| json.empty()) return false;
 		long long schema = 0, updated = 0;
 		std::string state, candidate;
 		if (!extractLong(json, "schemaVersion", schema) || schema != 1
@@ -129,20 +150,6 @@ namespace
 			if (character < 32 || character == 127) return false;
 		message = candidate;
 		return !message.empty();
-	}
-
-	std::string utcIso8601()
-	{
-		const std::time_t now = std::time(nullptr);
-		std::tm utc{};
-#ifdef _WIN32
-		gmtime_s(&utc, &now);
-#else
-		gmtime_r(&now, &utc);
-#endif
-		std::ostringstream out;
-		out << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
-		return out.str();
 	}
 
 	std::string randomRequestId()
@@ -279,8 +286,8 @@ namespace
 	{
 		modules.clear();
 		moduleCount = 0;
-		const std::string text = Utils::FileSystem::readAllText(path);
-		if (text.size() < 200 || text.size() > 70000) return false;
+		std::string text;
+		if (!readTextLimited(path, 70000, text) || text.size() < 200) return false;
 
 		std::vector<std::string> lines;
 		std::istringstream input(text);
@@ -315,8 +322,9 @@ namespace
 			}
 		}
 
-		const std::vector<unsigned char> key = decodeBase64(
-			Utils::FileSystem::readAllText(Utils::FileSystem::combine(root, "bridge.key")));
+		std::string keyText;
+		if (!readTextLimited(Utils::FileSystem::combine(root, "bridge.key"), 4096, keyText)) return false;
+		const std::vector<unsigned char> key = decodeBase64(keyText);
 		if (key.size() != 32) { modules.clear(); return false; }
 		std::string signature = lines[3];
 		std::transform(signature.begin(), signature.end(), signature.begin(),
@@ -333,32 +341,135 @@ namespace
 
 	struct ApprovedCredit
 	{
+		int schemaVersion = 0;
 		std::string transactionId;
 		int minutes = 0;
 		long long amountCents = 0;
 		std::string provider;
 		std::string providerOrderId;
+		long long requestExpiresAt = 0;
+		std::string beneficiaryType;
+		std::string beneficiaryId;
 		long long approvedAt = 0;
+		long long eventExpiresAt = 0;
 		std::string signature;
 	};
 
+	bool validBeneficiary(const std::string& type, const std::string& id)
+	{
+		return (type == "player" || type == "guest")
+			&& id.size() >= 16 && id.size() <= 128
+			&& std::all_of(id.begin(), id.end(), [](unsigned char ch) {
+				return std::isalnum(ch) || ch == '-' || ch == '_';
+			});
+	}
+
 	bool readApprovedCredit(const std::string& file, ApprovedCredit& credit)
 	{
-		const std::string json = Utils::FileSystem::readAllText(file);
-		if (json.empty() || json.size() > 16384) return false;
+		std::string json;
+		if (!readTextLimited(file, 16384, json) || json.empty()) return false;
 		long long schema = 0;
 		long long minutes = 0;
-		if (!extractLong(json, "schemaVersion", schema) || schema != 1) return false;
+		if (!extractLong(json, "schemaVersion", schema) || schema != 2) return false;
+		credit.schemaVersion = (int)schema;
 		if (!extractString(json, "transactionId", "[A-Za-z0-9_-]{1,64}", credit.transactionId)) return false;
 		if (!extractLong(json, "minutes", minutes) || minutes < 1 || minutes > 480) return false;
 		credit.minutes = (int)minutes;
 		if (!extractLong(json, "amountCents", credit.amountCents) || credit.amountCents < 1 || credit.amountCents > 100000000) return false;
 		if (!extractString(json, "provider", "mercadopago|mock|adapter", credit.provider)) return false;
 		if (!extractString(json, "providerOrderId", "[A-Za-z0-9_-]{1,128}", credit.providerOrderId)) return false;
+		if (!extractLong(json, "requestExpiresAtUnixSeconds", credit.requestExpiresAt)) return false;
+		if (!extractString(json, "beneficiaryType", "player|guest", credit.beneficiaryType)) return false;
+		if (!extractString(json, "beneficiaryId", "[A-Za-z0-9_-]{16,128}", credit.beneficiaryId)) return false;
+		if (!validBeneficiary(credit.beneficiaryType, credit.beneficiaryId)) return false;
 		if (!extractLong(json, "approvedAtUnixSeconds", credit.approvedAt)) return false;
+		if (!extractLong(json, "eventExpiresAtUnixSeconds", credit.eventExpiresAt)) return false;
 		if (!extractString(json, "signature", "[A-Fa-f0-9]{64}", credit.signature)) return false;
 		std::transform(credit.signature.begin(), credit.signature.end(), credit.signature.begin(), [](unsigned char ch) { return (char)std::tolower(ch); });
 		return true;
+	}
+
+	bool readLegacyApprovedCredit(const std::string& file, ApprovedCredit& credit)
+	{
+		std::string json;
+		if (!readTextLimited(file, 16384, json) || json.empty()) return false;
+		long long schema = 0, minutes = 0;
+		if (!extractLong(json, "schemaVersion", schema) || schema != 1) return false;
+		credit.schemaVersion = 1;
+		if (!extractString(json, "transactionId", "[A-Za-z0-9_-]{1,64}", credit.transactionId)) return false;
+		if (!extractLong(json, "minutes", minutes) || minutes < 1 || minutes > 480) return false;
+		credit.minutes = (int)minutes;
+		if (!extractLong(json, "amountCents", credit.amountCents)
+			|| credit.amountCents < 1 || credit.amountCents > 100000000) return false;
+		if (!extractString(json, "provider", "mercadopago|mock|adapter", credit.provider)) return false;
+		if (!extractString(json, "providerOrderId", "[A-Za-z0-9_-]{1,128}", credit.providerOrderId)) return false;
+		if (!extractLong(json, "approvedAtUnixSeconds", credit.approvedAt)) return false;
+		if (!extractString(json, "signature", "[A-Fa-f0-9]{64}", credit.signature)) return false;
+		std::transform(credit.signature.begin(), credit.signature.end(), credit.signature.begin(),
+			[](unsigned char ch) { return (char)std::tolower(ch); });
+		return true;
+	}
+
+	bool verifyCreditSignature(const ApprovedCredit& credit, const std::vector<unsigned char>& key)
+	{
+		if (credit.schemaVersion != 2) return false;
+		const std::string payload = "2\n" + credit.transactionId + "\n" + std::to_string(credit.minutes) + "\n"
+			+ std::to_string(credit.amountCents) + "\n" + credit.provider + "\n" + credit.providerOrderId + "\n"
+			+ std::to_string(credit.requestExpiresAt) + "\n" + credit.beneficiaryType + "\n" + credit.beneficiaryId + "\n"
+			+ std::to_string(credit.approvedAt) + "\n" + std::to_string(credit.eventExpiresAt);
+		return constantTimeEqual(hmacSha256Hex(key, payload), credit.signature);
+	}
+
+	bool verifyLegacyCreditSignature(const ApprovedCredit& credit, const std::vector<unsigned char>& key)
+	{
+		if (credit.schemaVersion != 1) return false;
+		const std::string payload = "1\n" + credit.transactionId + "\n" + std::to_string(credit.minutes) + "\n"
+			+ std::to_string(credit.amountCents) + "\n" + credit.provider + "\n" + credit.providerOrderId + "\n"
+			+ std::to_string(credit.approvedAt);
+		return constantTimeEqual(hmacSha256Hex(key, payload), credit.signature);
+	}
+
+	bool stableCreditFieldsMatch(const ApprovedCredit& previous, const ApprovedCredit& current)
+	{
+		if (previous.transactionId != current.transactionId || previous.minutes != current.minutes
+			|| previous.amountCents != current.amountCents || previous.provider != current.provider
+			|| previous.providerOrderId != current.providerOrderId) return false;
+		// O v1 nao possuia beneficiario nem expiracao do pedido. A existencia de
+		// seu recibo assinado ainda prova que esta transacao ja foi aplicada.
+		return previous.schemaVersion == 1
+			|| (previous.requestExpiresAt == current.requestExpiresAt
+				&& previous.beneficiaryType == current.beneficiaryType
+				&& previous.beneficiaryId == current.beneficiaryId);
+	}
+
+	bool purchaseModeAllowsRequest(const PixPublicOptions& options, std::string& error)
+	{
+		if (options.provider == "mercadopago" && !options.productionEnabled)
+		{
+			error = "MODO TESTE: vendas Mercado Pago bloqueadas. Ative o ambiente de producao no configurador PIX antes de vender.";
+			return false;
+		}
+		return true;
+	}
+
+	bool purchaseModeGuardSelfTest()
+	{
+		std::string error;
+		PixPublicOptions options;
+		options.provider = "mercadopago";
+		options.productionEnabled = false;
+		if (purchaseModeAllowsRequest(options, error)
+			|| error.find("MODO TESTE") == std::string::npos) return false;
+
+		error.clear();
+		options.productionEnabled = true;
+		if (!purchaseModeAllowsRequest(options, error) || !error.empty()) return false;
+
+		// O mock continua exercitando o fluxo local, mas nunca representa venda real.
+		error.clear();
+		options.provider = "mock";
+		options.productionEnabled = false;
+		return purchaseModeAllowsRequest(options, error) && error.empty();
 	}
 
 	bool verifyCredit(const ApprovedCredit& credit, const std::string& root, const std::vector<unsigned char>& key)
@@ -369,10 +480,12 @@ namespace
 		if (credit.provider == "mock" && !Utils::FileSystem::exists(
 			Utils::FileSystem::combine(root, "allow-mock-credit"), false)) return false;
 		const long long now = (long long)std::time(nullptr);
-		if (credit.approvedAt < 1577836800LL || credit.approvedAt > now + 600) return false;
-		const std::string payload = "1\n" + credit.transactionId + "\n" + std::to_string(credit.minutes) + "\n"
-			+ std::to_string(credit.amountCents) + "\n" + credit.provider + "\n" + credit.providerOrderId + "\n" + std::to_string(credit.approvedAt);
-		return constantTimeEqual(hmacSha256Hex(key, payload), credit.signature);
+		if (credit.schemaVersion != 2 || credit.approvedAt < 1577836800LL || credit.approvedAt > now + 600
+			|| credit.requestExpiresAt < 1577836800LL
+			|| credit.requestExpiresAt > credit.approvedAt + 60 * 60
+			|| credit.eventExpiresAt != credit.approvedAt + 30LL * 24 * 60 * 60
+			|| now > credit.eventExpiresAt) return false;
+		return verifyCreditSignature(credit, key);
 	}
 }
 
@@ -380,8 +493,8 @@ bool PixBridge::loadPublicOptions(PixPublicOptions& options, std::string& error)
 {
 	options = PixPublicOptions{};
 	const std::string file = Utils::FileSystem::combine(pixRoot(), "public-options.json");
-	const std::string json = Utils::FileSystem::readAllText(file);
-	if (json.empty() || json.size() > 65536)
+	std::string json;
+	if (!readTextLimited(file, 65536, json) || json.empty())
 	{
 		error = "Servico PIX nao iniciado";
 		return false;
@@ -405,6 +518,10 @@ bool PixBridge::loadPublicOptions(PixPublicOptions& options, std::string& error)
 		error = "Servico PIX sem resposta";
 		return false;
 	}
+	// productionEnabled vem do contrato publico publicado pelo agente. Enquanto
+	// estiver falso, o frontend trata Mercado Pago como configuracao/teste e nao
+	// recebe uma lista utilizavel para venda. O mock permanece disponivel abaixo.
+	if (!purchaseModeAllowsRequest(options, error)) return false;
 	const std::regex packageExpression("\\{\\s*\\\"minutes\\\"\\s*:\\s*([0-9]{1,3})\\s*,\\s*\\\"amountCents\\\"\\s*:\\s*([0-9]{1,12})\\s*\\}");
 	for (std::sregex_iterator it(json.begin(), json.end(), packageExpression), end; it != end; ++it)
 	{
@@ -434,10 +551,49 @@ bool PixBridge::loadPublicOptions(PixPublicOptions& options, std::string& error)
 	return true;
 }
 
-bool PixBridge::createPurchaseRequest(const PixPackage& package, std::string& requestId, std::string& error)
+bool PixBridge::getCurrentBeneficiary(PixBeneficiary& beneficiary, std::string& error)
+{
+	beneficiary = PixBeneficiary{};
+	if (!CreditManager::getInstance().getPixBeneficiary(beneficiary.type, beneficiary.id)
+		|| !validBeneficiary(beneficiary.type, beneficiary.id))
+	{
+		error = "Nao foi possivel vincular o PIX a uma carteira segura. Selecione o jogador novamente.";
+		return false;
+	}
+	beneficiary.displayName = beneficiary.type == "guest"
+		? "JOGADOR AVULSO"
+		: CreditManager::getInstance().getCurrentPlayerName();
+	if (beneficiary.displayName.empty()) beneficiary.displayName = "JOGADOR CADASTRADO";
+	return true;
+}
+
+bool PixBridge::createPurchaseRequest(const PixPackage& package, const PixBeneficiary& beneficiary,
+	std::string& requestId, std::string& error)
 {
 	PixPublicOptions options;
-	if (!loadPublicOptions(options, error)) return false;
+	if (!loadPublicOptions(options, error))
+	{
+		requestId.clear();
+		return false;
+	}
+	// Defesa no ponto de criacao: mesmo que a politica do carregador mude no
+	// futuro, nenhuma solicitacao Mercado Pago sai com producao desativada.
+	if (!purchaseModeAllowsRequest(options, error))
+	{
+		requestId.clear();
+		return false;
+	}
+	if (!validBeneficiary(beneficiary.type, beneficiary.id))
+	{
+		error = "Destino do credito PIX invalido. Abra a tela novamente.";
+		return false;
+	}
+	if (!CreditManager::getInstance().canAcceptPixMinutes(
+		beneficiary.type, beneficiary.id, package.minutes))
+	{
+		error = "Este pacote ultrapassa o limite de tempo da carteira selecionada. Escolha um pacote menor ou use o saldo atual.";
+		return false;
+	}
 	const auto match = std::find_if(options.packages.begin(), options.packages.end(), [&](const PixPackage& item) {
 		return item.minutes == package.minutes && item.amountCents == package.amountCents;
 	});
@@ -455,8 +611,40 @@ bool PixBridge::createPurchaseRequest(const PixPackage& package, std::string& re
 	const std::string requests = Utils::FileSystem::combine(pixRoot(), "requests");
 	Utils::FileSystem::createDirectory(requests);
 	const std::string destination = Utils::FileSystem::combine(requests, requestId + ".request.json");
-	const std::string json = "{\n  \"id\": \"" + requestId + "\",\n  \"minutes\": " + std::to_string(package.minutes)
-		+ ",\n  \"amountCents\": " + std::to_string(package.amountCents) + ",\n  \"requestedAt\": \"" + utcIso8601() + "\"\n}\n";
+	const long long requestedAt = (long long)std::time(nullptr);
+	const long long expiresAt = requestedAt + (long long)options.paymentExpirationMinutes * 60;
+	std::string keyText;
+	if (!readTextLimited(Utils::FileSystem::combine(pixRoot(), "bridge.key"), 4096, keyText))
+	{
+		error = "Servico PIX ainda esta preparando a chave segura. Tente novamente em alguns segundos.";
+		requestId.clear();
+		return false;
+	}
+	const std::vector<unsigned char> signingKey = decodeBase64(keyText);
+	if (signingKey.size() != 32)
+	{
+		error = "Servico PIX ainda esta preparando a chave segura. Tente novamente em alguns segundos.";
+		requestId.clear();
+		return false;
+	}
+	const std::string canonical = "2\n" + requestId + "\n" + std::to_string(package.minutes) + "\n"
+		+ std::to_string(package.amountCents) + "\n" + std::to_string(requestedAt) + "\n"
+		+ std::to_string(expiresAt) + "\n" + beneficiary.type + "\n" + beneficiary.id;
+	const std::string signature = hmacSha256Hex(signingKey, canonical);
+	if (signature.size() != 64)
+	{
+		error = "Nao foi possivel assinar o pedido PIX";
+		requestId.clear();
+		return false;
+	}
+	const std::string json = "{\n  \"schemaVersion\": 2,\n  \"id\": \"" + requestId
+		+ "\",\n  \"minutes\": " + std::to_string(package.minutes)
+		+ ",\n  \"amountCents\": " + std::to_string(package.amountCents)
+		+ ",\n  \"requestedAtUnixSeconds\": " + std::to_string(requestedAt)
+		+ ",\n  \"expiresAtUnixSeconds\": " + std::to_string(expiresAt)
+		+ ",\n  \"beneficiaryType\": \"" + beneficiary.type
+		+ "\",\n  \"beneficiaryId\": \"" + beneficiary.id
+		+ "\",\n  \"signature\": \"" + signature + "\"\n}\n";
 	if (!writeAtomically(destination, json))
 	{
 		error = "Nao foi possivel enviar o pedido ao servico PIX";
@@ -467,11 +655,32 @@ bool PixBridge::createPurchaseRequest(const PixPackage& package, std::string& re
 	return true;
 }
 
+bool PixBridge::createPurchaseRequest(const PixPackage& package,
+	std::string& requestId, std::string& error)
+{
+	PixBeneficiary beneficiary;
+	return getCurrentBeneficiary(beneficiary, error)
+		&& createPurchaseRequest(package, beneficiary, requestId, error);
+}
+
 PixPurchaseInfo PixBridge::getPurchaseInfo(const std::string& requestId)
 {
 	PixPurchaseInfo info;
 	if (!std::regex_match(requestId, std::regex("[A-Za-z0-9_-]{1,64}"))) return info;
 	const std::string root = pixRoot();
+	for (const char* prefix : { "conflicting-processed-", "unverified-processed-" })
+	{
+		const std::string conflict = Utils::FileSystem::combine(root,
+			"reconciliation/" + std::string(prefix) + requestId + ".credit.json");
+		if (!Utils::FileSystem::exists(conflict, false)) continue;
+		info.state = PixPurchaseState::SecurityError;
+		std::string reason;
+		readTextLimited(conflict + ".reason.txt", 1024, reason);
+		info.error = reason.empty()
+			? "Conflito com comprovante PIX anterior; verificacao manual necessaria."
+			: safeRejectedReason(reason);
+		return info;
+	}
 	if (Utils::FileSystem::exists(Utils::FileSystem::combine(root,
 		"processed/" + requestId + ".credit.json"), false))
 	{
@@ -494,9 +703,17 @@ PixPurchaseInfo PixBridge::getPurchaseInfo(const std::string& requestId)
 	if (Utils::FileSystem::exists(matrix, false)
 		&& readSignedQrMatrix(matrix, requestId, root, info.qrModules, info.qrModuleCount))
 		info.qrMatrixPath = matrix;
-	const std::string session = Utils::FileSystem::readAllText(Utils::FileSystem::combine(root, "sessions/" + requestId + ".session.json"));
+	std::string session;
+	readTextLimited(Utils::FileSystem::combine(root, "sessions/" + requestId + ".session.json"), 65536, session);
 	std::string status;
-	if (!session.empty() && extractString(session, "status", "pending|approved|completed|cancelled|security_error", status))
+	std::string beneficiaryType, beneficiaryId;
+	long long sessionSchema = 0;
+	if (!session.empty()
+		&& extractLong(session, "schemaVersion", sessionSchema) && sessionSchema == 2
+		&& extractString(session, "beneficiaryType", "player|guest", beneficiaryType)
+		&& extractString(session, "beneficiaryId", "[A-Za-z0-9_-]{16,128}", beneficiaryId)
+		&& validBeneficiary(beneficiaryType, beneficiaryId)
+		&& extractString(session, "status", "pending|approved|completed|cancelled|security_error", status))
 	{
 		if (status == "completed" || status == "approved") info.state = PixPurchaseState::Approved;
 		else if (status == "cancelled") info.state = PixPurchaseState::Cancelled;
@@ -504,14 +721,41 @@ PixPurchaseInfo PixBridge::getPurchaseInfo(const std::string& requestId)
 		else info.state = PixPurchaseState::Pending;
 		return info;
 	}
+	for (const auto& file : Utils::FileSystem::getDirContent(
+		Utils::FileSystem::combine(root, "reconciliation"), false, false))
+	{
+		const std::string name = filenameOf(file);
+		if (name.find(requestId) == std::string::npos || endsWith(name, ".reason.txt")) continue;
+		std::string reconciliationState, reconciliationJson;
+		readTextLimited(file, 65536, reconciliationJson);
+		if (name.find("legacy-already-applied-") != std::string::npos
+			|| name.find("already_applied_audit_only") != std::string::npos
+			|| extractString(reconciliationJson, "state",
+				"already_applied_audit_only", reconciliationState))
+		{
+			info.state = PixPurchaseState::Completed;
+			return info;
+		}
+		info.state = PixPurchaseState::SecurityError;
+		std::string reason;
+		readTextLimited(file + ".reason.txt", 1024, reason);
+		info.error = reason.empty()
+			? "Pagamento anterior preservado para conciliacao manual do beneficiario."
+			: safeRejectedReason(reason);
+		return info;
+	}
 	for (const auto& file : Utils::FileSystem::getDirContent(Utils::FileSystem::combine(root, "rejected"), false, false))
 	{
 		const std::string name = filenameOf(file);
-		if (endsWith(name, ".request.json") && name.find(requestId + ".request.json") != std::string::npos)
+		const bool matchingRequest = endsWith(name, ".request.json")
+			&& name.find(requestId + ".request.json") != std::string::npos;
+		const bool matchingFinancialState = (endsWith(name, ".session.json") || endsWith(name, ".credit.json"))
+			&& name.find(requestId) != std::string::npos;
+		if (matchingRequest || matchingFinancialState)
 		{
-			info.state = PixPurchaseState::Rejected;
-			const std::string reason = Utils::FileSystem::readAllText(file + ".reason.txt");
-			if (reason.size() <= 1024) info.error = safeRejectedReason(reason);
+			info.state = matchingFinancialState ? PixPurchaseState::SecurityError : PixPurchaseState::Rejected;
+			std::string reason;
+			if (readTextLimited(file + ".reason.txt", 1024, reason)) info.error = safeRejectedReason(reason);
 			return info;
 		}
 	}
@@ -524,13 +768,16 @@ PixPurchaseInfo PixBridge::getPurchaseInfo(const std::string& requestId)
 bool PixBridge::verifyApprovedEventFileForTest(const std::string& file, const std::string& root)
 {
 	ApprovedCredit credit;
-	const std::vector<unsigned char> key = decodeBase64(
-		Utils::FileSystem::readAllText(Utils::FileSystem::combine(root, "bridge.key")));
+	std::string keyText;
+	if (!readTextLimited(Utils::FileSystem::combine(root, "bridge.key"), 4096, keyText)) return false;
+	const std::vector<unsigned char> key = decodeBase64(keyText);
 	return key.size() == 32 && readApprovedCredit(file, credit) && verifyCredit(credit, root, key);
 }
 
 bool PixBridge::runQrCacheRegressionTest()
 {
+	if (!purchaseModeGuardSelfTest()) return false;
+
 	const std::string root = pixRoot();
 	for (const char* directory : { "qr", "sessions", "approved", "processed", "rejected", "requests" })
 		Utils::FileSystem::createDirectory(Utils::FileSystem::combine(root, directory));
@@ -577,13 +824,17 @@ std::vector<std::string> PixBridge::processApprovedCredits()
 	const std::string approved = Utils::FileSystem::combine(root, "approved");
 	const std::string processed = Utils::FileSystem::combine(root, "processed");
 	const std::string rejected = Utils::FileSystem::combine(root, "rejected");
+	const std::string reconciliation = Utils::FileSystem::combine(root, "reconciliation");
 	Utils::FileSystem::createDirectory(approved);
 	Utils::FileSystem::createDirectory(processed);
 	Utils::FileSystem::createDirectory(rejected);
+	Utils::FileSystem::createDirectory(reconciliation);
 
 	// A chave pode ficar momentaneamente indisponivel durante instalacao, antivirus ou
 	// sincronizacao. Nesse caso deixamos os eventos intactos para a proxima tentativa.
-	const std::string keyText = Utils::FileSystem::readAllText(Utils::FileSystem::combine(root, "bridge.key"));
+	std::string keyText;
+	if (!readTextLimited(Utils::FileSystem::combine(root, "bridge.key"), 4096, keyText))
+		return messages;
 	const std::vector<unsigned char> signingKey = decodeBase64(keyText);
 	if (signingKey.size() != 32)
 	{
@@ -602,7 +853,22 @@ std::vector<std::string> PixBridge::processApprovedCredits()
 		if (!readApprovedCredit(file, credit) || credit.transactionId != expectedId || !verifyCredit(credit, root, signingKey))
 		{
 			LOG(LogWarning) << "[PixBridge] evento invalido: " << file;
-			Utils::FileSystem::renameFile(file, Utils::FileSystem::combine(rejected, "invalid-" + filenameOf(file)), true);
+			long long detectedSchema = 0;
+			std::string invalidJson;
+			const bool legacyV1 = readTextLimited(file, 16384, invalidJson)
+				&& extractLong(invalidJson, "schemaVersion", detectedSchema) && detectedSchema == 1;
+			const bool legacyAlreadyApplied = legacyV1 && Utils::FileSystem::exists(
+				Utils::FileSystem::combine(processed, fileName), false);
+			const std::string isolated = Utils::FileSystem::combine(
+				legacyV1 ? reconciliation : rejected,
+				(legacyAlreadyApplied ? "legacy-already-applied-"
+					: legacyV1 ? "legacy-unassigned-" : "invalid-") + filenameOf(file));
+			if (Utils::FileSystem::renameFile(file, isolated, true))
+				Utils::FileSystem::writeAllText(isolated + ".reason.txt", legacyAlreadyApplied
+					? "Evento PIX v1 ja consta em processed. Preservado somente para auditoria; nao atribuir novo credito."
+					: legacyV1
+					? "Evento PIX v1 aprovado sem beneficiario verificavel. Reconciliar manualmente com o provedor antes de atribuir."
+					: "Evento PIX recusado por schema, assinatura, expiracao ou campos invalidos.");
 			continue;
 		}
 
@@ -610,19 +876,40 @@ std::vector<std::string> PixBridge::processApprovedCredits()
 		if (Utils::FileSystem::exists(destination, false))
 		{
 			ApprovedCredit previous;
-			if (readApprovedCredit(destination, previous) && previous.transactionId == credit.transactionId
-				&& verifyCredit(previous, root, signingKey))
+			bool authenticatedTombstone = readApprovedCredit(destination, previous)
+				&& previous.transactionId == credit.transactionId
+				&& verifyCreditSignature(previous, signingKey);
+			if (!authenticatedTombstone)
 			{
-				// Segunda barreira de idempotencia, independente do tamanho do ledger.
-				Utils::FileSystem::renameFile(file, destination, true);
+				previous = ApprovedCredit{};
+				authenticatedTombstone = readLegacyApprovedCredit(destination, previous)
+					&& previous.transactionId == credit.transactionId
+					&& verifyLegacyCreditSignature(previous, signingKey);
+			}
+			if (authenticatedTombstone && stableCreditFieldsMatch(previous, credit))
+			{
+				// Tombstone permanente: a expiracao limita o transporte de um evento
+				// novo, mas nunca reabre uma transacao que ja foi creditada. Mantemos
+				// o recibo original e descartamos apenas a copia reemitida.
+				Utils::FileSystem::removeFile(file);
 				continue;
 			}
-			LOG(LogWarning) << "[PixBridge] comprovante processado invalido isolado: " << destination;
-			Utils::FileSystem::renameFile(destination,
-				Utils::FileSystem::combine(rejected, "invalid-processed-" + fileName), true);
+
+			// Um marker processado corrompido ou conflitante pode representar
+			// credito antigo cujo ledger ja foi compactado. Falha fechado: nunca
+			// removemos o tombstone para aplicar automaticamente o novo evento.
+			LOG(LogWarning) << "[PixBridge] conflito com comprovante processado; credito bloqueado: " << destination;
+			const std::string isolated = Utils::FileSystem::combine(reconciliation,
+				(authenticatedTombstone ? "conflicting-processed-" : "unverified-processed-") + fileName);
+			if (Utils::FileSystem::renameFile(file, isolated, true))
+				Utils::FileSystem::writeAllText(isolated + ".reason.txt", authenticatedTombstone
+					? "Evento PIX conflita com um recibo permanente ja processado. Verificar manualmente; nenhum novo credito foi aplicado."
+					: "Existe um marker processed nao verificavel. Preservado para auditoria; nenhum novo credito foi aplicado automaticamente.");
+			continue;
 		}
 
-		const PixCreditResult result = CreditManager::getInstance().applyPixCredit(credit.transactionId, credit.minutes);
+		const PixCreditResult result = CreditManager::getInstance().applyPixCredit(
+			credit.transactionId, credit.minutes, credit.beneficiaryType, credit.beneficiaryId);
 		if (result == PixCreditResult::Rejected)
 		{
 			LOG(LogWarning) << "[PixBridge] credito recusado: " << credit.transactionId;

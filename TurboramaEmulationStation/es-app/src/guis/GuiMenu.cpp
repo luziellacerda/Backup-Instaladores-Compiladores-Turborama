@@ -29,6 +29,7 @@
 #include "VolumeControl.h"
 #include <SDL_events.h>
 #include <algorithm>
+#include <functional>
 #include "utils/Platform.h"
 #include "utils/FileSystemUtil.h"
 
@@ -282,6 +283,66 @@ void GuiMenu::requestCreditAccountingAccess()
 	requestCreditAccountingAccess_static(mWindow);
 }
 
+namespace
+{
+	void pushSecretTextEdit(Window* window, const std::string& title,
+		const std::function<void(const std::string&)>& callback)
+	{
+		if (Settings::getInstance()->getBool("UseOSK"))
+			window->pushGui(new GuiTextEditPopupKeyboard(window, title, "", callback, false, "OK", true));
+		else
+			window->pushGui(new GuiTextEditPopup(window, title, "", callback, false, "OK", true));
+	}
+
+	void requireNonDefaultAdminPassword(Window* window, const std::function<void()>& onReady)
+	{
+		if (!CreditManager::getInstance().isUsingDefaultAdminPassword())
+		{
+			onReady();
+			return;
+		}
+
+		auto requestNewPassword = [window, onReady] {
+			auto onNewPassword = [window, onReady](const std::string& password) {
+				if (password.size() < 8)
+				{
+					window->pushGui(new GuiMsgBox(window,
+						_("SENHA INVALIDA. USE NO MINIMO 8 CARACTERES."), _("OK"), nullptr));
+					return;
+				}
+				window->postToUiThread([window, onReady, password] {
+					pushSecretTextEdit(window, _("CONFIRME A NOVA SENHA ADMIN"),
+						[window, onReady, password](const std::string& confirmation) {
+							if (confirmation != password)
+							{
+								window->pushGui(new GuiMsgBox(window,
+									_("AS SENHAS NAO COINCIDEM. A SENHA NAO FOI ALTERADA."),
+									_("OK"), nullptr));
+								return;
+							}
+							if (!CreditManager::getInstance().setAdminPassword(password))
+							{
+								window->pushGui(new GuiMsgBox(window,
+									_("NAO FOI POSSIVEL GRAVAR A NOVA SENHA."), _("OK"), nullptr));
+								return;
+							}
+							window->displayNotificationMessage(_("Senha admin protegida com sucesso"));
+							window->postToUiThread(onReady);
+						});
+				});
+			};
+			pushSecretTextEdit(window, _("NOVA SENHA ADMIN"), onNewPassword);
+		};
+
+		window->pushGui(new GuiMsgBox(window,
+			_("A SENHA PADRAO 'admin' E INSEGURA. DEFINA AGORA UMA NOVA SENHA COM NO MINIMO 8 CARACTERES PARA CONTINUAR."),
+			_("TROCAR AGORA"), [window, requestNewPassword] {
+				window->postToUiThread(requestNewPassword);
+			},
+			_("CANCELAR"), nullptr));
+	}
+}
+
 void GuiMenu::requestMainMenuAccess_static(Window* window)
 {
 	if (window == nullptr)
@@ -299,11 +360,13 @@ void GuiMenu::requestMainMenuAccess_static(Window* window)
 			return;
 		}
 		window->postToUiThread([window]() {
-			if (window == nullptr)
-				return;
-			if (dynamic_cast<GuiMenu*>(window->peekGui()) != nullptr)
-				return;
-			window->pushGui(new GuiMenu(window));
+			requireNonDefaultAdminPassword(window, [window]() {
+				window->postToUiThread([window]() {
+					if (window == nullptr) return;
+					if (dynamic_cast<GuiMenu*>(window->peekGui()) != nullptr) return;
+					window->pushGui(new GuiMenu(window));
+				});
+			});
 		});
 	};
 
@@ -327,12 +390,16 @@ void GuiMenu::requestCreditSettingsAccess_static(Window* window)
 		}
 		// Abrir no proximo frame (teclado ja a fechar) — evita crash na pilha GUI
 		window->postToUiThread([window]() {
-			if (window == nullptr)
-				return;
-			// Evita abrir 2 painéis se o callback for chamado 2x
-			if (dynamic_cast<GuiCreditOperatorPanel*>(window->peekGui()) != nullptr)
-				return;
-			openCreditSettings_static(window);
+			requireNonDefaultAdminPassword(window, [window]() {
+				window->postToUiThread([window]() {
+					if (window == nullptr)
+						return;
+					// Evita abrir 2 painéis se o callback for chamado 2x
+					if (dynamic_cast<GuiCreditOperatorPanel*>(window->peekGui()) != nullptr)
+						return;
+					openCreditSettings_static(window);
+				});
+			});
 		});
 	};
 
@@ -349,10 +416,16 @@ void GuiMenu::requestCreditAccountingAccess_static(Window* window)
 
 	auto onPasswordEntered = [window](const std::string& password)
 	{
-		if (CreditManager::getInstance().verifyAdminPassword(password))
-			openCreditAccounting_static(window);
-		else
+		if (!CreditManager::getInstance().verifyAdminPassword(password))
+		{
 			window->pushGui(new GuiMsgBox(window, _("SENHA INCORRETA"), _("OK"), nullptr));
+			return;
+		}
+		window->postToUiThread([window]() {
+			requireNonDefaultAdminPassword(window, [window]() {
+				window->postToUiThread([window]() { openCreditAccounting_static(window); });
+			});
+		});
 	};
 
 	if (Settings::getInstance()->getBool("UseOSK"))
@@ -606,7 +679,7 @@ void GuiMenu::openCreditAccounting_static(Window* window)
 		auto onPw = [window, s](const std::string& pw) {
 			if (!CreditManager::getInstance().setAdminPassword(pw))
 			{
-				window->displayNotificationMessage(_("Senha curta demais (minimo 4 caracteres)"));
+				window->displayNotificationMessage(_("Senha curta demais (minimo 8 caracteres)"));
 				return;
 			}
 			window->displayNotificationMessage(_("Senha admin atualizada"));

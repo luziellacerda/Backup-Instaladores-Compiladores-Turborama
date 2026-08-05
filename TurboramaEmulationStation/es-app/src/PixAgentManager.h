@@ -29,8 +29,10 @@ public:
 	static PixOwnerSettings loadOwnerSettings();
 	static bool saveOwnerSettings(const PixOwnerSettings& settings, const std::string& newAccessToken, std::string& error);
 	static bool validateOwnerSettings(const PixOwnerSettings& settings, std::string& error);
+	static bool runSelfTest(std::string& error);
 	static bool hasProtectedToken();
 	static bool startIfConfigured(std::string* error = nullptr);
+	static bool superviseIfConfigured(std::string* error = nullptr);
 	static bool restartIfConfigured(std::string& error);
 	static std::string statusText();
 	static std::string bridgeDirectory();

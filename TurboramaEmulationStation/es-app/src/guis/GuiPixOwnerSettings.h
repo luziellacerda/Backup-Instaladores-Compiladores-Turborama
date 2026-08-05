@@ -20,6 +20,7 @@ private:
 	void editText(const std::string& title, const std::string& current, bool password,
 		const std::function<void(const std::string&)>& callback);
 	void editPrice(int minutes);
+	void launchOwnerConfigurator();
 	void saveAndActivate();
 	std::string formatPrice(long long cents) const;
 	bool parsePrice(const std::string& value, long long& cents) const;

@@ -1,12 +1,29 @@
+param(
+  [string]$InstallRoot = $env:TURBORAMA_INSTALL_ROOT,
+  [string]$RomsRoot = $env:TURBORAMA_ROMS_ROOT
+)
+
 # Organiza / enche screensaver_videos\{sistema}\ com videos
 # - Cria pastas com nomes de sistema ES (psx, switch, n64, ...)
 # - Opcional: copia de roms\<sistema>\media\videos
 # Nome do ficheiro NAO importa.
 
 $ErrorActionPreference = "Continue"
-$ES = "D:\Turborama\emulationstation"
-$DestRoot = Join-Path $ES "screensaver_videos"
-$RomsRoot = "D:\Turborama\roms"
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
+  $InstallRoot = @('D:\emulationstation', 'D:\Turborama\emulationstation') |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_ 'emulationstation.exe') -PathType Leaf } |
+    Select-Object -First 1
+}
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) { $InstallRoot = 'D:\emulationstation' }
+$InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
+$DestRoot = Join-Path $InstallRoot "screensaver_videos"
+if ([string]::IsNullOrWhiteSpace($RomsRoot)) {
+  $RomsRoot = @( (Join-Path $InstallRoot 'roms'), 'D:\roms', 'D:\Turborama\roms' ) |
+    Where-Object { Test-Path -LiteralPath $_ -PathType Container } |
+    Select-Object -First 1
+}
+if ([string]::IsNullOrWhiteSpace($RomsRoot)) { $RomsRoot = Join-Path $InstallRoot 'roms' }
+$RomsRoot = [IO.Path]::GetFullPath($RomsRoot)
 
 # Nomes = pastas em es_systems / roms (padrao EmulationStation)
 $Systems = @(

@@ -20,7 +20,7 @@ COMO USAR
    (devid + devpassword). A API exige isso para scrapers.
 
 3) Execute:
-   D:\Turborama\emulationstation\tools\TurboRamaScreenScraper\ABRIR-DOWNLOADER.bat
+   D:\emulationstation\tools\TurboRamaScreenScraper\ABRIR-DOWNLOADER.bat
    (ou a copia em tools\TurboRamaScreenScraper no codigo-fonte)
 
 4) Preencha na janela:
@@ -36,7 +36,7 @@ COMO USAR
 
 ONDE FICAM OS VIDEOS
 --------------------
-  D:\Turborama\emulationstation\screensaver_videos
+  D:\emulationstation\screensaver_videos
 
 O screensaver do TurboRama toca aleatoriamente TODOS os ficheiros
 dessa pasta (qualquer nome .mp4 / video suportado).

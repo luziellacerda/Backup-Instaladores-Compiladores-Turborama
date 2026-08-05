@@ -37,4 +37,7 @@ BEGIN
 END
 
 IDI_ES_LOGO ICON DISCARDABLE "es_icon.ico"
-101 RCDATA "embedded_theme.bin"
+#ifndef TURBORAMA_EMBEDDED_THEME_BIN
+#error TURBORAMA_EMBEDDED_THEME_BIN must point to the generated theme payload
+#endif
+101 RCDATA TURBORAMA_EMBEDDED_THEME_BIN

@@ -10,10 +10,20 @@
 
 struct CreditPlayer
 {
+	std::string id;                    // identificador opaco e estavel da carteira
 	std::string name;
 	long totalPlayedSeconds = 0;     // tempo consumido (historico)
 	long remainingSeconds = 0;       // saldo atual
 	long totalMinutesPurchased = 0;  // minutos vendidos a este cliente (historico)
+	bool archived = false;            // tombstone para aprovacoes PIX tardias
+	long tombstonedAtUnixSeconds = 0;
+};
+
+struct RetiredGuestWallet
+{
+	std::string id;
+	long remainingSeconds = 0;
+	long retiredAtUnixSeconds = 0;
 };
 
 // Totais da maquina (contabilidade)
@@ -54,9 +64,17 @@ public:
 	bool addCoin();
 	bool addMinutes(int minutes);
 	PixCreditResult applyPixCredit(const std::string& transactionId, int minutes);
+	PixCreditResult applyPixCredit(const std::string& transactionId, int minutes,
+		const std::string& beneficiaryType, const std::string& beneficiaryId);
+	bool getPixBeneficiary(std::string& beneficiaryType, std::string& beneficiaryId) const;
+	bool canAcceptPixMinutes(const std::string& beneficiaryType,
+		const std::string& beneficiaryId, int minutes) const;
 
 	void tick(int deltaMs);
 	void beginGameSession();
+	// Recebe o tempo total desde o inicio do processo externo e devolve false
+	// quando o jogo deve ser encerrado por saldo esgotado.
+	bool updateGameSession(long elapsedSeconds);
 	void endGameSession(long elapsedSeconds);
 	void consumeSessionSeconds(long elapsedSeconds);
 
@@ -123,37 +141,66 @@ public:
 
 private:
 	CreditManager();
+	~CreditManager();
 	CreditManager(const CreditManager&) = delete;
 	CreditManager& operator=(const CreditManager&) = delete;
 
 	std::string creditFilePath() const;
 	std::string configFilePath() const;
 	std::string playersFilePath() const;
+	std::string processLockFilePath() const;
+	bool acquireProcessLock();
+	void releaseProcessLock();
 
 	void loadConfig();
-	void loadPlayers();
+	bool loadPlayers(long& loadedSchemaVersion, bool& fileExists);
+	void blockCreditOperationsAndPersistenceUnlocked(const char* reason);
 	void clamp();
 	bool persistCreditUnlocked() const;
-	bool persistPlayersUnlocked() const;
-	void persistConfigUnlocked() const;
+	bool persistPlayersUnlocked();
+	bool persistPlayersMirrorUnlocked() const;
+	bool persistConfigUnlocked() const;
 	void addPlayedToCurrentUnlocked(long seconds);
-	void applyConsumeUnlocked(long seconds, const char* reason);
+	bool applyConsumeUnlocked(long seconds, const char* reason, bool persist = true);
+	bool accountGameElapsedUnlocked(long elapsedSeconds, bool forcePersist);
 	void syncActivePlayerWalletUnlocked();
 	bool loadActivePlayerWalletUnlocked();
 	void updateLowTimeWarningsUnlocked();
 	void resetLowTimeWarningsUnlocked();
 	void recordSaleUnlocked(int minutes);
+	void recordPlayerSaleUnlocked(CreditPlayer& player, int minutes);
 	static bool isValidPixTransactionId(const std::string& transactionId);
+	static bool isValidWalletId(const std::string& walletId);
+	static std::string generateWalletId();
+	CreditPlayer* findPlayerByIdUnlocked(const std::string& walletId);
+	const CreditPlayer* findPlayerByIdUnlocked(const std::string& walletId) const;
+	bool resolvePixWalletUnlocked(const std::string& beneficiaryType,
+		const std::string& beneficiaryId, long*& wallet, CreditPlayer*& player, bool& isActive);
+	bool resolvePixWalletUnlocked(const std::string& beneficiaryType,
+		const std::string& beneficiaryId, const long*& wallet, const CreditPlayer*& player) const;
+	bool rotateGuestWalletUnlocked(bool preserveBalanceAsRecovery = true);
+	bool promoteRetiredGuestUnlocked(const std::string& walletId);
+	size_t activePlayerCountUnlocked() const;
+	bool guestRotationNeedsActiveSlotUnlocked(bool preserveBalanceAsRecovery = true) const;
+	bool canRotateGuestWalletUnlocked(bool preserveBalanceAsRecovery = true) const;
+	std::string recoveredGuestPlayerNameUnlocked(const std::string& walletId) const;
 
-	static long parseDigitsLong(const std::string& val);
+	static bool parseLegacyNonNegativeLong(const std::string& val, long& parsed);
+	static bool parseStrictNonNegativeLong(const std::string& val, long& parsed);
 	static std::string sanitizePlayerName(const std::string& name);
 	static bool atomicWriteText(const std::string& path, const std::string& content);
-	static std::string hashPassword(const std::string& password);
+	static std::string legacyPasswordHash(const std::string& password);
+	static std::string createPasswordHash(const std::string& password);
+	static bool verifyPasswordHash(const std::string& password, const std::string& encodedHash);
+	static bool isLegacyPasswordHash(const std::string& encodedHash);
+	static bool isSupportedPasswordHash(const std::string& encodedHash);
 	static bool constantTimeEqual(const std::string& a, const std::string& b);
 	static std::string defaultAdminPasswordHash();
 	static std::string formatTimeUnlocked(long totalSec);
 
 	mutable std::mutex mMutex;
+	void* mProcessLockHandle;
+	int mProcessLockFd;
 
 	bool mEnabled;
 	bool mBlockWithoutCredit;
@@ -166,17 +213,23 @@ private:
 	long mTotalMinutesSold;
 	long mTotalSecondsPlayed;
 	long mPriceCentsPerMinute; // 0 = sem valor em R$
+	bool mCreditPersistenceBlocked;
 	long long mLastCoinTickMs;
 
 	bool mSessionRunning;
 	bool mSessionPaused;
 	bool mInGame;
 	bool mGameWasCounting;
+	long mGameAccountedSeconds;
 	int mTickAccumMs;
 	int mSaveAccumMs;
 
 	std::vector<CreditPlayer> mPlayers;
 	std::string mCurrentPlayer;
+	std::string mGuestWalletId;
+	long mGuestRemainingSeconds;
+	std::vector<RetiredGuestWallet> mRetiredGuestWallets;
+	std::vector<std::string> mRetiredGuestAliases;
 	std::string mAdminPasswordHash;
 	std::vector<std::string> mAppliedPixTransactions;
 
@@ -186,8 +239,13 @@ private:
 	static const int kMaxPlayers = 500;
 	static const int kMaxTickDeltaMs = 2000;
 	static const int kSaveIntervalMs = 5000;
-	static const int kSchemaVersion = 4;
-	static const int kMinPasswordLen = 4;
+	static const int kSchemaVersion = 5;
+	static const int kMinPasswordLen = 8;
+	static const long kMaxLegacyWalletSeconds = 7L * 24L * 3600L;
+	static const long kMaxPixWalletSeconds = 10L * 365L * 24L * 3600L;
+	// Tombstones nao expiram por relogio: uma maquina pode ficar offline e receber
+	// depois um evento autenticamente pago. O limite e apenas anti-corrupcao.
+	static const size_t kMaxWalletTombstones = 100000;
 	// Mantem anos de pagamentos no ledger para impedir reaplicacao de eventos antigos.
 	static const size_t kMaxAppliedPixTransactions = 100000;
 };

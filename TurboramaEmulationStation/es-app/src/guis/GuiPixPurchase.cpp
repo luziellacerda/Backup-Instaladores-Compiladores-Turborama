@@ -43,7 +43,18 @@ void GuiPixPurchase::buildPackageMenu()
 {
 	mMenu.clear();
 	std::string error;
-	if (!PixBridge::loadPublicOptions(mOptions, error))
+	const bool optionsLoaded = PixBridge::loadPublicOptions(mOptions, error);
+	const bool testModeBlocked = (!optionsLoaded && error.rfind("MODO TESTE", 0) == 0)
+		|| (optionsLoaded && mOptions.provider == "mercadopago" && !mOptions.productionEnabled);
+	if (testModeBlocked)
+	{
+		// Nao exponha precos nem permita iniciar uma cobranca enquanto o agente
+		// declara explicitamente que esta instalacao ainda nao esta em producao.
+		mMenu.addGroup(_("MODO TESTE - VENDAS MERCADO PAGO BLOQUEADAS"));
+		mMenu.addEntry(_("Nenhuma cobranca real pode ser criada neste modo."), false);
+		mMenu.addEntry(_("O operador deve ativar PRODUCAO no configurador PIX antes de vender."), false);
+	}
+	else if (!optionsLoaded)
 	{
 		mMenu.addGroup(_("SERVICO INDISPONIVEL"));
 		mMenu.addEntry(error, false);
@@ -51,7 +62,9 @@ void GuiPixPurchase::buildPackageMenu()
 	}
 	else
 	{
-		mMenu.addGroup(mOptions.provider == "mock" ? _("MODO DE TESTE - NAO REALIZA COBRANCA") : _("PAGAMENTO SEGURO VIA MERCADO PAGO"));
+		mMenu.addGroup(mOptions.provider == "mock"
+			? _("MODO TESTE (MOCK) - SIMULACAO SEM COBRANCA REAL")
+			: _("PAGAMENTO SEGURO VIA MERCADO PAGO"));
 		for (const auto& package : mOptions.packages)
 		{
 			const std::string label = std::to_string(package.minutes) + _(" MINUTOS  -  ") + formatPrice(package.amountCents);
@@ -71,26 +84,46 @@ void GuiPixPurchase::buildPackageMenu()
 
 void GuiPixPurchase::confirmPackage(const PixPackage& package)
 {
-	const std::string text = _("CONFIRMAR COMPRA?\n\n") + std::to_string(package.minutes) + _(" minutos por ")
-		+ formatPrice(package.amountCents) + _("\n\nO tempo sera adicionado somente apos o pagamento confirmado.");
-	mWindow->pushGui(new GuiMsgBox(mWindow, text, _("GERAR PIX"), [this, package] { startPurchase(package); }, _("CANCELAR"), nullptr, ICON_QUESTION));
-}
-
-void GuiPixPurchase::startPurchase(const PixPackage& package)
-{
-	std::string error, requestId;
-	if (!PixBridge::createPurchaseRequest(package, requestId, error))
+	PixBeneficiary beneficiary;
+	std::string error;
+	if (!PixBridge::getCurrentBeneficiary(beneficiary, error))
 	{
 		mWindow->pushGui(new GuiMsgBox(mWindow, error, _("OK"), nullptr, ICON_ERROR));
 		return;
 	}
-	mSelectedPackage = package; mRequestId = requestId; mElapsedMs = 0; mPollElapsedMs = 1000; mWaiting = true;
+	const bool mock = mOptions.provider == "mock";
+	const std::string text = (mock
+		? _("MODO TESTE (MOCK)\n\nEsta e uma simulacao e nao realiza cobranca real.\n\n")
+		: _("CONFIRMAR COMPRA?\n\n")) + std::to_string(package.minutes) + _(" minutos por ")
+		+ formatPrice(package.amountCents) + _("\n\nCredito para: ") + beneficiary.displayName
+		+ _("\nO destino fica vinculado a este pedido e nao muda ao trocar de jogador.")
+		+ (mock
+			? _("\n\nO credito de teste sera liberado somente pela simulacao local autorizada.")
+			: _("\n\nO tempo sera adicionado somente apos o pagamento confirmado."));
+	mWindow->pushGui(new GuiMsgBox(mWindow, text, mock ? _("INICIAR TESTE MOCK") : _("GERAR PIX"),
+		[this, package, beneficiary] { startPurchase(package, beneficiary); }, _("CANCELAR"), nullptr, ICON_QUESTION));
+}
+
+void GuiPixPurchase::startPurchase(const PixPackage& package, const PixBeneficiary& beneficiary)
+{
+	std::string error, requestId;
+	if (!PixBridge::createPurchaseRequest(package, beneficiary, requestId, error))
+	{
+		mWindow->pushGui(new GuiMsgBox(mWindow, error, _("OK"), nullptr, ICON_ERROR));
+		return;
+	}
+	mSelectedPackage = package; mBeneficiary = beneficiary; mRequestId = requestId; mElapsedMs = 0; mPollElapsedMs = 1000; mWaiting = true;
 	showWaitingLayout();
 }
 
 void GuiPixPurchase::showWaitingLayout()
 {
 	mMenu.setVisible(false);
+	const bool mock = mOptions.provider == "mock";
+	mTitle.setText(mock ? _("MODO TESTE (MOCK)") : _("PAGAMENTO PIX"));
+	mInstruction.setText(mock
+		? _("SIMULACAO LOCAL - NENHUMA COBRANCA REAL.\nAguarde a confirmacao do mock autorizado.")
+		: _("Abra o aplicativo do seu banco e leia o QR Code.\nO tempo sera liberado automaticamente apos a confirmacao."));
 	mLoadedQrPath.clear();
 	mQrModules.clear();
 	mQrModuleCount = 0;
@@ -100,7 +133,8 @@ void GuiPixPurchase::showWaitingLayout()
 	mPanel.setCornerSize(height * 0.025f, height * 0.025f); mPanel.setVisible(true);
 	mTitle.setPosition(width * 0.20f, height * 0.09f); mTitle.setSize(width * 0.60f, height * 0.10f); mTitle.setVisible(true);
 	mStatus.setPosition(width * 0.20f, height * 0.19f); mStatus.setSize(width * 0.60f, height * 0.07f); mStatus.setVisible(true);
-	mPackageText.setText(std::to_string(mSelectedPackage.minutes) + _(" MINUTOS  |  ") + formatPrice(mSelectedPackage.amountCents));
+	mPackageText.setText(std::to_string(mSelectedPackage.minutes) + _(" MINUTOS  |  ")
+		+ formatPrice(mSelectedPackage.amountCents) + _("  |  PARA: ") + mBeneficiary.displayName);
 	mPackageText.setPosition(width * 0.20f, height * 0.255f); mPackageText.setSize(width * 0.60f, height * 0.065f); mPackageText.setVisible(true);
 	mQrAreaPosition = Vector2f(width * 0.365f, height * 0.325f);
 	mQrAreaSize = std::min(width * 0.27f, height * 0.43f);
@@ -151,7 +185,10 @@ void GuiPixPurchase::pollPurchase()
 		finishWithMessage(_("PAGAMENTO CONFIRMADO!\n\nO tempo foi adicionado e ja esta disponivel para jogar."), true); break;
 	case PixPurchaseState::Cancelled: finishWithMessage(_("Este QR PIX expirou ou foi cancelado. Nenhum tempo foi cobrado."), false); break;
 	case PixPurchaseState::SecurityError:
-		finishWithMessage(_("O pedido PIX nao pode ser validado. Nenhum tempo foi liberado."), false); break;
+		finishWithMessage(info.error.empty()
+			? _("O pedido PIX nao pode ser validado. Nenhum tempo foi liberado.")
+			: _("O pedido PIX exige verificacao do operador. Nenhum tempo foi liberado automaticamente.\n\nDetalhe: ") + info.error,
+			false); break;
 	case PixPurchaseState::Rejected:
 		finishWithMessage(info.error.empty()
 			? _("O Mercado Pago recusou este pedido PIX. Nenhum tempo foi liberado.")

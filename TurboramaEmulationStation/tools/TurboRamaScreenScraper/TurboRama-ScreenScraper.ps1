@@ -9,7 +9,14 @@ Add-Type -AssemblyName System.Drawing
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPath = Join-Path $ScriptDir "config.json"
-$DefaultOut = "D:\Turborama\emulationstation\screensaver_videos"
+$InstallRoot = $env:TURBORAMA_INSTALL_ROOT
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
+  $InstallRoot = @('D:\emulationstation', 'D:\Turborama\emulationstation') |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_ 'emulationstation.exe') -PathType Leaf } |
+    Select-Object -First 1
+}
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) { $InstallRoot = 'D:\emulationstation' }
+$DefaultOut = Join-Path ([IO.Path]::GetFullPath($InstallRoot)) 'screensaver_videos'
 
 # systemeid ScreenScraper (API v2) — IDs oficiais do site
 $Platforms = [ordered]@{

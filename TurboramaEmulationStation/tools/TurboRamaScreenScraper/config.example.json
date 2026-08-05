@@ -4,7 +4,7 @@
   "devid": "SEU_DEVID_DEVELOPER",
   "devpassword": "SUA_SENHA_DEVELOPER",
   "softname": "TurboRamaSSDownloader",
-  "outputDir": "D:\\Turborama\\emulationstation\\screensaver_videos",
+  "outputDir": "D:\\emulationstation\\screensaver_videos",
   "preferNormalizedVideo": true,
   "region": "us"
 }

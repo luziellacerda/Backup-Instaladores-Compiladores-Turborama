@@ -980,7 +980,7 @@ void ViewController::update(int deltaTime)
 	if (pixAgentWatchdogMs >= 15000)
 	{
 		pixAgentWatchdogMs = 0;
-		PixAgentManager::startIfConfigured(nullptr);
+		PixAgentManager::superviseIfConfigured(nullptr);
 	}
 
 	// Baloes de aviso do sistema (GuiInfoPopup) quando o tempo esta acabando

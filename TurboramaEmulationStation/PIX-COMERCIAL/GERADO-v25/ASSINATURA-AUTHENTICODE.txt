@@ -1,0 +1,7 @@
+﻿TURBORAMA PIX COMERCIAL v25 - ASSINATURA AUTHENTICODE
+Status: NAO ASSINADO - CERTIFICADO NAO FORNECIDO
+Certificado: (nenhum)
+Armazenamento: (nao aplicavel)
+Carimbo do tempo: (nao configurado)
+Para exigir assinatura no build, use -ExigirAssinatura e -CertificadoThumbprint.
+Nenhum certificado ou senha privada e armazenado no repositorio ou no pacote.

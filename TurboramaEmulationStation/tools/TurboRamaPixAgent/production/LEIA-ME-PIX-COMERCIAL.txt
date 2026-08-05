@@ -1,6 +1,15 @@
 TURBORAMA PIX COMERCIAL - MULTIPROVEDOR
 =======================================
 
+ATENCAO — FLUXO ATUAL
+Os scripts INSTALAR-PIX-COMERCIAL.cmd, CORRIGIR-PASTA-PIX.cmd e
+CONFIGURAR-MERCADOPAGO-TESTE.cmd sao historicos e estao desativados.
+
+1. Execute INSTALAR-TURBORAMA-PIX-COMERCIAL-v25-ULTRA-FINAL.exe elevado.
+2. Entre na sessao Windows kioskUser/Arcade usada pelo TurboRama.
+3. Nessa sessao, execute CONFIGURAR-USER-TOKEN-PIX.exe normalmente.
+4. Nao use "Executar como administrador" no CONFIGURAR-USER-TOKEN-PIX.exe.
+
 O cliente acessa dentro do EmulationStation:
 START > COMPRAR TEMPO COM PIX
 
@@ -8,22 +17,12 @@ Provedores:
 - Mercado Pago / conta Mercado Livre: integrado diretamente e recomendado.
 - Outro banco ou plataforma: integrado pelo contrato CONTRATO-ADAPTADOR-BANCARIO.md.
 
-Instalacao com Mercado Pago:
-1. Tenha uma aplicacao de producao e um PDV/caixa configurados no Mercado Pago.
-2. Execute INSTALAR-PIX-COMERCIAL.cmd como o usuario que opera o TurboRama.
-3. Escolha a opcao 1, informe o identificador real do PDV e cole o Access Token DE PRODUCAO.
-
-Instalacao com outro banco:
-1. Tenha um adaptador do banco seguindo CONTRATO-ADAPTADOR-BANCARIO.md.
-2. Execute INSTALAR-PIX-COMERCIAL.cmd e escolha a opcao 2.
-3. Informe a URL, o identificador e o segredo do adaptador.
-
-Conclusao comum:
-5. O instalador verifica a credencial, a conexao e registra o agente para iniciar com o Windows.
-6. Se o EmulationStation estiver aberto, encerre apenas o programa quando o instalador pedir.
-7. O executavel atual sera copiado para uma pasta de backup antes da atualizacao.
-8. Execute VERIFICAR-PIX-COMERCIAL.cmd para confirmar o estado.
-9. Antes de abrir ao publico, realize uma compra real do pacote de menor valor e confira:
+Configuracao:
+1. Tenha uma aplicacao e um PDV/caixa configurados no provedor.
+2. Use o configurador da sessao kioskUser/Arcade para informar os dados e a
+   credencial sem expor o segredo ao frontend.
+3. Execute VERIFICAR-PIX-COMERCIAL.cmd para confirmar o estado.
+4. Antes de abrir ao publico, realize uma compra real do pacote de menor valor e confira:
    - QR apresentado;
    - pagamento recebido na conta Mercado Pago;
    - minutos adicionados uma unica vez;
@@ -31,14 +30,18 @@ Conclusao comum:
 
 Seguranca:
 - O Access Token nao fica no tema e nao entra no EmulationStation.
-- A credencial e protegida pelo Windows para o usuario que fez a instalacao.
+- A credencial e protegida pelo Windows para a conta kioskUser/Arcade.
 - O agente valida pacote, valor, identificador, resposta do provedor e assinatura do credito.
 - Um pagamento repetido nao adiciona minutos novamente.
 - Os avisos de saldo aparecem quando restam 15 e 5 minutos.
 
-Pastas:
-- Agente instalado: C:\ProgramData\TurboRama\PixAgent
-- Estado, fila e logs: %USERPROFILE%\.emulationstation\pix
-- Logs diarios: %USERPROFILE%\.emulationstation\pix\logs
+Pastas efetivas da v25 portatil:
+- Agente: D:\emulationstation\pix-agent
+- Estado, fila e logs: D:\emulationstation\.emulationstation\pix
+- Logs diarios: D:\emulationstation\.emulationstation\pix\logs
+
+Locais legados — nao usar na v25:
+- C:\ProgramData\TurboRama\PixAgent
+- %USERPROFILE%\.emulationstation\pix
 
 IMPORTANTE: nao entregue a maquina ao publico se o verificador indicar PIX INDISPONIVEL.

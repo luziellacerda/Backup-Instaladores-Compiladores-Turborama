@@ -9,6 +9,15 @@ struct PixPackage
 	long long amountCents = 0;
 };
 
+// Destino imutavel do credito. O identificador e opaco e persistido pelo
+// CreditManager; nomes de jogadores nunca fazem parte do contrato financeiro.
+struct PixBeneficiary
+{
+	std::string type;
+	std::string id;
+	std::string displayName;
+};
+
 struct PixPublicOptions
 {
 	std::string provider;
@@ -52,7 +61,13 @@ class PixBridge
 public:
 	static std::vector<std::string> processApprovedCredits();
 	static bool loadPublicOptions(PixPublicOptions& options, std::string& error);
-	static bool createPurchaseRequest(const PixPackage& package, std::string& requestId, std::string& error);
+	static bool getCurrentBeneficiary(PixBeneficiary& beneficiary, std::string& error);
+	static bool createPurchaseRequest(const PixPackage& package, const PixBeneficiary& beneficiary,
+		std::string& requestId, std::string& error);
+	// Compatibilidade com o diagnostico de linha de comando: carrega o ledger e
+	// captura o beneficiario atual antes de criar o mesmo pedido v2 assinado.
+	static bool createPurchaseRequest(const PixPackage& package,
+		std::string& requestId, std::string& error);
 	static PixPurchaseInfo getPurchaseInfo(const std::string& requestId);
 	// Diagnostico somente leitura usado pelos testes de instalacao.
 	static bool verifyApprovedEventFileForTest(const std::string& file, const std::string& root);

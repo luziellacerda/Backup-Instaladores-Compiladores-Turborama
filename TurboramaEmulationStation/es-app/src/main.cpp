@@ -475,6 +475,14 @@ void launchStartupGame()
 
 int main(int argc, char* argv[])
 {
+	if (argc == 2 && strcmp(argv[1], "--pix-agent-manager-self-test") == 0)
+	{
+		std::string error;
+		const bool passed = PixAgentManager::runSelfTest(error);
+		if (!passed && !error.empty()) fprintf(stderr, "PIX_AGENT_MANAGER_TEST=FAILED: %s\n", error.c_str());
+		else fprintf(stdout, "PIX_AGENT_MANAGER_TEST=OK\n");
+		return passed ? 0 : 25;
+	}
 	if (argc == 3 && strcmp(argv[1], "--pix-agent-start-once") == 0)
 	{
 		Paths::setExePath(argv[0]);
@@ -815,8 +823,8 @@ int main(int argc, char* argv[])
 
 				TRYCATCH("InputManager::parseEvent", InputManager::getInstance()->parseEvent(event, &window));
 
-				// TurboRama arcade credit keys
-				// Start (comando) = menu principal com senha | F11 = painel locadora | F10 moeda | F8 pausa | F7 parar | F12 zerar
+				// TurboRama: somente o acesso autenticado ao painel permanece global.
+				// Operacoes de credito/contador existem apenas dentro do painel admin.
 				if (event.type == SDL_KEYDOWN && !event.key.repeat)
 				{
 					const SDL_Keycode k = event.key.keysym.sym;
@@ -827,53 +835,6 @@ int main(int argc, char* argv[])
 					{
 						GuiMenu::requestCreditSettingsAccess_static(&window);
 						continue;
-					}
-					auto& cm = CreditManager::getInstance();
-					const bool isCoinKey = (k == SDLK_F10 || k == SDLK_INSERT || k == SDLK_5 || k == SDLK_KP_5);
-					if (isCoinKey)
-					{
-						if (cm.addCoin())
-						{
-							window.displayNotificationMessage(
-								std::string(_("Moeda +")) + std::to_string(cm.getMinutesPerCoin()) +
-								_(" min | Saldo: ") + cm.formatRemaining() +
-								(cm.getCurrentPlayerName().empty()
-									? std::string(" | ") + _("Avulso")
-									: (std::string(" | ") + cm.getCurrentPlayerName())),
-								5);
-						}
-					}
-					else if (k == SDLK_F8)
-					{
-						if (cm.isSessionPaused() || !cm.isSessionRunning())
-						{
-							cm.resumeSession();
-							window.displayNotificationMessage(std::string(_("Contador: CONTANDO  ")) + cm.formatRemaining(), 3);
-						}
-						else
-						{
-							cm.pauseSession();
-							window.displayNotificationMessage(std::string(_("Contador: PAUSADO  ")) + cm.formatRemaining(), 3);
-						}
-					}
-					else if (k == SDLK_F7)
-					{
-						cm.stopSession();
-						window.displayNotificationMessage(
-							std::string(_("Contador PARADO (saldo guardado)  ")) + cm.formatRemaining(), 4);
-					}
-					else if (k == SDLK_F9)
-					{
-						window.displayNotificationMessage(cm.formatHudLine(), 4);
-					}
-					else if (k == SDLK_F12)
-					{
-						// Zerar contador: avulso apaga tempo; cadastrado zera saldo da conta ativa
-						if (cm.getCurrentPlayerName().empty())
-							cm.clearGuestCredit();
-						else
-							cm.clearActivePlayerCredit();
-						window.displayNotificationMessage(_("Contador ZERADO (F12)"), 4);
 					}
 				}
 

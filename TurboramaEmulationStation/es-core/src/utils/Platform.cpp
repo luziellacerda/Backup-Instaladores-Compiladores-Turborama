@@ -24,7 +24,9 @@
 #include "Scripting.h"
 #include "Paths.h"
 #include <fstream>
+#include <chrono>
 #include <string>
+#include <vector>
 #include "renderers/Renderer.h"
 
 // #define DEVTEST
@@ -38,6 +40,7 @@ namespace Utils
 			window = nullptr;
 			waitForExit = true;
 			showWindow = true;
+			killProcessTreeOnCallbackFalse = false;
 #ifndef WIN32
 			stderrFilename = "es_launch_stderr.log";
 			stdoutFilename = "es_launch_stdout.log";
@@ -50,6 +53,7 @@ namespace Utils
 			window = nullptr;
 			waitForExit = true;
 			showWindow = true;
+			killProcessTreeOnCallbackFalse = false;
 #ifndef WIN32
 			stderrFilename = "es_launch_stderr.log";
 			stdoutFilename = "es_launch_stdout.log";
@@ -89,6 +93,143 @@ namespace Utils
 
 			std::wstring wexe = Utils::String::convertToWideString(exe);
 			std::wstring wargs = Utils::String::convertToWideString(args);
+
+			if (pollCallback)
+			{
+				std::wstring workingDirectory;
+				if (!Utils::String::startsWith(exe, ".") && !Utils::String::startsWith(exe, "/")
+					&& !Utils::String::startsWith(exe, "\\"))
+				{
+					workingDirectory = Utils::String::convertToWideString(
+						Utils::FileSystem::getAbsolutePath(Utils::FileSystem::getParent(exe)));
+				}
+
+				std::wstring application = wexe;
+				std::wstring commandLine;
+				const std::string extension = Utils::String::toLower(Utils::FileSystem::getExtension(exe));
+				if (extension == ".bat" || extension == ".cmd")
+				{
+					wchar_t comspec[32768]{};
+					const DWORD length = GetEnvironmentVariableW(L"COMSPEC", comspec, 32768);
+					if (length == 0 || length >= 32768)
+					{
+						LOG(LogError) << "Controlled process launch failed: COMSPEC unavailable";
+						return 1;
+					}
+					application = comspec;
+					commandLine = L"\"" + application + L"\" /d /s /c \"\"" + wexe + L"\"";
+					if (!wargs.empty()) commandLine += L" " + wargs;
+					commandLine += L"\"";
+				}
+				else
+				{
+					commandLine = L"\"" + wexe + L"\"";
+					if (!wargs.empty()) commandLine += L" " + wargs;
+				}
+
+				HANDLE job = CreateJobObjectW(nullptr, nullptr);
+				if (job == nullptr)
+				{
+					LOG(LogError) << "Controlled process launch failed: CreateJobObject error " << GetLastError();
+					return 1;
+				}
+				JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+				limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+				if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits)))
+				{
+					LOG(LogError) << "Controlled process launch failed: SetInformationJobObject error " << GetLastError();
+					CloseHandle(job);
+					return 1;
+				}
+
+				STARTUPINFOW startup{};
+				startup.cb = sizeof(startup);
+				startup.dwFlags = STARTF_USESHOWWINDOW;
+				startup.wShowWindow = showWindow ? SW_SHOW : SW_HIDE;
+				PROCESS_INFORMATION process{};
+				std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
+				mutableCommand.push_back(L'\0');
+				const DWORD flags = CREATE_SUSPENDED | CREATE_NEW_PROCESS_GROUP;
+				if (!CreateProcessW(application.c_str(), mutableCommand.data(), nullptr, nullptr, FALSE,
+					flags, nullptr, workingDirectory.empty() ? nullptr : workingDirectory.c_str(),
+					&startup, &process))
+				{
+					LOG(LogError) << "Controlled process launch failed: CreateProcess error " << GetLastError();
+					CloseHandle(job);
+					return 1;
+				}
+				if (!AssignProcessToJobObject(job, process.hProcess))
+				{
+					LOG(LogError) << "Controlled process launch failed: AssignProcessToJobObject error " << GetLastError();
+					TerminateProcess(process.hProcess, 1);
+					CloseHandle(process.hThread);
+					CloseHandle(process.hProcess);
+					CloseHandle(job);
+					return 1; // fail closed: never launch a paid session outside supervision
+				}
+				if (ResumeThread(process.hThread) == (DWORD)-1)
+				{
+					LOG(LogError) << "Controlled process launch failed: ResumeThread error " << GetLastError();
+					TerminateJobObject(job, 1);
+					CloseHandle(process.hThread);
+					CloseHandle(process.hProcess);
+					CloseHandle(job);
+					return 1;
+				}
+				CloseHandle(process.hThread);
+
+				if (waitForExit) Renderer::setWindowResizable(false);
+				const auto startedAt = std::chrono::steady_clock::now();
+				long lastPolledSecond = -1;
+				bool terminatedByCallback = false;
+				for (;;)
+				{
+					const DWORD wait = WaitForSingleObject(process.hProcess, 50);
+					if (wait == WAIT_FAILED)
+					{
+						LOG(LogError) << "Controlled process wait failed: " << GetLastError();
+						TerminateJobObject(job, 1);
+						break;
+					}
+					const long elapsedSeconds = (long)std::chrono::duration_cast<std::chrono::seconds>(
+						std::chrono::steady_clock::now() - startedAt).count();
+					if (elapsedSeconds != lastPolledSecond)
+					{
+						lastPolledSecond = elapsedSeconds;
+						if (!pollCallback(elapsedSeconds) && killProcessTreeOnCallbackFalse)
+						{
+							terminatedByCallback = true;
+							LOG(LogInfo) << "Controlled process tree terminated by polling policy";
+							if (!TerminateJobObject(job, 0xE0000001))
+								LOG(LogError) << "Controlled process termination failed: " << GetLastError();
+							WaitForSingleObject(process.hProcess, 5000);
+							break;
+						}
+					}
+
+					bool polled = false;
+					SDL_Event event;
+					while (SDL_PollEvent(&event)) polled = true;
+					if (window != nullptr && polled) window->renderSplashScreen();
+
+					if (wait != WAIT_TIMEOUT)
+					{
+						JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting{};
+						if (!QueryInformationJobObject(job, JobObjectBasicAccountingInformation,
+							&accounting, sizeof(accounting), nullptr) || accounting.ActiveProcesses == 0)
+							break;
+						Sleep(50); // o handle raiz ja sinalizou; aguarde filhos sem busy-spin
+					}
+				}
+
+				DWORD exitCode = 0;
+				if (!GetExitCodeProcess(process.hProcess, &exitCode) || exitCode == STILL_ACTIVE)
+					exitCode = terminatedByCallback ? 0 : 1;
+				CloseHandle(process.hProcess);
+				CloseHandle(job); // KILL_ON_JOB_CLOSE is a final containment guarantee
+				if (waitForExit) Renderer::setWindowResizable(true);
+				return terminatedByCallback ? 0 : (int)exitCode;
+			}
 
 			SHELLEXECUTEINFOW lpExecInfo;
 			lpExecInfo.cbSize = sizeof(SHELLEXECUTEINFOW);

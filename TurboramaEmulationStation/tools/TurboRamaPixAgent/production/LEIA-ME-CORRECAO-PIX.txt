@@ -1,21 +1,27 @@
 TURBORAMA - CORRECAO DO PIX PORTATIL
 =====================================
 
-PROBLEMA CORRIGIDO
-O agente estava ativo em C:\Users\Admin\.emulationstation\pix, mas o
-EmulationStation portatil consultava D:\emulationstation\.emulationstation\pix.
+ATENCAO — FLUXO LEGADO DESATIVADO
+Nao execute CORRIGIR-PASTA-PIX.cmd. Esse reparador antigo elevava uma conta que
+nao pode possuir a credencial do agente atual.
+
+FLUXO ATUAL
+1. Execute INSTALAR-TURBORAMA-PIX-COMERCIAL-v25-ULTRA-FINAL.exe elevado.
+2. Entre na sessao Windows kioskUser/Arcade usada pelo TurboRama.
+3. Execute CONFIGURAR-USER-TOKEN-PIX.exe normalmente nessa sessao.
+4. Nao use "Executar como administrador" no CONFIGURAR-USER-TOKEN-PIX.exe.
+
+LAYOUT PORTATIL ATUAL DA V25
+- Agente: D:\emulationstation\pix-agent
+- Estado, fila e logs: D:\emulationstation\.emulationstation\pix
+
+PROBLEMA LEGADO CORRIGIDO
+Uma instalacao antiga mantinha dados em C:\Users\Admin\.emulationstation\pix,
+local legado que nao deve ser usado pela v25. O EmulationStation portatil usa
+D:\emulationstation\.emulationstation\pix.
 Tambem havia uma credencial APP_USR colocada incorretamente no campo do PDV.
 
-COMO CORRIGIR
-1. Extraia TODO o ZIP para uma pasta normal.
-2. Execute CORRIGIR-PASTA-PIX.cmd.
-3. Quando solicitado, informe o external_id real do PDV criado no Mercado Pago.
-   Exemplo valido: TURBORAMAKIOSK01
-4. Nao informe APP_USR, Access Token ou ID do aplicativo nesse campo.
-5. A credencial protegida existente sera migrada automaticamente. O Access Token
-   so sera pedido se o arquivo protegido anterior nao existir.
-
-O QUE O REPARO FAZ
+REGISTRO HISTORICO DO REPARADOR DESATIVADO
 - Detecta automaticamente a instalacao portatil do EmulationStation.
 - Faz backup do agente e da configuracao anteriores.
 - Migra secret.dat e bridge.key sem mostrar o Access Token.
@@ -24,12 +30,8 @@ O QUE O REPARO FAZ
 - Atualiza somente o TurboRamaPixAgent. Nao substitui o EmulationStation.
 - Nao fecha o EmulationStation e nunca manda desligar ou reiniciar o computador.
 
-SE O TESTE DO PDV FALHAR
-Confirme no Mercado Pago se o PDV foi criado na mesma conta do Access Token e use
-exatamente o external_id desse PDV. Identificadores aceitam somente letras e
-numeros, sem espacos, hifens ou caracteres especiais, com menos de 40 caracteres.
-
-VERIFICACAO
-Depois da mensagem de sucesso, saia da tela COMPRAR TEMPO COM PIX e abra-a de novo.
-Antes de liberar ao publico, realize uma compra real de menor valor e confirme o
-recebimento na conta.
+VERIFICACAO ATUAL
+Depois de concluir o instalador e o configurador atuais, execute
+VERIFICAR-PIX-COMERCIAL.cmd. Nao libere a maquina ao publico se ele indicar PIX
+INDISPONIVEL. Realize uma compra controlada de menor valor e confirme o
+recebimento e a liberacao unica dos minutos.

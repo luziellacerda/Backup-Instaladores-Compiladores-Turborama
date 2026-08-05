@@ -703,7 +703,8 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 
 	// TurboRama arcade credit: block launch without credit (before audio/window teardown)
 	CreditManager& credits = CreditManager::getInstance();
-	if (!credits.hasCredit())
+	const bool creditEnabled = credits.isEnabled();
+	if (creditEnabled && !credits.hasCredit())
 	{
 		LOG(LogInfo) << "[CreditManager] launch blocked — no credit remaining";
 		window->pushGui(new GuiMsgBox(window,
@@ -726,38 +727,31 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 	const std::string basename = Utils::FileSystem::getStem(getPath());
 
 	Scripting::fireEvent("game-start", rom, basename, getName());
+	const auto launchT0 = std::chrono::steady_clock::now();
 
-	// Steady clock: immune to NTP/manual clock jumps (commercial accuracy)
-	const auto creditT0 = std::chrono::steady_clock::now();
-	credits.beginGameSession();
-
-	// RAII: always end credit session even if launch path throws / early returns
+	// RAII: end only a session that actually started. The first supervised poll
+	// happens after CreateProcess/Job assignment/ResumeThread succeed, so a launch
+	// failure never opens or charges a credit session.
 	struct CreditGameGuard
 	{
-		std::chrono::steady_clock::time_point t0;
+		bool* sessionStarted;
+		long* supervisedElapsedSeconds;
 		bool done = false;
 		~CreditGameGuard()
 		{
-			if (done)
-				return;
-			const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-				std::chrono::steady_clock::now() - t0).count();
-			long sec = (long)(ms / 1000);
-			if (sec < 0) sec = 0;
-			CreditManager::getInstance().endGameSession(sec);
+			complete();
 		}
 		void complete()
 		{
 			if (done)
 				return;
-			const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-				std::chrono::steady_clock::now() - t0).count();
-			long sec = (long)(ms / 1000);
-			if (sec < 0) sec = 0;
-			CreditManager::getInstance().endGameSession(sec);
 			done = true;
+			if (sessionStarted == nullptr || !*sessionStarted)
+				return;
+			CreditManager::getInstance().endGameSession(
+				supervisedElapsedSeconds == nullptr ? 0 : std::max(0L, *supervisedElapsedSeconds));
 		}
-	} creditGuard{ creditT0, false };
+	};
 
 	LOG(LogInfo) << "	" << command;
 
@@ -767,7 +761,42 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 
 	ProcessStartInfo process(command);
 	process.window = hideWindow ? NULL : window;
-	
+	bool creditExpired = false;
+	bool creditSessionStarted = false;
+	bool warned60 = false;
+	bool warned30 = false;
+	bool warned10 = false;
+	long supervisedElapsedSeconds = 0;
+	CreditGameGuard creditGuard{ &creditSessionStarted, &supervisedElapsedSeconds, false };
+	if (creditEnabled)
+	{
+		process.killProcessTreeOnCallbackFalse = true;
+		process.pollCallback = [&credits, &creditExpired, &creditSessionStarted,
+			&warned60, &warned30, &warned10, &supervisedElapsedSeconds](long elapsedSeconds) {
+			if (!creditSessionStarted)
+			{
+				credits.beginGameSession();
+				creditSessionStarted = true;
+			}
+			supervisedElapsedSeconds = std::max(0L, elapsedSeconds);
+			const bool mayContinue = credits.updateGameSession(elapsedSeconds);
+			const long remaining = credits.getRemainingSeconds();
+			auto warnAt = [remaining](long threshold, bool& warned) {
+				if (warned || remaining <= 0 || remaining > threshold) return;
+				warned = true;
+				LOG(LogWarning) << "[CreditManager] jogo em andamento: restam " << remaining << "s";
+#ifdef WIN32
+				MessageBeep(MB_ICONWARNING);
+#endif
+			};
+			warnAt(60, warned60);
+			warnAt(30, warned30);
+			warnAt(10, warned10);
+			if (!mayContinue) creditExpired = true;
+			return mayContinue;
+		};
+	}
+
 	int exitCode = process.run();
 	if (exitCode != 0)
 		LOG(LogWarning) << "...launch terminated with nonzero exit code " << exitCode << "!";
@@ -817,7 +846,7 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 		// How long have you played that game? (more than 10 seconds, otherwise
 		// you might have experienced a loading problem)
 		const long elapsedSeconds = (long)std::chrono::duration_cast<std::chrono::seconds>(
-			std::chrono::steady_clock::now() - creditT0).count();
+			std::chrono::steady_clock::now() - launchT0).count();
 		long gameTime = gameToUpdate->getMetadata().getInt(MetaDataId::GameTime) + std::max(0L, elapsedSeconds);
 		if (elapsedSeconds >= 10)
 			gameToUpdate->setMetadata(MetaDataId::GameTime, std::to_string(static_cast<long>(gameTime)));
@@ -829,6 +858,12 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 	}
 
 	window->reactivateGui();
+	if (creditExpired)
+	{
+		window->pushGui(new GuiMsgBox(window,
+			_("TEMPO ESGOTADO. O JOGO FOI ENCERRADO PARA PROTEGER O SALDO DA LOCADORA."),
+			_("OK"), nullptr));
+	}
 
 	if (system != nullptr && system->getTheme() != nullptr)
 		AudioManager::getInstance()->changePlaylist(system->getTheme(), true);

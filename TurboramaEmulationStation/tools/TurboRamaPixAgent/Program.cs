@@ -4,11 +4,13 @@ using System.IO.Compression;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Security;
+using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Win32;
 using QRCoder;
 
 AgentCommand command;
@@ -18,6 +20,35 @@ catch (InvalidOperationException ex)
     Console.Error.WriteLine($"Comando PIX invalido: {ex.Message}");
     return 9;
 }
+
+PixDaemonIdentity? daemonIdentity = null;
+try
+{
+    if (command.RunMode == AgentRunMode.Daemon)
+        daemonIdentity = PixDaemonIdentity.CreateForCurrentProcess();
+}
+catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException
+    or SecurityException or CryptographicException)
+{
+    Console.Error.WriteLine($"Identidade do daemon PIX recusada: {ex.Message}");
+    return 12;
+}
+using var daemonIdentityLifetime = daemonIdentity;
+
+// Preflight estritamente de leitura usado pela interface antes de ela copiar
+// ou transmitir a credencial. Ele nao depende de appsettings.json, nao abre a
+// bridge, nao muda ACL e nao toca DPAPI.
+if (command.CheckKioskIdentity)
+{
+    if (KioskProcessIdentity.TryValidateCurrent(out var identityReason))
+    {
+        Console.WriteLine("Identidade Windows do quiosque confirmada.");
+        return 0;
+    }
+    Console.Error.WriteLine($"Identidade PIX recusada: {identityReason}. Entre na sessao Windows definida como kioskUser no Launcher e abra o configurador novamente.");
+    return 19;
+}
+
 PixOptions options;
 PixOwnerSettings? ownerSettings = null;
 PixPaths? startupPaths = null;
@@ -31,6 +62,12 @@ try
     // ela ja tiver um cadastro de proprietario com erro.
     if (command.SelfTest)
         return PixSelfTest.RunIsolated(options);
+
+    // A ponte, as ACLs e a DPAPI pertencem exclusivamente a conta local que
+    // o Launcher declarou para o quiosque e que o Winlogon vai iniciar. Nao
+    // deixamos uma elevacao UAC, um usuario de manutencao ou uma conta trocada
+    // reatribuir esses arquivos antes desta comprovacao falhar fechada.
+    KioskProcessIdentity.RequireTrustedKioskProcess();
 
     // Antes de ler qualquer configuracao do proprietario, removemos as ACLs
     // herdadas das instalacoes antigas. Assim um usuario local sem privilegio
@@ -90,10 +127,20 @@ if (instanceLock is null)
     return 12;
 }
 
+// O frontend assina cada pedido com a mesma chave usada nos eventos de
+// credito. Publique-a antes de anunciar o servico como pronto.
+try { signingKeys.GetOrCreate(); }
+catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or InvalidOperationException)
+{
+    Console.Error.WriteLine($"Nao foi possivel preparar a chave do contrato PIX: {ex.Message}");
+    return 10;
+}
+
 // Configuracao comercial completa usada pelo aplicativo Windows LZ Games.
 // O segredo chega somente pelo pipe de entrada, nunca pelo JSON, linha de
-// comando ou log. O cadastro e salvo como pendente antes das chamadas de
-// rede e so passa para pronto depois que conta, loja e PDV forem confirmados.
+// comando ou log. Leituras de conta/inventario acontecem antes de substituir
+// o cadastro; o estado pendente so e salvo antes dos POSTs estritamente
+// necessarios e so passa para pronto apos conta, loja e PDV serem confirmados.
 if (!string.IsNullOrWhiteSpace(command.ConfigureOwnerFile))
 {
     try
@@ -110,7 +157,7 @@ if (!string.IsNullOrWhiteSpace(command.ConfigureOwnerFile))
         or TaskCanceledException or MercadoPagoApiException or AdapterApiException or InvalidOperationException
         or SecurityException or CryptographicException)
     {
-        Console.Error.WriteLine($"Falha na configuracao completa do PIX: {ex.Message}");
+        Console.Error.WriteLine($"Falha na configuracao completa do PIX: {PixOwnerProvisioner.SafeSetupMessage(ex.Message)}");
         return 21;
     }
 }
@@ -225,6 +272,21 @@ catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or C
 }
 
 var provider = PixProviderFactory.Create(options, secrets);
+using var cancellation = new CancellationTokenSource();
+Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+using var heartbeat = daemonIdentity is null ? null : new PixAgentHeartbeat(options, paths, provider.Name,
+    provider.Name == "mock" || secrets.TryLoad().IsAvailable,
+    provider.Name == "mock", "starting", daemonIdentity.Descriptor);
+await using var stopMonitor = daemonIdentity is null ? null : PixAgentStopMonitor.Start(paths,
+    daemonIdentity.Descriptor, cancellation, () =>
+{
+    try { heartbeat!.Update(false, false, "stopping"); }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+    {
+        Console.Error.WriteLine($"Nao foi possivel publicar o estado final do agente PIX: {ex.Message}");
+    }
+    Console.WriteLine("Solicitacao de parada graciosa recebida; agente PIX encerrado com seguranca.");
+});
 
 // O cadastro pode ser salvo sem internet. A criacao/confirmacao da loja e do
 // PDV e retomada automaticamente a cada 15 segundos ate a conexao voltar.
@@ -232,8 +294,12 @@ OwnerInfrastructureCoordinator? ownerInfrastructure = null;
 if (ownerSettings is not null && ownerSettings.Enabled && provider is MercadoPagoPixProvider ownerMercadoPago)
 {
     ownerInfrastructure = new OwnerInfrastructureCoordinator(ownerSettings, ownerMercadoPago, paths);
-    await ownerInfrastructure.TryEnsureAsync(force: true, CancellationToken.None);
+    try { await ownerInfrastructure.TryEnsureAsync(force: true, cancellation.Token); }
+    catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return 0; }
 }
+var ownerSetupPendingWithoutCoordinator = ownerInfrastructure is null
+    && ownerSettings is { Enabled: true }
+    && !ownerSettings.SetupState.Equals("ready", StringComparison.OrdinalIgnoreCase);
 
 if (command.MercadoPagoInventory || !string.IsNullOrWhiteSpace(command.MercadoPagoSetupFile))
 {
@@ -247,18 +313,19 @@ if (command.MercadoPagoInventory || !string.IsNullOrWhiteSpace(command.MercadoPa
         if (command.MercadoPagoInventory)
         {
             var inventory = ownerSettings is { Enabled: true } && !string.IsNullOrWhiteSpace(ownerSettings.AccountId)
-                ? await mercadoPago.GetInfrastructureForConfiguredAccountAsync(ownerSettings.AccountId, CancellationToken.None)
-                : await mercadoPago.GetInfrastructureAsync(CancellationToken.None);
+                ? await mercadoPago.GetInfrastructureForConfiguredAccountAsync(ownerSettings.AccountId, cancellation.Token)
+                : await mercadoPago.GetInfrastructureAsync(cancellation.Token);
             Console.WriteLine(JsonSerializer.Serialize(inventory, Json.Options));
         }
         else
         {
             var setup = MercadoPagoSetupRequest.Load(command.MercadoPagoSetupFile);
-            var result = await mercadoPago.EnsureInfrastructureAsync(setup, CancellationToken.None);
+            var result = await mercadoPago.EnsureInfrastructureAsync(setup, cancellation.Token);
             Console.WriteLine(JsonSerializer.Serialize(result, Json.Options));
         }
         return 0;
     }
+    catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return 0; }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or HttpRequestException
         or MercadoPagoApiException or InvalidOperationException or SecurityException)
     {
@@ -268,11 +335,6 @@ if (command.MercadoPagoInventory || !string.IsNullOrWhiteSpace(command.MercadoPa
 }
 
 var engine = new PixEngine(options, paths, provider, signingKeys);
-
-// Contrato publico consumido pela interface do EmulationStation. Ele contem
-// somente disponibilidade e precos; credenciais nunca saem do cofre DPAPI.
-PixPublicContract.Publish(options, paths, provider.Name,
-    provider.Name == "mock" || secrets.TryLoad().IsAvailable, provider.Name == "mock", "starting");
 
 if (!string.IsNullOrWhiteSpace(command.ApproveId))
 {
@@ -293,10 +355,11 @@ if (command.CheckProvider)
 {
     try
     {
-        await provider.CheckHealthAsync(CancellationToken.None);
+        await provider.CheckHealthAsync(cancellation.Token);
         Console.WriteLine("Credencial e conexao com o provedor confirmadas.");
         return 0;
     }
+    catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return 0; }
     catch (Exception ex) when (ex is HttpRequestException or MercadoPagoApiException or AdapterApiException or InvalidOperationException or SecurityException)
     {
         Console.Error.WriteLine($"Falha na verificacao do provedor: {ex.Message}");
@@ -305,8 +368,6 @@ if (command.CheckProvider)
 }
 
 Console.WriteLine($"TurboRama PIX Agent | provedor: {provider.Name} | pasta: {paths.Root}");
-using var cancellation = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
 var providerHealthy = provider.Name == "mock";
 var nextHealthCheck = DateTimeOffset.MinValue;
 var lastHealthError = "";
@@ -347,7 +408,7 @@ try
             if (ownerInfrastructure is not null && (!ownerInfrastructure.Ready || credentialChanged))
                 await ownerInfrastructure.TryEnsureAsync(force: credentialChanged, cancellation.Token);
 
-            if (ownerInfrastructure is { Ready: false })
+            if (ownerSetupPendingWithoutCoordinator || ownerInfrastructure is { Ready: false })
             {
                 providerHealthy = false;
                 nextHealthCheck = DateTimeOffset.UtcNow.AddSeconds(10);
@@ -365,16 +426,23 @@ try
                 catch (Exception ex) when (ex is HttpRequestException or MercadoPagoApiException or AdapterApiException or InvalidOperationException or SecurityException)
                 {
                     providerHealthy = false;
+                    if (ownerInfrastructure is not null)
+                        ownerInfrastructure.InvalidateAfterHealthFailure(ex);
+                    else if (OwnerInfrastructureCoordinator.RequiresInfrastructureReconciliation(ex))
+                        OwnerSetupStatus.Publish(paths, "pending",
+                            "O caixa PIX configurado nao existe nesta conta e nao ha cadastro completo para recria-lo. Abra CONFIGURAR-USER-TOKEN-PIX.exe na sessao do quiosque.");
                     if (!ex.Message.Equals(lastHealthError, StringComparison.Ordinal))
                         Console.Error.WriteLine($"Provedor PIX indisponivel: {ex.Message}");
                     lastHealthError = ex.Message;
                 }
                 nextHealthCheck = DateTimeOffset.UtcNow.AddSeconds(providerHealthy ? 60 : 10);
             }
-            PixPublicContract.Publish(options, paths, provider.Name,
-                provider.Name == "mock" || secrets.TryLoad().IsAvailable, providerHealthy,
-                providerHealthy ? "online" : ownerInfrastructure is { Ready: false } ? "owner_setup_pending" : "provider_unavailable");
-            if (providerHealthy) await engine.RunOnceAsync(cancellation.Token);
+            heartbeat?.Update(provider.Name == "mock" || secrets.TryLoad().IsAvailable,
+                providerHealthy, providerHealthy ? "online"
+                    : ownerSetupPendingWithoutCoordinator || ownerInfrastructure is { Ready: false }
+                        ? "owner_setup_pending" : "provider_unavailable");
+            if (providerHealthy) await engine.RunOnceAsync(cancellation.Token,
+                heartbeat is null ? null : heartbeat.PulseSafely);
             else if (command.Once) return 13;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or InvalidOperationException or CryptographicException or SecurityException)
@@ -391,14 +459,27 @@ catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
 
 return 0;
 
-sealed record AgentCommand(bool Once, bool SetToken, bool SelfTest, bool CheckProvider, bool PrepareCredentialEditor, bool AcceptCredentialOnce,
+enum AgentRunMode { Daemon, OneShot, Administrative }
+
+sealed record AgentCommand(bool Daemon, bool Once, bool SetToken, bool SelfTest, bool CheckKioskIdentity, bool CheckProvider, bool PrepareCredentialEditor, bool AcceptCredentialOnce,
     bool MercadoPagoInventory, string MercadoPagoSetupFile, string ConfigureOwnerFile, string ApproveId, string BridgeDirectory)
 {
+    public bool HasAdministrativeMode => SetToken || SelfTest || CheckKioskIdentity || CheckProvider
+        || PrepareCredentialEditor || AcceptCredentialOnce || MercadoPagoInventory
+        || !string.IsNullOrWhiteSpace(MercadoPagoSetupFile)
+        || !string.IsNullOrWhiteSpace(ConfigureOwnerFile)
+        || !string.IsNullOrWhiteSpace(ApproveId);
+
+    public AgentRunMode RunMode => Daemon ? AgentRunMode.Daemon
+        : HasAdministrativeMode ? AgentRunMode.Administrative : AgentRunMode.OneShot;
+
     public static AgentCommand Parse(string[] args)
     {
+        var daemon = false;
         var once = false;
         var setToken = false;
         var selfTest = false;
+        var checkKioskIdentity = false;
         var checkProvider = false;
         var prepareCredentialEditor = false;
         var acceptCredentialOnce = false;
@@ -409,9 +490,11 @@ sealed record AgentCommand(bool Once, bool SetToken, bool SelfTest, bool CheckPr
         var bridgeDirectory = "";
         for (var i = 0; i < args.Length; i++)
         {
+            if (args[i].Equals("--daemon", StringComparison.OrdinalIgnoreCase)) { daemon = true; continue; }
             if (args[i].Equals("--once", StringComparison.OrdinalIgnoreCase)) { once = true; continue; }
             if (args[i].Equals("--set-token", StringComparison.OrdinalIgnoreCase)) { setToken = true; continue; }
             if (args[i].Equals("--self-test", StringComparison.OrdinalIgnoreCase)) { selfTest = true; continue; }
+            if (args[i].Equals("--check-kiosk-identity", StringComparison.OrdinalIgnoreCase)) { checkKioskIdentity = true; continue; }
             if (args[i].Equals("--check-provider", StringComparison.OrdinalIgnoreCase)) { checkProvider = true; continue; }
             if (args[i].Equals("--prepare-credential-editor", StringComparison.OrdinalIgnoreCase)) { prepareCredentialEditor = true; continue; }
             if (args[i].Equals("--accept-credential-once", StringComparison.OrdinalIgnoreCase)) { acceptCredentialOnce = true; continue; }
@@ -446,16 +529,151 @@ sealed record AgentCommand(bool Once, bool SetToken, bool SelfTest, bool CheckPr
             }
             throw new InvalidOperationException($"opcao desconhecida: {args[i]}");
         }
-        var exclusiveModes = (setToken ? 1 : 0) + (selfTest ? 1 : 0) + (checkProvider ? 1 : 0) + (prepareCredentialEditor ? 1 : 0)
+        var exclusiveModes = (setToken ? 1 : 0) + (selfTest ? 1 : 0) + (checkKioskIdentity ? 1 : 0)
+            + (checkProvider ? 1 : 0) + (prepareCredentialEditor ? 1 : 0)
             + (acceptCredentialOnce ? 1 : 0)
             + (mercadoPagoInventory ? 1 : 0) + (!string.IsNullOrWhiteSpace(mercadoPagoSetupFile) ? 1 : 0)
             + (!string.IsNullOrWhiteSpace(configureOwnerFile) ? 1 : 0)
             + (!string.IsNullOrWhiteSpace(approveId) ? 1 : 0);
         if (exclusiveModes > 1)
             throw new InvalidOperationException("use somente um modo administrativo por execucao.");
-        return new AgentCommand(once, setToken, selfTest, checkProvider, prepareCredentialEditor, acceptCredentialOnce,
+        if (daemon && (once || exclusiveModes != 0))
+            throw new InvalidOperationException("--daemon nao pode ser combinado com --once nem com modos administrativos.");
+        if (!daemon && !once && exclusiveModes == 0)
+            throw new InvalidOperationException("informe explicitamente --daemon, --once ou um modo administrativo.");
+        return new AgentCommand(daemon, once, setToken, selfTest, checkKioskIdentity, checkProvider, prepareCredentialEditor, acceptCredentialOnce,
             mercadoPagoInventory, mercadoPagoSetupFile, configureOwnerFile, approveId, bridgeDirectory);
     }
+}
+
+sealed record PixDaemonDescriptor(int ProcessId, ulong ProcessStartFileTimeUtc, string ManagerTokenHash);
+
+// Identidade efemera compartilhada apenas entre o frontend que criou este
+// daemon e o proprio daemon. Os mutexes nao sao trava de dados (essa funcao
+// continua pertencendo a .agent.lock): eles provam que o PID representa o
+// modo persistente e impedem dois daemons simultaneos durante a inicializacao.
+sealed class PixDaemonIdentity : IDisposable
+{
+    internal const string ManagerTokenEnvironmentName = "TURBORAMA_PIX_MANAGER_TOKEN";
+    internal const string SingletonMutexName = @"Local\TurboRamaPixAgent-Daemon-v1";
+    private const string PidMutexPrefix = @"Local\TurboRamaPixAgent-Daemon-v1-";
+
+    private Mutex? _singletonMutex;
+    private Mutex? _pidMutex;
+
+    private PixDaemonIdentity(PixDaemonDescriptor descriptor, Mutex singletonMutex, Mutex pidMutex)
+    {
+        Descriptor = descriptor;
+        _singletonMutex = singletonMutex;
+        _pidMutex = pidMutex;
+    }
+
+    public PixDaemonDescriptor Descriptor { get; }
+
+    public static PixDaemonIdentity CreateForCurrentProcess()
+    {
+        var token = TakeManagerTokenFromEnvironment();
+        var descriptor = new PixDaemonDescriptor(Environment.ProcessId,
+            ReadCurrentProcessStartFileTimeUtc(), HashManagerToken(token));
+        Mutex? singleton = null;
+        Mutex? perPid = null;
+        try
+        {
+            singleton = CreateExclusiveMutex(SingletonMutexName);
+            perPid = CreateExclusiveMutex(PidMutexPrefix + descriptor.ProcessId.ToString(CultureInfo.InvariantCulture));
+            return new PixDaemonIdentity(descriptor, singleton, perPid);
+        }
+        catch
+        {
+            perPid?.Dispose();
+            singleton?.Dispose();
+            throw;
+        }
+    }
+
+    internal static bool IsManagerToken(string? value) => value is { Length: 64 }
+        && value.All(static character => character is >= '0' and <= '9'
+            or >= 'a' and <= 'f' or >= 'A' and <= 'F');
+
+    internal static string SelectManagerToken(string? candidate, Func<byte[]> randomBytes)
+    {
+        if (IsManagerToken(candidate)) return candidate!;
+        var generated = randomBytes();
+        if (generated.Length != 32)
+            throw new CryptographicException("o gerador do token do daemon retornou tamanho invalido");
+        try { return Convert.ToHexString(generated).ToLowerInvariant(); }
+        finally { CryptographicOperations.ZeroMemory(generated); }
+    }
+
+    internal static string HashManagerToken(string token)
+    {
+        var bytes = Encoding.ASCII.GetBytes(token);
+        var digest = SHA256.HashData(bytes);
+        try { return Convert.ToHexString(digest).ToLowerInvariant(); }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+            CryptographicOperations.ZeroMemory(digest);
+        }
+    }
+
+    private static string TakeManagerTokenFromEnvironment()
+    {
+        string? supplied = null;
+        try
+        {
+            supplied = Environment.GetEnvironmentVariable(ManagerTokenEnvironmentName,
+                EnvironmentVariableTarget.Process);
+            return SelectManagerToken(supplied, () => RandomNumberGenerator.GetBytes(32));
+        }
+        finally
+        {
+            // Nao permita que processos filhos ou bibliotecas consultem o
+            // segredo entregue pelo manager depois de sua derivacao.
+            Environment.SetEnvironmentVariable(ManagerTokenEnvironmentName, null,
+                EnvironmentVariableTarget.Process);
+        }
+    }
+
+    private static Mutex CreateExclusiveMutex(string name)
+    {
+        var mutex = new Mutex(initiallyOwned: false, name, out var createdNew);
+        if (createdNew) return mutex;
+        mutex.Dispose();
+        throw new InvalidOperationException($"ja existe um daemon PIX identificado por {name}");
+    }
+
+    private static ulong ReadCurrentProcessStartFileTimeUtc()
+    {
+        if (!OperatingSystem.IsWindows())
+            throw new InvalidOperationException("a identidade persistente do agente PIX exige Windows");
+        if (!GetProcessTimes(GetCurrentProcess(), out var creation, out _, out _, out _))
+            throw new InvalidOperationException($"o Windows nao informou o instante de criacao do daemon (codigo {Marshal.GetLastWin32Error()})");
+        var value = ((ulong)creation.HighDateTime << 32) | creation.LowDateTime;
+        if (value == 0) throw new InvalidOperationException("o instante de criacao do daemon e invalido");
+        return value;
+    }
+
+    public void Dispose()
+    {
+        Interlocked.Exchange(ref _pidMutex, null)?.Dispose();
+        Interlocked.Exchange(ref _singletonMutex, null)?.Dispose();
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeFileTime
+    {
+        public uint LowDateTime;
+        public uint HighDateTime;
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetProcessTimes(IntPtr process, out NativeFileTime creationTime,
+        out NativeFileTime exitTime, out NativeFileTime kernelTime, out NativeFileTime userTime);
 }
 
 sealed record PixOptions
@@ -523,7 +741,7 @@ sealed record PixOptions
             PaymentExpirationMinutes = Math.Clamp(PaymentExpirationMinutes, 1, 60),
             HttpTimeoutSeconds = Math.Clamp(HttpTimeoutSeconds, 5, 60),
             MaxRetrySeconds = Math.Clamp(MaxRetrySeconds, 30, 1800),
-            MercadoPago = MercadoPago ?? new MercadoPagoOptions(),
+            MercadoPago = (MercadoPago ?? new MercadoPagoOptions()).Normalize(),
             Adapter = (Adapter ?? new AdapterOptions()).Normalize()
         };
     }
@@ -600,8 +818,20 @@ sealed record PixOptions
 
 sealed record MercadoPagoOptions
 {
+    // Ambiente declarado pelo operador. Quando /users/me fornece um sinal
+    // verificavel (test_user ou e-mail @testuser.com), o agente falha fechado
+    // se a conta nao corresponder a esta declaracao.
+    public string Environment { get; init; } = "production";
     public string ExternalPosId { get; init; } = "TURBORAMAKIOSK01";
     public string DescriptionPrefix { get; init; } = "Tempo TurboRama";
+
+    public MercadoPagoOptions Normalize()
+    {
+        var environment = (Environment ?? "").Trim().ToLowerInvariant();
+        if (environment is not ("production" or "sandbox"))
+            throw new InvalidOperationException("MercadoPago.Environment deve ser production ou sandbox.");
+        return this with { Environment = environment };
+    }
 }
 
 sealed record MercadoPagoSetupRequest
@@ -676,6 +906,7 @@ sealed record PixOwnerSettings
     // ser criada ate conta, Loja e PDV serem realmente confirmados.
     public string SetupState { get; init; } = "ready";
     public string Provider { get; init; } = "mercadopago";
+    public string MercadoPagoEnvironment { get; init; } = "production";
     public string AccountId { get; init; } = "";
     public string StoreExternalId { get; init; } = "TURBORAMALOJA01";
     public string StoreName { get; init; } = "TurboRama";
@@ -734,6 +965,8 @@ sealed record PixOwnerSettings
         if (!string.IsNullOrWhiteSpace(AccountId)
             && (AccountId.Length is < 5 or > 24 || !AccountId.All(char.IsAsciiDigit)))
             throw new InvalidOperationException("User ID do Mercado Pago e invalido.");
+        if ((MercadoPagoEnvironment ?? "").Trim().ToLowerInvariant() is not ("production" or "sandbox"))
+            throw new InvalidOperationException("Ambiente do Mercado Pago no cadastro e invalido.");
         if (!AlphaNumeric(StoreExternalId, 60)) throw new InvalidOperationException("Identificador da loja e invalido.");
         if (!AlphaNumeric(PosExternalId, 40)) throw new InvalidOperationException("Identificador do caixa PIX e invalido.");
         if (StoreName.Trim().Length is < 2 or >= 60) throw new InvalidOperationException("Nome da loja e invalido.");
@@ -755,7 +988,11 @@ sealed record PixOwnerSettings
             ProductionEnabled = true,
             AllowedMinutes = PackagePricesCents.Keys.Order().ToList(),
             PackagePricesCents = new Dictionary<int, long>(PackagePricesCents),
-            MercadoPago = options.MercadoPago with { ExternalPosId = PosExternalId.Trim() },
+            MercadoPago = options.MercadoPago with
+            {
+                Environment = (MercadoPagoEnvironment ?? "production").Trim().ToLowerInvariant(),
+                ExternalPosId = PosExternalId.Trim()
+            },
             Adapter = provider == "adapter"
                 ? new AdapterOptions { BaseUrl = AdapterBaseUrl, ProviderId = AdapterProviderId }.Normalize()
                 : options.Adapter
@@ -806,6 +1043,11 @@ sealed record PixOwnerProvisioningRequest
 {
     public int SchemaVersion { get; init; } = 1;
     public string Provider { get; init; } = "mercadopago";
+    // Obrigatorio para Mercado Pago. O prefixo APP_USR nao distingue uma
+    // credencial real de uma credencial de teste, portanto o operador precisa
+    // declarar a intencao e /users/me precisa confirma-la antes de qualquer
+    // segredo, cadastro ou recurso remoto ser alterado.
+    public string MercadoPagoEnvironment { get; init; } = "";
     public string StoreName { get; init; } = "TurboRama";
     public string StoreExternalId { get; init; } = "";
     public string PosName { get; init; } = "TurboRama Kiosk";
@@ -840,7 +1082,8 @@ sealed record PixOwnerProvisioningResult(string Provider, string AccountId, stri
 static class PixOwnerProvisioner
 {
     public static async Task<PixOwnerProvisioningResult> ConfigureAsync(PixOwnerProvisioningRequest request,
-        string credential, PixOptions baseOptions, PixPaths paths, PixSecretStore secrets, CancellationToken token)
+        string credential, PixOptions baseOptions, PixPaths paths, PixSecretStore secrets, CancellationToken token,
+        HttpMessageHandler? mercadoPagoHandler = null)
     {
         var provider = request.Provider.Trim().ToLowerInvariant();
         if (provider is not ("mercadopago" or "adapter"))
@@ -852,7 +1095,8 @@ static class PixOwnerProvisioner
         {
             Environment.SetEnvironmentVariable("TURBORAMA_PIX_PROVIDER_SECRET", credential);
             return provider == "mercadopago"
-                ? await ConfigureMercadoPagoAsync(request, credential, baseOptions, paths, secrets, token)
+                ? await ConfigureMercadoPagoAsync(request, credential, baseOptions, paths, secrets, token,
+                    mercadoPagoHandler)
                 : await ConfigureAdapterAsync(request, credential, baseOptions, paths, secrets, token);
         }
         finally
@@ -862,40 +1106,22 @@ static class PixOwnerProvisioner
     }
 
     private static async Task<PixOwnerProvisioningResult> ConfigureMercadoPagoAsync(PixOwnerProvisioningRequest request,
-        string credential, PixOptions baseOptions, PixPaths paths, PixSecretStore secrets, CancellationToken token)
+        string credential, PixOptions baseOptions, PixPaths paths, PixSecretStore secrets, CancellationToken token,
+        HttpMessageHandler? handler)
     {
         if (credential.Length is < 40 or > 384 || !credential.StartsWith("APP_USR-", StringComparison.Ordinal)
             || credential.Any(char.IsWhiteSpace) || credential.Any(char.IsControl))
             throw new SecurityException("Access Token do Mercado Pago esta incompleto ou em formato invalido");
 
-        // O dono nao pode ser obrigado a redigitar token, CEP e precos quando
-        // uma fonte externa estiver fora do ar. O cadastro fica pendente e o
-        // agente o retoma depois, mas permanece bloqueado ate o health-check.
-        var pendingStoreExternalId = string.IsNullOrWhiteSpace(request.StoreExternalId)
-            ? CreatePendingExternalId("LZLOJA", 60)
+        var declaredEnvironment = ValidateMercadoPagoEnvironment(request.MercadoPagoEnvironment);
+        var requestedStoreName = RequiredText(request.StoreName, 2, 59, "nome da loja");
+        var requestedPosName = RequiredText(request.PosName, 2, 44, "nome do caixa");
+        var requestedStoreExternalId = string.IsNullOrWhiteSpace(request.StoreExternalId)
+            ? ""
             : ValidateExternalId(request.StoreExternalId, 60, "loja");
-        var pendingPosExternalId = string.IsNullOrWhiteSpace(request.PosExternalId)
-            ? CreatePendingExternalId("LZPIX", 40)
+        var requestedPosExternalId = string.IsNullOrWhiteSpace(request.PosExternalId)
+            ? ""
             : ValidateExternalId(request.PosExternalId, 40, "caixa");
-        var pendingOwner = new PixOwnerSettings
-        {
-            Enabled = true,
-            SetupState = "pending",
-            Provider = "mercadopago",
-            StoreExternalId = pendingStoreExternalId,
-            StoreName = RequiredText(request.StoreName, 2, 59, "nome da loja"),
-            PosExternalId = pendingPosExternalId,
-            PosName = RequiredText(request.PosName, 2, 44, "nome do caixa"),
-            PostalCode = Digits(request.PostalCode),
-            StreetNumber = RequiredText(request.StreetNumber, 1, 20, "numero do estabelecimento"),
-            Reference = RequiredText(request.Reference, 1, 120, "referencia do estabelecimento"),
-            PackagePricesCents = new Dictionary<int, long>(request.PackagePricesCents)
-        };
-        pendingOwner.Validate();
-        secrets.Save(credential);
-        SaveOwnerSettings(paths, pendingOwner);
-        OwnerSetupStatus.Publish(paths, "pending",
-            "Cadastro PIX salvo com seguranca. Confirmando conta, endereco, loja e caixa; compras ficam bloqueadas ate a conclusao.");
 
         var probeOptions = (baseOptions with
         {
@@ -903,40 +1129,95 @@ static class PixOwnerProvisioner
             ProductionEnabled = true,
             AllowedMinutes = request.PackagePricesCents.Keys.Order().ToList(),
             PackagePricesCents = new Dictionary<int, long>(request.PackagePricesCents),
-            MercadoPago = baseOptions.MercadoPago with { ExternalPosId = pendingOwner.PosExternalId }
+            MercadoPago = baseOptions.MercadoPago with
+            {
+                Environment = declaredEnvironment,
+                // A consulta de inventario nao usa o PDV, mas PixOptions exige
+                // um identificador sintaticamente valido. O ID definitivo so e
+                // escolhido depois da leitura fail-closed da conta.
+                ExternalPosId = string.IsNullOrWhiteSpace(requestedPosExternalId)
+                    ? "TURBORAMAPROBE"
+                    : requestedPosExternalId
+            }
         }).Normalize();
-        var mercadoPago = new MercadoPagoPixProvider(probeOptions, secrets);
+        var mercadoPago = new MercadoPagoPixProvider(probeOptions, secrets, handler);
         var cacheFile = Path.Combine(paths.Root, "owner-address-cache.json");
         var locationWasRequired = false;
+        var pendingPersisted = false;
 
         try
         {
-            // /users/me devolve o titular real autorizado pelo token. Client ID,
-            // ID da aplicacao e User ID de sandbox jamais sao aceitos como conta.
+            // /users/me devolve o titular real autorizado pelo token. Client ID
+            // e ID da aplicacao jamais sao aceitos como conta; uma conta de
+            // teste so passa quando o request declarou sandbox explicitamente.
             var inventory = await mercadoPago.GetInfrastructureAsync(token);
             var accountId = inventory.AccountId.Trim();
             if (accountId.Length is < 5 or > 24 || !accountId.All(char.IsAsciiDigit))
                 throw new SecurityException("o Access Token nao retornou um User ID de conta valido");
 
-            var owner = pendingOwner with { AccountId = accountId };
-            owner.Validate();
-            var storeExists = inventory.Stores.Any(item =>
-                item.ExternalId.Equals(owner.StoreExternalId, StringComparison.OrdinalIgnoreCase));
-            locationWasRequired = !storeExists;
-            var setup = storeExists
-                ? owner.BuildSetupRequestForExistingStore()
-                : await owner.BuildSetupRequestAsync(paths, token);
-            var infrastructure = await mercadoPago.EnsureInfrastructureAsync(setup, token);
+            // Esta decisao e estritamente de leitura. Em particular, uma conta
+            // que ja possua recursos ambiguos nao perde a credencial/cadastro
+            // anterior e nao recebe um POST acidental.
+            var decision = DecideMercadoPagoProvisioning(requestedStoreName, requestedStoreExternalId,
+                requestedPosName, requestedPosExternalId, inventory);
+            var pendingOwner = new PixOwnerSettings
+            {
+                Enabled = true,
+                SetupState = "pending",
+                Provider = "mercadopago",
+                MercadoPagoEnvironment = declaredEnvironment,
+                AccountId = accountId,
+                StoreExternalId = decision.StoreExternalId,
+                StoreName = requestedStoreName,
+                PosExternalId = decision.PosExternalId,
+                PosName = requestedPosName,
+                PostalCode = Digits(request.PostalCode),
+                StreetNumber = RequiredText(request.StreetNumber, 1, 20, "numero do estabelecimento"),
+                Reference = RequiredText(request.Reference, 1, 120, "referencia do estabelecimento"),
+                PackagePricesCents = new Dictionary<int, long>(request.PackagePricesCents)
+            };
+            pendingOwner.Validate();
+
+            locationWasRequired = decision.CreateStore;
+            var setup = decision.CreateStore
+                ? await pendingOwner.BuildSetupRequestAsync(paths, token)
+                : pendingOwner.BuildSetupRequestForExistingStore();
+
+            // A barreira local vem antes da troca da credencial: se qualquer
+            // etapa seguinte falhar, o daemon encontra owner-settings pendente
+            // e nunca publica compras como prontas com um par incoerente.
+            SaveOwnerSettings(paths, pendingOwner);
+            pendingPersisted = true;
+            OwnerSetupStatus.Publish(paths, "pending",
+                "Conta e recursos PIX selecionados com seguranca. Validando credencial e infraestrutura antes de liberar cobrancas.");
+            secrets.Save(credential);
+
+            MercadoPagoSetupResult infrastructure;
+            if (decision.RequiresRemoteWrite)
+            {
+                // Um POST que tenha sido aceito apesar de uma resposta perdida
+                // permanece bloqueado e pode ser auditado sem trocar novamente
+                // o cadastro pronto anterior por engano.
+                infrastructure = await mercadoPago.EnsureInfrastructureAsync(setup, token,
+                    new MercadoPagoCreationPolicy(decision.CreateStore, decision.CreatePointOfSale,
+                        decision.RequireEmptyInventoryBeforeCreation));
+            }
+            else
+            {
+                infrastructure = new MercadoPagoSetupResult(accountId, decision.Store!, decision.PointOfSale!,
+                    StoreCreated: false, PointOfSaleCreated: false);
+            }
+
             if (infrastructure.StoreCreated)
             {
-                BrazilianPostalAddress.SaveConfirmedCache(cacheFile, owner.PostalCode, owner.StreetNumber,
+                BrazilianPostalAddress.SaveConfirmedCache(cacheFile, pendingOwner.PostalCode, pendingOwner.StreetNumber,
                     new BrazilianPostalAddress(setup.StreetName, setup.CityName, setup.StateName,
                         setup.Latitude, setup.Longitude, setup.LocationSource));
             }
             mercadoPago.UseExternalPosId(infrastructure.PointOfSale.ExternalId);
             await mercadoPago.CheckHealthAsync(token);
 
-            var confirmed = owner with
+            var confirmed = pendingOwner with
             {
                 SetupState = "ready",
                 AccountId = infrastructure.AccountId,
@@ -946,12 +1227,12 @@ static class PixOwnerProvisioner
             confirmed.Validate();
             SaveOwnerSettings(paths, confirmed);
             OwnerSetupStatus.Publish(paths, "ready",
-                $"Conta {infrastructure.AccountId}, loja {infrastructure.Store.ExternalId} e caixa {infrastructure.PointOfSale.ExternalId} confirmados automaticamente.");
+                $"Conta {infrastructure.AccountId}, loja {infrastructure.Store.ExternalId} e caixa {infrastructure.PointOfSale.ExternalId} confirmados.");
             return new PixOwnerProvisioningResult("mercadopago", infrastructure.AccountId,
                 infrastructure.Store.ExternalId, infrastructure.PointOfSale.ExternalId, "ready",
                 "Conta, Access Token, loja e caixa validados. PIX pronto para uso.");
         }
-        catch (MercadoPagoApiException ex) when (locationWasRequired && IsLocationSetupFailure(ex))
+        catch (MercadoPagoApiException ex) when (pendingPersisted && locationWasRequired && IsLocationSetupFailure(ex))
         {
             BrazilianPostalAddress.InvalidateCache(cacheFile);
             OwnerSetupStatus.Publish(paths, "needs_address_confirmation",
@@ -960,11 +1241,202 @@ static class PixOwnerProvisioner
         }
         catch (Exception ex)
         {
-            OwnerSetupStatus.Publish(paths, "pending",
-                $"Cadastro PIX salvo. A confirmacao automatica sera retomada quando os servicos voltarem: {SafeSetupMessage(ex.Message)}");
+            if (pendingPersisted)
+                OwnerSetupStatus.Publish(paths, "pending",
+                    $"Cadastro PIX salvo. A confirmacao automatica sera retomada quando os servicos voltarem: {SafeSetupMessage(ex.Message)}");
             throw;
         }
     }
+
+    internal static MercadoPagoProvisioningDecision DecideMercadoPagoProvisioning(string storeName,
+        string requestedStoreExternalId, string posName, string requestedPosExternalId,
+        MercadoPagoInfrastructure inventory)
+    {
+        var accountId = (inventory.AccountId ?? "").Trim();
+        if (accountId.Length is < 5 or > 24 || !accountId.All(char.IsAsciiDigit))
+            throw new SecurityException("o inventario do Mercado Pago nao pertence a uma conta valida");
+
+        var cleanStoreName = RequiredText(storeName, 2, 59, "nome da loja");
+        var cleanPosName = RequiredText(posName, 2, 44, "nome do caixa");
+        var storeExternalId = string.IsNullOrWhiteSpace(requestedStoreExternalId)
+            ? ""
+            : ValidateExternalId(requestedStoreExternalId, 60, "loja");
+        var posExternalId = string.IsNullOrWhiteSpace(requestedPosExternalId)
+            ? ""
+            : ValidateExternalId(requestedPosExternalId, 40, "caixa");
+        var storeWasExplicit = !string.IsNullOrWhiteSpace(storeExternalId);
+        var posWasExplicit = !string.IsNullOrWhiteSpace(posExternalId);
+
+        var stores = inventory.Stores ?? Array.Empty<MercadoPagoStoreInfo>();
+        var points = inventory.PointsOfSale ?? Array.Empty<MercadoPagoPosInfo>();
+        if (stores.Count == 0 && points.Count == 0)
+        {
+            return new MercadoPagoProvisioningDecision(accountId,
+                storeWasExplicit ? storeExternalId : CreatePendingExternalId("LZLOJA", 60),
+                posWasExplicit ? posExternalId : CreatePendingExternalId("LZPIX", 40),
+                null, null, CreateStore: true, CreatePointOfSale: true,
+                RequireEmptyInventoryBeforeCreation: true);
+        }
+
+        var requestedStore = storeWasExplicit
+            ? SingleStoreByExternalId(stores, storeExternalId)
+            : null;
+        var requestedPoint = posWasExplicit
+            ? SinglePointByExternalId(points, posExternalId)
+            : null;
+
+        // Operadores frequentemente colam User ID, Client ID ou numero da
+        // aplicacao do Mercado Pago nos campos de external_id. Esses numeros
+        // nao identificam Loja/PDV QR. Se nao existirem no inventario, ignore
+        // o valor e tente selecionar o par real ja cadastrado na conta.
+        if (storeWasExplicit && requestedStore is null && LooksLikeMercadoPagoNumericId(storeExternalId))
+        {
+            storeExternalId = "";
+            storeWasExplicit = false;
+        }
+        if (posWasExplicit && requestedPoint is null && LooksLikeMercadoPagoNumericId(posExternalId))
+        {
+            posExternalId = "";
+            posWasExplicit = false;
+        }
+
+        // Em uma conta ja povoada, um ID explicito inexistente e tratado como
+        // erro de selecao, nunca como autorizacao implicita para cadastrar mais
+        // uma Loja ou PDV. Criacao automatica pertence apenas a conta vazia.
+        if (storeWasExplicit && requestedStore is null)
+            throw ExplicitSelectionRequired("o StoreExternalId informado nao existe nesta conta; a criacao automatica so e permitida quando a conta esta totalmente vazia");
+        if (posWasExplicit && requestedPoint is null)
+            throw ExplicitSelectionRequired("o PosExternalId informado nao existe nesta conta; a criacao automatica so e permitida quando a conta esta totalmente vazia");
+
+        if (!storeWasExplicit && !posWasExplicit)
+        {
+            var candidates = CompatiblePairs(stores, points, cleanStoreName, cleanPosName);
+            if (candidates.Count != 1)
+                throw ExplicitSelectionRequired(candidates.Count == 0
+                    ? "nenhum par ativo de loja e PDV e compativel com os nomes informados"
+                    : "mais de um par ativo de loja e PDV e compativel com os nomes informados");
+            var candidate = candidates[0];
+            return Reuse(accountId, candidate.Store, candidate.PointOfSale);
+        }
+
+        if (storeWasExplicit && posWasExplicit)
+        {
+            RequireActive(requestedPoint!);
+            var pointStore = RequireAssociatedStore(stores, requestedPoint!);
+            if (!requestedStore!.Id.Equals(pointStore.Id, StringComparison.Ordinal))
+                throw new SecurityException("o PosExternalId informado nao pertence ao StoreExternalId informado nesta conta");
+            return Reuse(accountId, requestedStore, requestedPoint!);
+        }
+
+        if (storeWasExplicit)
+        {
+            var candidates = points.Where(point => IsActive(point)
+                    && point.StoreId.Equals(requestedStore!.Id, StringComparison.Ordinal)
+                    && NamesEqual(point.Name, cleanPosName))
+                .ToList();
+            if (candidates.Count != 1)
+                throw ExplicitSelectionRequired(candidates.Count == 0
+                    ? "a loja informada nao possui um unico PDV ativo compativel com o nome do caixa"
+                    : "a loja informada possui mais de um PDV ativo compativel com o nome do caixa");
+            return Reuse(accountId, requestedStore!, candidates[0]);
+        }
+
+        // Somente o PDV foi informado e sua existencia ja foi comprovada acima;
+        // a associacao interna aponta inequivocamente para a Loja da mesma conta.
+        RequireActive(requestedPoint!);
+        return Reuse(accountId, RequireAssociatedStore(stores, requestedPoint!), requestedPoint!);
+    }
+
+    private static bool LooksLikeMercadoPagoNumericId(string value)
+    {
+        var clean = (value ?? "").Trim();
+        return clean.Length >= 8 && clean.Length <= 24 && clean.All(char.IsAsciiDigit);
+    }
+
+    internal static string ValidateMercadoPagoEnvironment(string? value)
+    {
+        var environment = (value ?? "").Trim().ToLowerInvariant();
+        if (environment is not ("production" or "sandbox"))
+            throw new InvalidOperationException("informe explicitamente environment=production ou environment=sandbox para o Mercado Pago");
+        return environment;
+    }
+
+    private static MercadoPagoProvisioningDecision Reuse(string accountId, MercadoPagoStoreInfo store,
+        MercadoPagoPosInfo point)
+    {
+        RequireActive(point);
+        if (!point.StoreId.Equals(store.Id, StringComparison.Ordinal))
+            throw new SecurityException("o PDV selecionado nao pertence a loja selecionada");
+        if (string.IsNullOrWhiteSpace(store.ExternalId) || string.IsNullOrWhiteSpace(point.ExternalId))
+            throw new SecurityException("a loja ou o PDV selecionado nao possui external_id valido");
+        return new MercadoPagoProvisioningDecision(accountId, store.ExternalId, point.ExternalId,
+            store, point, CreateStore: false, CreatePointOfSale: false);
+    }
+
+    private static IReadOnlyList<MercadoPagoProvisioningPair> CompatiblePairs(
+        IReadOnlyList<MercadoPagoStoreInfo> stores, IReadOnlyList<MercadoPagoPosInfo> points,
+        string storeName, string posName)
+    {
+        var result = new List<MercadoPagoProvisioningPair>();
+        foreach (var point in points.Where(point => IsActive(point) && NamesEqual(point.Name, posName)))
+        {
+            var associated = stores.Where(store => store.Id.Equals(point.StoreId, StringComparison.Ordinal)
+                    && NamesEqual(store.Name, storeName))
+                .ToList();
+            if (associated.Count > 1)
+                throw new SecurityException("o inventario retornou mais de uma loja com o mesmo ID interno");
+            if (associated.Count == 1) result.Add(new MercadoPagoProvisioningPair(associated[0], point));
+        }
+        return result;
+    }
+
+    private static MercadoPagoStoreInfo? SingleStoreByExternalId(IReadOnlyList<MercadoPagoStoreInfo> stores,
+        string externalId)
+    {
+        var matches = stores.Where(store => store.ExternalId.Equals(externalId, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count > 1)
+            throw new SecurityException("mais de uma loja usa o StoreExternalId informado nesta conta");
+        return matches.Count == 1 ? matches[0] : null;
+    }
+
+    private static MercadoPagoPosInfo? SinglePointByExternalId(IReadOnlyList<MercadoPagoPosInfo> points,
+        string externalId)
+    {
+        var matches = points.Where(point => point.ExternalId.Equals(externalId, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count > 1)
+            throw new SecurityException("mais de um PDV usa o PosExternalId informado nesta conta");
+        return matches.Count == 1 ? matches[0] : null;
+    }
+
+    private static MercadoPagoStoreInfo RequireAssociatedStore(IReadOnlyList<MercadoPagoStoreInfo> stores,
+        MercadoPagoPosInfo point)
+    {
+        var matches = stores.Where(store => store.Id.Equals(point.StoreId, StringComparison.Ordinal)).ToList();
+        if (matches.Count != 1)
+            throw new SecurityException(matches.Count == 0
+                ? "o PDV informado nao esta associado a uma loja visivel desta conta"
+                : "o PDV informado possui uma associacao de loja ambigua");
+        return matches[0];
+    }
+
+    private static bool NamesEqual(string? left, string? right)
+        => string.Equals((left ?? "").Trim(), (right ?? "").Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsActive(MercadoPagoPosInfo point)
+        // A busca de PDVs do Mercado Pago omite `status` em algumas contas.
+        // O proprio health-check ja considera essa resposta ativa; use a
+        // mesma regra aqui para nao recusar um PDV valido durante o reuso.
+        => string.IsNullOrWhiteSpace(point.Status)
+            || point.Status.Equals("active", StringComparison.OrdinalIgnoreCase);
+
+    private static void RequireActive(MercadoPagoPosInfo point)
+    {
+        if (!IsActive(point))
+            throw new InvalidOperationException("o PDV selecionado nao esta ativo no Mercado Pago");
+    }
+
+    private static InvalidOperationException ExplicitSelectionRequired(string reason)
+        => new($"{reason}. Informe StoreExternalId e PosExternalId explicitamente; nenhum cadastro local foi alterado e nenhum recurso foi criado.");
 
     private static async Task<PixOwnerProvisioningResult> ConfigureAdapterAsync(PixOwnerProvisioningRequest request,
         string credential, PixOptions baseOptions, PixPaths paths, PixSecretStore secrets, CancellationToken token)
@@ -986,19 +1458,24 @@ static class PixOwnerProvisioner
         }).Normalize();
         adapterOptions.ValidateForStartup(configurationOnly: false);
         var bank = new AdapterPixProvider(adapterOptions, secrets);
-        await bank.CheckHealthAsync(token);
-
-        var owner = new PixOwnerSettings
+        var pendingOwner = new PixOwnerSettings
         {
             Enabled = true,
+            SetupState = "pending",
             Provider = "adapter",
             AdapterBaseUrl = adapter.BaseUrl,
             AdapterProviderId = adapter.ProviderId,
             PackagePricesCents = new Dictionary<int, long>(request.PackagePricesCents)
         };
-        owner.Validate();
+        pendingOwner.Validate();
+        SaveOwnerSettings(paths, pendingOwner);
+        OwnerSetupStatus.Publish(paths, "pending",
+            $"Adaptador {adapter.ProviderId} selecionado. Validando a nova credencial antes de liberar cobrancas.");
         secrets.Save(credential);
-        SaveOwnerSettings(paths, owner);
+        await bank.CheckHealthAsync(token);
+        var confirmedOwner = pendingOwner with { SetupState = "ready" };
+        confirmedOwner.Validate();
+        SaveOwnerSettings(paths, confirmedOwner);
         OwnerSetupStatus.Publish(paths, "ready", $"Adaptador bancario {adapter.ProviderId} validado e ativado.");
         return new PixOwnerProvisioningResult("adapter", "", "", "", "ready",
             $"Adaptador {adapter.ProviderId} validado. PIX pronto para uso.");
@@ -1031,9 +1508,19 @@ static class PixOwnerProvisioner
             || detail.Contains("state", StringComparison.Ordinal);
     }
 
-    private static string SafeSetupMessage(string message)
+    internal static string SafeSetupMessage(string message)
     {
-        var clean = message.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        var clean = (message ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        for (var tokenStart = clean.IndexOf("APP_USR-", StringComparison.OrdinalIgnoreCase);
+             tokenStart >= 0;
+             tokenStart = clean.IndexOf("APP_USR-", tokenStart + "[Access Token oculto]".Length,
+                 StringComparison.OrdinalIgnoreCase))
+        {
+            var tokenEnd = tokenStart;
+            while (tokenEnd < clean.Length
+                && (char.IsLetterOrDigit(clean[tokenEnd]) || clean[tokenEnd] is '-' or '_')) tokenEnd++;
+            clean = clean[..tokenStart] + "[Access Token oculto]" + clean[tokenEnd..];
+        }
         return clean.Length <= 280 ? clean : clean[..280];
     }
 
@@ -1450,6 +1937,28 @@ sealed class OwnerInfrastructureCoordinator
 
     public bool Ready { get; private set; }
 
+    // Um PDV pode ser removido, pertencer a outra conta depois da troca de
+    // token ou ainda nao estar visivel no endpoint filtrado. Antes desta
+    // transicao, o health-check deixava Ready=true para sempre e repetia 404
+    // sem voltar ao inventario/fluxo idempotente de criacao. Somente a falta
+    // confirmada do PDV invalida a infraestrutura; falhas de rede continuam
+    // usando o backoff normal sem criar recursos.
+    internal bool InvalidateAfterHealthFailure(Exception error)
+    {
+        if (!RequiresInfrastructureReconciliation(error)) return false;
+        Ready = false;
+        _nextAttempt = DateTimeOffset.MinValue;
+        const string message = "O caixa PIX configurado nao foi encontrado. Reconciliando Loja/PDV da conta antes de liberar novas cobrancas.";
+        OwnerSetupStatus.Publish(_paths, "pending", message);
+        return true;
+    }
+
+    internal static bool RequiresInfrastructureReconciliation(Exception error)
+        => error is MercadoPagoApiException mercadoPago
+            && mercadoPago.StatusCode == 404
+            && (mercadoPago.Detail.Contains("PDV", StringComparison.OrdinalIgnoreCase)
+                || mercadoPago.Detail.Contains("point of sale", StringComparison.OrdinalIgnoreCase));
+
     public async Task<bool> TryEnsureAsync(bool force, CancellationToken token)
     {
         if (Ready && !force) return true;
@@ -1460,22 +1969,10 @@ sealed class OwnerInfrastructureCoordinator
         {
             OwnerSetupStatus.Publish(_paths, "configuring", "Conferindo loja e caixa PIX. Se estiver sem internet, o sistema tentara novamente automaticamente.");
 
-            // O prefixo APP_USR e usado tanto em sandbox quanto em producao.
-            // Por isso o ambiente e a conta devem vir do proprio Access Token,
-            // e nunca do User ID que pode ter ficado salvo por um teste antigo.
-            // Algumas contas de sandbox recusam /users/me por politica; somente
-            // nesse caso mantemos a consulta compativel pelo User ID cadastrado.
-            MercadoPagoInfrastructure inventory;
-            try
-            {
-                inventory = await _provider.GetInfrastructureAsync(token);
-            }
-            catch (MercadoPagoApiException ex) when (ex.StatusCode == 403
-                && _settings.AccountId.Length is >= 5 and <= 24
-                && _settings.AccountId.All(char.IsAsciiDigit))
-            {
-                inventory = await _provider.GetInfrastructureForConfiguredAccountAsync(_settings.AccountId.Trim(), token);
-            }
+            // O ambiente e a conta devem vir do proprio Access Token. Sem uma
+            // resposta confiavel de /users/me, o daemon permanece bloqueado;
+            // um User ID antigo nunca substitui essa comprovacao.
+            var inventory = await _provider.GetInfrastructureAsync(token);
             var effectiveSettings = BindAuthenticatedAccount(_settings, inventory);
             var accountAutomaticallyCorrected = !effectiveSettings.AccountId.Equals(_settings.AccountId.Trim(), StringComparison.Ordinal);
 
@@ -1494,31 +1991,16 @@ sealed class OwnerInfrastructureCoordinator
                 return true;
             }
 
-            // As primeiras versoes gravavam estes dois exemplos no cadastro
-            // local. Se a conta ja possui uma loja/PDV, criar outro por cima
-            // deles e uma acao comercial indevida. Em vez disso, interrompemos
-            // com uma orientacao objetiva para o dono informar os IDs reais
-            // que o proprio Mercado Pago ja possui.
-            if (effectiveSettings.StoreExternalId.Equals("TURBORAMALOJA01", StringComparison.OrdinalIgnoreCase)
-                && effectiveSettings.PosExternalId.Equals("TURBORAMAKIOSK01", StringComparison.OrdinalIgnoreCase)
-                && (inventory.Stores.Count > 0 || inventory.PointsOfSale.Count > 0))
-            {
+            if (inventory.Stores.Count > 0 || inventory.PointsOfSale.Count > 0)
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(selectionError)
-                    ? "Os identificadores antigos nao existem e nenhum caixa ativo associado a uma loja foi localizado nesta conta. Nenhuma cobranca foi criada."
+                    ? "Os IDs configurados nao correspondem a um par ativo desta conta. A criacao automatica so e permitida quando a conta esta totalmente vazia; nenhum recurso foi criado."
                     : selectionError);
-            }
 
-            // Se a loja ja existe, criar ou confirmar apenas o caixa nao usa
-            // endereco. Portanto nao consultamos CEP nem coordenadas nessa
-            // situacao. A localizacao completa so e resolvida quando a conta
-            // realmente ainda nao possui a loja solicitada.
-            var configuredStoreExists = inventory.Stores.Any(item =>
-                item.ExternalId.Equals(effectiveSettings.StoreExternalId.Trim(), StringComparison.OrdinalIgnoreCase));
-            locationWasRequired = !configuredStoreExists;
-            var setup = configuredStoreExists
-                ? effectiveSettings.BuildSetupRequestForExistingStore()
-                : await effectiveSettings.BuildSetupRequestAsync(_paths, token);
-            var result = await _provider.EnsureInfrastructureAsync(setup, token);
+            locationWasRequired = true;
+            var setup = await effectiveSettings.BuildSetupRequestAsync(_paths, token);
+            var result = await _provider.EnsureInfrastructureAsync(setup, token,
+                new MercadoPagoCreationPolicy(AllowStoreCreation: true, AllowPointOfSaleCreation: true,
+                    RequireEmptyInventoryBeforeCreation: true));
             if (result.StoreCreated && BrazilianPostalAddress.HasValidCoordinates(setup.Latitude, setup.Longitude))
             {
                 BrazilianPostalAddress.SaveConfirmedCache(Path.Combine(_paths.Root, "owner-address-cache.json"),
@@ -1536,6 +2018,7 @@ sealed class OwnerInfrastructureCoordinator
             OwnerSetupStatus.Publish(_paths, "ready", setupMessage);
             return true;
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or HttpRequestException
             or TaskCanceledException or MercadoPagoApiException or InvalidOperationException or SecurityException)
         {
@@ -1624,6 +2107,10 @@ sealed class OwnerInfrastructureCoordinator
         var accountId = inventory.AccountId.Trim();
         if (accountId.Length is < 5 or > 24 || !accountId.All(char.IsAsciiDigit))
             throw new SecurityException("O Mercado Pago nao retornou um User ID valido para o Access Token.");
+        if (settings.SetupState.Equals("pending", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(settings.AccountId)
+            && !settings.AccountId.Equals(accountId, StringComparison.Ordinal))
+            throw new SecurityException("A credencial protegida nao pertence a conta pendente selecionada. Compras permanecem bloqueadas.");
         return settings.AccountId.Equals(accountId, StringComparison.Ordinal)
             ? settings
             : settings with { AccountId = accountId };
@@ -1651,6 +2138,15 @@ sealed class OwnerInfrastructureCoordinator
 sealed record MercadoPagoStoreInfo(string Id, string ExternalId, string Name);
 sealed record MercadoPagoPosInfo(string Id, string ExternalId, string Name, string StoreId, string Status);
 sealed record MercadoPagoInfrastructure(string AccountId, IReadOnlyList<MercadoPagoStoreInfo> Stores, IReadOnlyList<MercadoPagoPosInfo> PointsOfSale);
+sealed record MercadoPagoProvisioningPair(MercadoPagoStoreInfo Store, MercadoPagoPosInfo PointOfSale);
+sealed record MercadoPagoProvisioningDecision(string AccountId, string StoreExternalId, string PosExternalId,
+    MercadoPagoStoreInfo? Store, MercadoPagoPosInfo? PointOfSale, bool CreateStore, bool CreatePointOfSale,
+    bool RequireEmptyInventoryBeforeCreation = false)
+{
+    public bool RequiresRemoteWrite => CreateStore || CreatePointOfSale;
+}
+sealed record MercadoPagoCreationPolicy(bool AllowStoreCreation, bool AllowPointOfSaleCreation,
+    bool RequireEmptyInventoryBeforeCreation = false);
 sealed record MercadoPagoSetupResult(string AccountId, MercadoPagoStoreInfo Store, MercadoPagoPosInfo PointOfSale,
     bool StoreCreated, bool PointOfSaleCreated);
 
@@ -1677,6 +2173,7 @@ sealed class PixPaths
         Approved = Path.Combine(root, "approved");
         Processed = Path.Combine(root, "processed");
         Rejected = Path.Combine(root, "rejected");
+        Reconciliation = Path.Combine(root, "reconciliation");
         Retry = Path.Combine(root, "retry");
         Qr = Path.Combine(root, "qr");
         Logs = Path.Combine(root, "logs");
@@ -1689,6 +2186,7 @@ sealed class PixPaths
         CredentialReplayFile = Path.Combine(root, "credential-replay.dat");
         PublicOptionsFile = Path.Combine(root, "public-options.json");
         AgentStatusFile = Path.Combine(root, "agent-status.json");
+        AgentStopRequestFile = Path.Combine(root, "agent-stop.request");
     }
 
     public string Root { get; }
@@ -1697,6 +2195,7 @@ sealed class PixPaths
     public string Approved { get; }
     public string Processed { get; }
     public string Rejected { get; }
+    public string Reconciliation { get; }
     public string Retry { get; }
     public string Qr { get; }
     public string Logs { get; }
@@ -1709,6 +2208,7 @@ sealed class PixPaths
     public string CredentialReplayFile { get; }
     public string PublicOptionsFile { get; }
     public string AgentStatusFile { get; }
+    public string AgentStopRequestFile { get; }
     public string RequestFile(string id) => Path.Combine(Requests, $"{id}.request.json");
     public string SessionFile(string id) => Path.Combine(Sessions, $"{id}.session.json");
     public string ApprovedFile(string id) => Path.Combine(Approved, $"{id}.credit.json");
@@ -1719,7 +2219,7 @@ sealed class PixPaths
 
     public void EnsureDirectories()
     {
-        foreach (var directory in new[] { Root, Requests, Sessions, Approved, Processed, Rejected, Retry, Qr, Logs }) Directory.CreateDirectory(directory);
+        foreach (var directory in new[] { Root, Requests, Sessions, Approved, Processed, Rejected, Reconciliation, Retry, Qr, Logs }) Directory.CreateDirectory(directory);
     }
 
     public void WriteAtomically<T>(string destination, T value)
@@ -1763,9 +2263,266 @@ sealed class PixPaths
     }
 }
 
+enum PixStopRequestDisposition { Authorized, InstallerUpdate, Mismatch, Invalid }
+
+static class PixAgentControl
+{
+    private const int MaxStopRequestBytes = 16 * 1024;
+    private static readonly HashSet<string> StopRequestFields = new(StringComparer.Ordinal)
+    {
+        "schemaVersion", "mode", "processId", "processStartFileTimeUtc", "managerTokenHash"
+    };
+
+    public static bool TryConsumeStopRequest(PixPaths paths, PixDaemonDescriptor identity)
+    {
+        if (!File.Exists(paths.AgentStopRequestFile)) return false;
+        string payload;
+        try
+        {
+            var info = new FileInfo(paths.AgentStopRequestFile);
+            if (!info.Exists) return false;
+            if ((info.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0
+                || info.Length is <= 0 or > MaxStopRequestBytes)
+            {
+                paths.Quarantine(paths.AgentStopRequestFile, "sentinel de parada PIX invalido");
+                return false;
+            }
+            payload = File.ReadAllText(paths.AgentStopRequestFile, new UTF8Encoding(false, true));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException
+            or DecoderFallbackException)
+        {
+            Console.Error.WriteLine($"Nao foi possivel ler agent-stop.request: {ex.Message}");
+            return false;
+        }
+
+        var disposition = ClassifyStopRequest(payload, identity);
+        if (disposition is PixStopRequestDisposition.Mismatch or PixStopRequestDisposition.Invalid)
+        {
+            paths.Quarantine(paths.AgentStopRequestFile,
+                disposition == PixStopRequestDisposition.Mismatch
+                    ? "sentinel dirigido a outra instancia do daemon PIX"
+                    : "contrato do sentinel de parada PIX invalido");
+            return false;
+        }
+        try
+        {
+            File.Delete(paths.AgentStopRequestFile);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            Console.Error.WriteLine($"Nao foi possivel consumir agent-stop.request: {ex.Message}");
+            return false;
+        }
+    }
+
+    internal static PixStopRequestDisposition ClassifyStopRequest(string payload,
+        PixDaemonDescriptor identity)
+    {
+        if (payload.Length == 0 || Encoding.UTF8.GetByteCount(payload) > MaxStopRequestBytes)
+            return PixStopRequestDisposition.Invalid;
+        // O instalador comercial usa deliberadamente esta mensagem enquanto
+        // substitui os binarios e nao possui o token efemero do frontend.
+        if (payload.Trim().Equals("installer-update", StringComparison.Ordinal))
+            return PixStopRequestDisposition.InstallerUpdate;
+        try
+        {
+            using var document = JsonDocument.Parse(payload, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = false,
+                CommentHandling = JsonCommentHandling.Disallow,
+                MaxDepth = 8
+            });
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return PixStopRequestDisposition.Invalid;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (!StopRequestFields.Contains(property.Name) || !seen.Add(property.Name))
+                    return PixStopRequestDisposition.Invalid;
+            }
+            if (seen.Count != StopRequestFields.Count)
+                return PixStopRequestDisposition.Invalid;
+            var root = document.RootElement;
+            if (!root.GetProperty("schemaVersion").TryGetInt32(out var schemaVersion) || schemaVersion != 1
+                || root.GetProperty("mode").ValueKind != JsonValueKind.String
+                || !"daemon".Equals(root.GetProperty("mode").GetString(), StringComparison.Ordinal)
+                || !root.GetProperty("processId").TryGetInt32(out var processId) || processId <= 0
+                || !root.GetProperty("processStartFileTimeUtc").TryGetUInt64(out var processStart) || processStart == 0
+                || root.GetProperty("managerTokenHash").ValueKind != JsonValueKind.String)
+                return PixStopRequestDisposition.Invalid;
+            var tokenHash = root.GetProperty("managerTokenHash").GetString() ?? "";
+            if (!PixDaemonIdentity.IsManagerToken(tokenHash)
+                || !tokenHash.Equals(tokenHash.ToLowerInvariant(), StringComparison.Ordinal))
+                return PixStopRequestDisposition.Invalid;
+            return processId == identity.ProcessId
+                && processStart == identity.ProcessStartFileTimeUtc
+                && tokenHash.Equals(identity.ManagerTokenHash, StringComparison.Ordinal)
+                    ? PixStopRequestDisposition.Authorized
+                    : PixStopRequestDisposition.Mismatch;
+        }
+        catch (JsonException)
+        {
+            return PixStopRequestDisposition.Invalid;
+        }
+    }
+}
+
+// Observa o sentinel em uma tarefa independente para que uma chamada HTTP ou
+// reconciliacao em andamento receba cancelamento sem esperar o proximo ciclo.
+sealed class PixAgentStopMonitor : IAsyncDisposable
+{
+    private static readonly TimeSpan ProductionPollInterval = TimeSpan.FromMilliseconds(250);
+    private readonly PixPaths _paths;
+    private readonly PixDaemonDescriptor _identity;
+    private readonly CancellationTokenSource _agentCancellation;
+    private readonly Action _publishStopping;
+    private readonly TimeSpan _pollInterval;
+    private readonly CancellationTokenSource _monitorCancellation = new();
+    private readonly Task _watchTask;
+    private int _stopPublished;
+
+    private PixAgentStopMonitor(PixPaths paths, PixDaemonDescriptor identity,
+        CancellationTokenSource agentCancellation,
+        Action publishStopping, TimeSpan pollInterval)
+    {
+        _paths = paths;
+        _identity = identity;
+        _agentCancellation = agentCancellation;
+        _publishStopping = publishStopping;
+        _pollInterval = pollInterval;
+        _watchTask = Task.Run(WatchAsync);
+    }
+
+    public static PixAgentStopMonitor Start(PixPaths paths, PixDaemonDescriptor identity,
+        CancellationTokenSource agentCancellation,
+        Action publishStopping, TimeSpan? pollInterval = null) =>
+        new(paths, identity, agentCancellation, publishStopping, pollInterval ?? ProductionPollInterval);
+
+    private async Task WatchAsync()
+    {
+        try
+        {
+            while (!_monitorCancellation.IsCancellationRequested)
+            {
+                if (PixAgentControl.TryConsumeStopRequest(_paths, _identity))
+                {
+                    SignalStopOnce();
+                    return;
+                }
+                await Task.Delay(_pollInterval, _monitorCancellation.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (_monitorCancellation.IsCancellationRequested) { }
+    }
+
+    private void SignalStopOnce()
+    {
+        if (Interlocked.Exchange(ref _stopPublished, 1) != 0) return;
+        // Cancelar vem antes de qualquer escrita de status: callbacks do token
+        // interrompem imediatamente HttpClient e as reconciliacoes em curso.
+        _agentCancellation.Cancel();
+        try { _publishStopping(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            Console.Error.WriteLine($"Nao foi possivel publicar stopping: {ex.Message}");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _monitorCancellation.Cancel();
+        await _watchTask.ConfigureAwait(false);
+        _monitorCancellation.Dispose();
+    }
+}
+
+// Mantem o watchdog informado mesmo enquanto uma chamada bancaria ou a
+// conciliacao de um lote esta em andamento. O timer cobre uma unica operacao
+// lenta; PulseSafely renova o status entre os itens do lote.
+sealed class PixAgentHeartbeat : IDisposable
+{
+    private static readonly TimeSpan Interval = TimeSpan.FromSeconds(15);
+    private readonly object _gate = new();
+    private readonly PixOptions _options;
+    private readonly PixPaths _paths;
+    private readonly PixDaemonDescriptor _identity;
+    private readonly string _provider;
+    private readonly Timer _timer;
+    private bool _credentialAvailable;
+    private bool _providerHealthy;
+    private string _state;
+    private bool _disposed;
+    private string _lastError = "";
+
+    public PixAgentHeartbeat(PixOptions options, PixPaths paths, string provider,
+        bool credentialAvailable, bool providerHealthy, string state, PixDaemonDescriptor identity)
+    {
+        (_options, _paths, _provider) = (options, paths, provider);
+        _identity = identity;
+        (_credentialAvailable, _providerHealthy, _state) =
+            (credentialAvailable, providerHealthy, state);
+        PixPublicContract.Publish(_options, _paths, _provider,
+            _credentialAvailable, _providerHealthy, _state, _identity);
+        _timer = new Timer(_ => PulseSafely(), null, Interval, Interval);
+    }
+
+    public void Update(bool credentialAvailable, bool providerHealthy, string state)
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            (_credentialAvailable, _providerHealthy, _state) =
+                (credentialAvailable, providerHealthy, state);
+            PublishLocked();
+        }
+    }
+
+    public void PulseSafely()
+    {
+        try
+        {
+            lock (_gate)
+            {
+                if (_disposed) return;
+                PublishLocked();
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var message = ex.Message;
+            lock (_gate)
+            {
+                if (message.Equals(_lastError, StringComparison.Ordinal)) return;
+                _lastError = message;
+            }
+            Console.Error.WriteLine($"Nao foi possivel renovar o heartbeat PIX: {message}");
+        }
+    }
+
+    private void PublishLocked()
+    {
+        PixPublicContract.Publish(_options, _paths, _provider,
+            _credentialAvailable, _providerHealthy, _state, _identity);
+        _lastError = "";
+    }
+
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _timer.Dispose();
+        }
+    }
+}
+
 static class PixPublicContract
 {
-    public static void Publish(PixOptions options, PixPaths paths, string provider, bool credentialAvailable, bool providerHealthy, string state)
+    public static void Publish(PixOptions options, PixPaths paths, string provider,
+        bool credentialAvailable, bool providerHealthy, string state, PixDaemonDescriptor identity)
     {
         var ready = provider == "mock" || (credentialAvailable && providerHealthy && options.IsProviderConfigured());
         var now = DateTimeOffset.UtcNow;
@@ -1777,7 +2534,8 @@ static class PixPublicContract
         {
             schemaVersion = 1,
             provider,
-            productionEnabled = options.ProductionEnabled,
+            productionEnabled = options.ProductionEnabled
+                && (provider != "mercadopago" || options.MercadoPago.Environment == "production"),
             ready,
             paymentExpirationMinutes = options.PaymentExpirationMinutes,
             generatedAtUnixSeconds = now.ToUnixTimeSeconds(),
@@ -1785,8 +2543,11 @@ static class PixPublicContract
         });
         paths.WriteAtomically(paths.AgentStatusFile, new
         {
-            schemaVersion = 1,
-            processId = Environment.ProcessId,
+            schemaVersion = 2,
+            mode = "daemon",
+            processId = identity.ProcessId,
+            processStartFileTimeUtc = identity.ProcessStartFileTimeUtc,
+            managerTokenHash = identity.ManagerTokenHash,
             provider,
             ready,
             state,
@@ -2370,26 +3131,36 @@ sealed class PixEngine
         _signingKeys = signingKeys;
     }
 
-    public async Task RunOnceAsync(CancellationToken token)
+    public async Task RunOnceAsync(CancellationToken token, Action? heartbeat = null)
     {
+        ReportProgress(heartbeat);
         foreach (var requestFile in Directory.EnumerateFiles(_paths.Requests, "*.request.json").OrderBy(Path.GetFileName))
         {
+            ReportProgress(heartbeat);
             var requestId = Path.GetFileName(requestFile).Replace(".request.json", "", StringComparison.OrdinalIgnoreCase);
             try
             {
                 if (!PixId.IsValid(requestId)) { _paths.Quarantine(requestFile, "Nome de solicitacao invalido."); continue; }
                 if (!RequestRetryDue(requestId)) continue;
-                var request = JsonSerializer.Deserialize<PixPurchaseRequest>(File.ReadAllText(requestFile, Encoding.UTF8), Json.Options);
+                var request = ReadContractFile<PixPurchaseRequest>(requestFile, 16 * 1024, "Solicitacao PIX");
                 ValidateRequest(request, requestId);
                 if (request is null) continue;
                 if (File.Exists(_paths.SessionFile(request.Id))) { File.Delete(requestFile); DeleteIfExists(_paths.RetryFile(request.Id)); continue; }
+                if (File.Exists(_paths.ApprovedFile(request.Id)) || File.Exists(_paths.ProcessedFile(request.Id)))
+                {
+                    _paths.Quarantine(requestFile, "Repeticao de pedido PIX ja aprovado/processado.");
+                    DeleteIfExists(_paths.RetryFile(request.Id));
+                    continue;
+                }
                 var session = await _provider.CreateAsync(request, token);
+                ReportProgress(heartbeat);
                 SaveQr(session);
                 _paths.WriteAtomically(_paths.SessionFile(session.Id), session);
                 File.Delete(requestFile);
                 DeleteIfExists(_paths.RetryFile(request.Id));
             }
-            catch (Exception ex) when (ex is JsonException or RequestRejectedException or FormatException)
+            catch (Exception ex) when (ex is JsonException or RequestRejectedException or FormatException
+                or NotSupportedException or InvalidDataException or ArgumentException)
             {
                 Console.Error.WriteLine($"Solicitacao PIX rejeitada: {ex.Message}");
                 _paths.Quarantine(requestFile, ex.Message);
@@ -2428,11 +3199,24 @@ sealed class PixEngine
 
         foreach (var sessionFile in Directory.EnumerateFiles(_paths.Sessions, "*.session.json").OrderBy(Path.GetFileName))
         {
+            ReportProgress(heartbeat);
             try
             {
-                var session = JsonSerializer.Deserialize<PixSession>(File.ReadAllText(sessionFile, Encoding.UTF8), Json.Options);
-                if (session is null) throw new JsonException("Sessao PIX vazia.");
+                var sessionJson = ReadContractJson(sessionFile, 64 * 1024, "Sessao PIX");
+                using var sessionDocument = JsonDocument.Parse(sessionJson);
+                var declaredSchema = sessionDocument.RootElement.TryGetProperty("schemaVersion", out var schemaValue)
+                    && schemaValue.ValueKind == JsonValueKind.Number && schemaValue.TryGetInt32(out var parsedSchema)
+                    ? parsedSchema : 0;
                 var fileId = Path.GetFileName(sessionFile).Replace(".session.json", "", StringComparison.OrdinalIgnoreCase);
+                if (declaredSchema is 0 or 1)
+                {
+                    var legacy = JsonSerializer.Deserialize<PixLegacySession>(sessionJson, Json.Options)
+                        ?? throw new JsonException("Sessao PIX v1 vazia.");
+                    await ProcessLegacySessionAsync(sessionFile, fileId, legacy, token, heartbeat);
+                    continue;
+                }
+                var session = JsonSerializer.Deserialize<PixSession>(sessionJson, Json.Options);
+                if (session is null) throw new JsonException("Sessao PIX vazia.");
                 ValidateSession(session, fileId);
 
                 // Versoes anteriores geravam PNG indexado de 1 bit. O carregador de
@@ -2459,6 +3243,7 @@ sealed class PixEngine
 
                 if (session.NextPollAt > DateTimeOffset.UtcNow) continue;
                 var refreshed = await _provider.RefreshAsync(session, token);
+                ReportProgress(heartbeat);
                 if (refreshed is null) continue;
                 if (refreshed.Status == "approved")
                 {
@@ -2475,7 +3260,8 @@ sealed class PixEngine
                 _paths.WriteAtomically(sessionFile, scheduled);
                 if (scheduled.Status is "cancelled" or "security_error") DeleteQrFiles(scheduled.Id);
             }
-            catch (JsonException ex)
+            catch (Exception ex) when (ex is JsonException or FormatException or NotSupportedException
+                or InvalidDataException or ArgumentException)
             {
                 Console.Error.WriteLine($"Sessao PIX corrompida e isolada: {ex.Message}");
                 _paths.Quarantine(sessionFile, ex.Message);
@@ -2491,13 +3277,14 @@ sealed class PixEngine
                 ScheduleSessionRetry(sessionFile);
             }
         }
+        ReportProgress(heartbeat);
     }
 
     public Task<bool> ApproveMockAsync(string id)
     {
         var file = _paths.SessionFile(id);
         if (!File.Exists(file)) return Task.FromResult(false);
-        var session = JsonSerializer.Deserialize<PixSession>(File.ReadAllText(file, Encoding.UTF8), Json.Options);
+        var session = ReadContractFile<PixSession>(file, 64 * 1024, "Sessao PIX");
         if (session is null || session.Provider != "mock") return Task.FromResult(false);
         ValidateSession(session, id);
         var approved = session with { Status = "approved", UpdatedAt = DateTimeOffset.UtcNow };
@@ -2506,23 +3293,180 @@ sealed class PixEngine
         return Task.FromResult(true);
     }
 
+    private async Task ProcessLegacySessionAsync(string sessionFile, string fileId,
+        PixLegacySession legacy, CancellationToken token, Action? heartbeat)
+    {
+        if (!PixId.IsValid(legacy.Id) || !legacy.Id.Equals(fileId, StringComparison.Ordinal)
+            || legacy.Minutes is < 1 or > 480
+            || legacy.AmountCents is < 1 or > 100_000_000
+            || !PixId.IsValidProviderOrder(legacy.ProviderOrderId)
+            || legacy.CreatedAt < DateTimeOffset.UnixEpoch.AddYears(50)
+            || legacy.CreatedAt > DateTimeOffset.UtcNow.AddMinutes(5)
+            || legacy.Status is not ("pending" or "approved" or "completed" or "cancelled" or "security_error"))
+            throw new InvalidDataException("Sessao PIX v1 possui campos invalidos.");
+
+        if (File.Exists(_paths.ProcessedFile(legacy.Id)))
+        {
+            PreserveLegacyReconciliation(sessionFile, legacy, "already_applied_audit_only",
+                "O recibo v1 ja esta em processed; preservar somente para auditoria, sem atribuir novo credito.", false);
+            DeleteQrFiles(legacy.Id);
+            return;
+        }
+        if (legacy.Status is "cancelled" or "security_error")
+        {
+            _paths.Quarantine(sessionFile, "Sessao PIX v1 encerrada sem aprovacao.");
+            DeleteQrFiles(legacy.Id);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(legacy.Provider)
+            || !legacy.Provider.Equals(_provider.Name, StringComparison.Ordinal))
+        {
+            PreserveLegacyReconciliation(sessionFile, legacy, "provider_mismatch_unverified",
+                "Sessao v1 usa outro provedor; confirmar manualmente antes de atribuir o credito.", true);
+            return;
+        }
+        if (legacy.Status == "pending" && legacy.NextPollAt > DateTimeOffset.UtcNow) return;
+
+        // O objeto temporario serve somente para consultar o provedor. O ID de
+        // beneficiario abaixo nunca e publicado nem aplicado como credito.
+        var requestedAt = legacy.CreatedAt.ToUnixTimeSeconds();
+        var probe = new PixSession(PixContract.SchemaVersion, legacy.Id, legacy.Minutes,
+            legacy.AmountCents, requestedAt,
+            requestedAt + Math.Clamp(_options.PaymentExpirationMinutes, 1, 60) * 60L,
+            "guest", "legacy_unassigned_wallet", "", legacy.Provider,
+            legacy.ProviderOrderId, string.IsNullOrWhiteSpace(legacy.QrData)
+                ? "LEGACY-QR-NOT-AVAILABLE" : legacy.QrData,
+            "pending", legacy.CreatedAt, legacy.UpdatedAt, legacy.FailureCount,
+            DateTimeOffset.UtcNow);
+        try
+        {
+            var refreshed = await _provider.RefreshAsync(probe, token);
+            ReportProgress(heartbeat);
+            if (refreshed is null) return;
+            if (refreshed.Status == "approved")
+            {
+                if (File.Exists(_paths.ProcessedFile(legacy.Id)))
+                {
+                    PreserveLegacyReconciliation(sessionFile, legacy, "already_applied_audit_only",
+                        "O recibo v1 foi processado durante a revalidacao; nao atribuir novo credito.", false);
+                    DeleteQrFiles(legacy.Id);
+                    return;
+                }
+                PreserveLegacyReconciliation(sessionFile, legacy, "approved_unassigned",
+                    "Pagamento v1 confirmado novamente no provedor; atribuir manualmente ao cliente correto.", true);
+                DeleteQrFiles(legacy.Id);
+                return;
+            }
+            if (refreshed.Status == "pending")
+            {
+                _paths.WriteAtomically(sessionFile, legacy with
+                {
+                    Status = "pending",
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    FailureCount = 0,
+                    NextPollAt = DateTimeOffset.UtcNow.AddSeconds(_options.PollSeconds)
+                });
+                return;
+            }
+            _paths.Quarantine(sessionFile, "Pagamento PIX v1 cancelado/expirado segundo o provedor.");
+            DeleteQrFiles(legacy.Id);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (SecurityException ex)
+        {
+            PreserveLegacyReconciliation(sessionFile, legacy, "security_mismatch_unverified",
+                "Divergencia ao revalidar sessao v1: " + SafeFailureReason(ex.Message), true);
+        }
+        catch (Exception ex) when (ex is IOException or HttpRequestException or TaskCanceledException
+            or MercadoPagoApiException or AdapterApiException or InvalidOperationException)
+        {
+            var failures = Math.Min(legacy.FailureCount + 1, 30);
+            Console.Error.WriteLine($"Falha temporaria ao reconciliar PIX v1: {SafeFailureReason(ex.Message)}");
+            _paths.WriteAtomically(sessionFile, legacy with
+            {
+                UpdatedAt = DateTimeOffset.UtcNow,
+                FailureCount = failures,
+                NextPollAt = DateTimeOffset.UtcNow.AddSeconds(RetryDelay(failures))
+            });
+        }
+    }
+
+    private void PreserveLegacyReconciliation(string sessionFile, PixLegacySession legacy,
+        string state, string reason, bool requiresManualAssignment)
+    {
+        var detectedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var canonical = string.Join("\n", "legacy-reconciliation-v1", legacy.Id,
+            legacy.Minutes.ToString(CultureInfo.InvariantCulture),
+            legacy.AmountCents.ToString(CultureInfo.InvariantCulture), legacy.Provider,
+            legacy.ProviderOrderId, state, requiresManualAssignment ? "1" : "0",
+            detectedAt.ToString(CultureInfo.InvariantCulture));
+        var signature = PixRequestSigner.Hmac(canonical, _signingKeys.GetOrCreate());
+        var reconciliationFile = Path.Combine(_paths.Reconciliation,
+            $"{legacy.Id}.legacy-reconciliation.json");
+        _paths.WriteAtomically(reconciliationFile, new
+        {
+            schemaVersion = 1,
+            kind = "legacy_unassigned_payment",
+            state,
+            transactionId = legacy.Id,
+            legacy.Minutes,
+            legacy.AmountCents,
+            legacy.Provider,
+            legacy.ProviderOrderId,
+            detectedAtUnixSeconds = detectedAt,
+            requiresManualAssignment,
+            reason,
+            signature
+        });
+        var preservedSession = Path.Combine(_paths.Reconciliation,
+            $"{legacy.Id}.{state}.legacy-session.json");
+        try { File.Move(sessionFile, preservedSession, true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Conciliacao v1 gravada, mas sessao original nao foi movida: {ex.Message}");
+        }
+        try { File.WriteAllText(reconciliationFile + ".reason.txt", reason, new UTF8Encoding(false)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
     private void ValidateRequest(PixPurchaseRequest? request, string fileId)
     {
-        if (request is null || !PixId.IsValid(request.Id) || !request.Id.Equals(fileId, StringComparison.Ordinal))
+        if (request is null) throw new RequestRejectedException("Solicitacao PIX vazia.");
+        if (request.SchemaVersion != PixContract.SchemaVersion)
+            throw new RequestRejectedException(request.SchemaVersion == 1
+                ? "Contrato PIX v1 recusado: gere um novo pedido no frontend atualizado."
+                : $"Versao de contrato PIX nao suportada: {request.SchemaVersion}.");
+        if (!PixId.IsValid(request.Id) || !request.Id.Equals(fileId, StringComparison.Ordinal))
             throw new RequestRejectedException("Identificador divergente ou invalido.");
+        if (!PixId.IsValidBeneficiary(request.BeneficiaryType, request.BeneficiaryId))
+            throw new RequestRejectedException("Beneficiario PIX ausente ou invalido.");
         var expected = _options.PriceFor(request.Minutes);
         if (expected <= 0) throw new RequestRejectedException("Pacote de minutos nao permitido.");
         if (request.AmountCents != expected) throw new RequestRejectedException("Valor adulterado ou desatualizado.");
-        var age = DateTimeOffset.UtcNow - request.RequestedAt;
-        if (age < TimeSpan.FromMinutes(-2) || age > TimeSpan.FromMinutes(_options.PaymentExpirationMinutes))
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var expectedLifetime = (long)_options.PaymentExpirationMinutes * 60;
+        if (request.RequestedAtUnixSeconds < 1577836800L
+            || request.RequestedAtUnixSeconds > now + 120
+            || request.ExpiresAtUnixSeconds <= request.RequestedAtUnixSeconds
+            || request.ExpiresAtUnixSeconds - request.RequestedAtUnixSeconds != expectedLifetime
+            || request.ExpiresAtUnixSeconds < now)
             throw new RequestRejectedException("Solicitacao expirada ou relogio do sistema incorreto.");
+        if (!PixRequestSigner.Verify(request, _signingKeys.GetOrCreate()))
+            throw new RequestRejectedException("Assinatura do pedido PIX invalida.");
     }
 
     private void ValidateSession(PixSession session, string fileId)
     {
+        if (session.SchemaVersion != PixContract.SchemaVersion)
+            throw new InvalidDataException(session.SchemaVersion == 1
+                ? "Sessao PIX v1 nao e compativel; gere uma nova cobranca."
+                : "Versao da sessao PIX e invalida.");
         if (!PixId.IsValid(session.Id) || !session.Id.Equals(fileId, StringComparison.Ordinal))
-            throw new SecurityException("Identificador da sessao divergente.");
-        if (!session.Provider.Equals(_provider.Name, StringComparison.Ordinal))
+            throw new InvalidDataException("Identificador da sessao divergente.");
+        if (!PixId.IsValidBeneficiary(session.BeneficiaryType, session.BeneficiaryId))
+            throw new InvalidDataException("Beneficiario da sessao PIX e invalido.");
+        if (string.IsNullOrWhiteSpace(session.Provider)
+            || !session.Provider.Equals(_provider.Name, StringComparison.Ordinal))
             throw new SecurityException("Provedor da sessao diverge da configuracao ativa.");
         var expected = _options.PriceFor(session.Minutes);
         if (expected <= 0 || session.AmountCents != expected)
@@ -2530,11 +3474,19 @@ sealed class PixEngine
         if (!PixId.IsValidProviderOrder(session.ProviderOrderId))
             throw new SecurityException("Identificador da order e invalido.");
         if (session.Status is not ("pending" or "approved" or "completed" or "cancelled" or "security_error"))
-            throw new SecurityException("Estado da sessao e invalido.");
-        if (session.CreatedAt > DateTimeOffset.UtcNow.AddMinutes(5) || session.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(5))
-            throw new SecurityException("Relogio da sessao e invalido.");
-        if (session.QrData.Length is < 20 or > 8192)
-            throw new SecurityException("Conteudo do QR PIX invalido.");
+            throw new InvalidDataException("Estado da sessao e invalido.");
+        if (session.CreatedAt < DateTimeOffset.UnixEpoch.AddYears(50)
+            || session.CreatedAt > DateTimeOffset.UtcNow.AddMinutes(5)
+            || session.UpdatedAt < session.CreatedAt.AddMinutes(-1)
+            || session.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(5))
+            throw new InvalidDataException("Relogio da sessao e invalido.");
+        if (string.IsNullOrWhiteSpace(session.QrData) || session.QrData.Length is < 20 or > 8192)
+            throw new InvalidDataException("Conteudo do QR PIX invalido.");
+        if (session.RequestedAtUnixSeconds < 1577836800L
+            || session.ExpiresAtUnixSeconds <= session.RequestedAtUnixSeconds
+            || session.ExpiresAtUnixSeconds - session.RequestedAtUnixSeconds is < 60 or > 3600
+            || !PixRequestSigner.Verify(session.SignedRequest(), _signingKeys.GetOrCreate()))
+            throw new InvalidDataException("Vinculo assinado da sessao PIX e invalido.");
     }
 
     private void EnsureCompatibleQr(PixSession session)
@@ -2571,7 +3523,10 @@ sealed class PixEngine
     {
         var file = _paths.ApprovedFile(session.Id);
         var approvedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var unsigned = new PixCreditEvent(1, session.Id, session.Minutes, session.AmountCents, session.Provider, session.ProviderOrderId, approvedAt, "");
+        var unsigned = new PixCreditEvent(PixContract.SchemaVersion, session.Id, session.Minutes,
+            session.AmountCents, session.Provider, session.ProviderOrderId, session.ExpiresAtUnixSeconds,
+            session.BeneficiaryType, session.BeneficiaryId, approvedAt,
+            approvedAt + PixContract.CreditEventLifetimeSeconds, "");
         var signature = PixEventSigner.Sign(unsigned, _signingKeys.GetOrCreate());
         // Sempre substitui por uma copia legitima e assinada. Isso recupera arquivo parcial
         // e impede que um arquivo falso previamente criado bloqueie um pagamento verdadeiro.
@@ -2648,6 +3603,32 @@ sealed class PixEngine
         return clean.Length > 300 ? clean[..300] : clean;
     }
 
+    private static T? ReadContractFile<T>(string file, long maximumBytes, string label)
+        => JsonSerializer.Deserialize<T>(ReadContractJson(file, maximumBytes, label), Json.Options);
+
+    private static void ReportProgress(Action? heartbeat) => heartbeat?.Invoke();
+
+    private static string ReadContractJson(string file, long maximumBytes, string label)
+    {
+        var length = new FileInfo(file).Length;
+        if (length <= 1 || length > maximumBytes)
+            throw new InvalidDataException($"{label} excede o tamanho permitido ou esta vazia.");
+        var json = File.ReadAllText(file, Encoding.UTF8);
+        using var document = JsonDocument.Parse(json, new JsonDocumentOptions
+        {
+            AllowTrailingCommas = false,
+            CommentHandling = JsonCommentHandling.Disallow,
+            MaxDepth = 8
+        });
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+            throw new JsonException($"{label} deve ser um objeto JSON.");
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in document.RootElement.EnumerateObject())
+            if (!names.Add(property.Name))
+                throw new JsonException($"{label} contem o campo duplicado {property.Name}.");
+        return document.RootElement.GetRawText();
+    }
+
     private static void DeleteIfExists(string file) { try { if (File.Exists(file)) File.Delete(file); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } }
 }
 
@@ -2677,6 +3658,31 @@ sealed class MockPixProvider : IPixProvider
     public Task<PixSession> CreateAsync(PixPurchaseRequest request, CancellationToken token)
         => Task.FromResult(PixSession.Pending(request, Name, "PIX-TEST-" + request.Id, $"TURBORAMA-TESTE:{request.Id}:{request.AmountCents}"));
     public Task<PixSession?> RefreshAsync(PixSession session, CancellationToken token) => Task.FromResult<PixSession?>(session);
+}
+
+sealed class ApprovedLegacyTestProvider : IPixProvider
+{
+    public string Name => "mock";
+    public Task CheckHealthAsync(CancellationToken token) => Task.CompletedTask;
+    public Task<PixSession> CreateAsync(PixPurchaseRequest request, CancellationToken token)
+        => throw new NotSupportedException();
+    public Task<PixSession?> RefreshAsync(PixSession session, CancellationToken token)
+        => Task.FromResult<PixSession?>(session with { Status = "approved", UpdatedAt = DateTimeOffset.UtcNow });
+}
+
+sealed class SlowPendingBatchTestProvider : IPixProvider
+{
+    public int RefreshCount { get; private set; }
+    public string Name => "mock";
+    public Task CheckHealthAsync(CancellationToken token) => Task.CompletedTask;
+    public Task<PixSession> CreateAsync(PixPurchaseRequest request, CancellationToken token)
+        => throw new NotSupportedException();
+    public async Task<PixSession?> RefreshAsync(PixSession session, CancellationToken token)
+    {
+        await Task.Delay(20, token);
+        RefreshCount++;
+        return session with { Status = "pending", UpdatedAt = DateTimeOffset.UtcNow };
+    }
 }
 
 sealed class MercadoPagoPixProvider : IPixProvider
@@ -2710,10 +3716,23 @@ sealed class MercadoPagoPixProvider : IPixProvider
         EnsureApiSuccess(posResponse, posText);
         using var posJson = ParseApiJson(posText);
         if (!posJson.RootElement.TryGetProperty("results", out var results)
-            || results.ValueKind != JsonValueKind.Array
-            || !results.EnumerateArray().Any(item => GetString(item, "external_id")
-                .Equals(externalPosId, StringComparison.Ordinal)))
-            throw new MercadoPagoApiException(404, $"PDV {externalPosId} nao foi encontrado na conta");
+            || results.ValueKind != JsonValueKind.Array)
+            throw new MercadoPagoApiException(502, "consulta de PDV sem a lista results esperada");
+        if (results.EnumerateArray().Select(ReadPos).Any(item =>
+                item.ExternalId.Equals(externalPosId, StringComparison.OrdinalIgnoreCase)
+                && (string.IsNullOrWhiteSpace(item.Status)
+                    || item.Status.Equals("active", StringComparison.OrdinalIgnoreCase)))) return;
+
+        // Algumas contas devolveram lista vazia no filtro external_id logo
+        // depois de o mesmo PDV aparecer no inventario geral. Antes de declarar
+        // 404 e tentar recriar recursos, confirme uma vez pela listagem da
+        // propria conta. Isso preserva o PDV existente e evita falso erro.
+        using var inventoryJson = await GetAuthorizedJsonAsync("pos?limit=100&offset=0", token);
+        if (Results(inventoryJson.RootElement).Select(ReadPos).Any(item =>
+                item.ExternalId.Equals(externalPosId, StringComparison.OrdinalIgnoreCase)
+                && (string.IsNullOrWhiteSpace(item.Status)
+                    || item.Status.Equals("active", StringComparison.OrdinalIgnoreCase)))) return;
+        throw new MercadoPagoApiException(404, $"PDV {externalPosId} nao foi encontrado na conta");
     }
 
     private string ExternalPosId => Volatile.Read(ref _externalPosId);
@@ -2731,6 +3750,7 @@ sealed class MercadoPagoPixProvider : IPixProvider
         var account = await GetAuthorizedJsonAsync("https://api.mercadolibre.com/users/me", token);
         using (account)
         {
+            ValidateAccountEnvironment(account.RootElement);
             var accountId = GetScalarString(account.RootElement, "id");
             if (string.IsNullOrWhiteSpace(accountId))
                 throw new MercadoPagoApiException(502, "resposta de autenticacao sem User ID");
@@ -2738,10 +3758,39 @@ sealed class MercadoPagoPixProvider : IPixProvider
         }
     }
 
+    internal void ValidateAccountEnvironment(JsonElement account)
+    {
+        var detected = DetectTestAccount(account);
+        if (detected is null)
+            throw new SecurityException("O Mercado Pago nao informou um sinal confiavel de conta real ou de teste; nenhuma configuracao foi alterada.");
+        var expectsSandbox = _options.MercadoPago.Environment == "sandbox";
+        if (detected.Value != expectsSandbox)
+            throw new SecurityException(detected.Value
+                ? "O Mercado Pago confirmou uma conta de teste, mas o agente esta configurado para producao. Defina MercadoPago.Environment=sandbox somente no quiosque de testes."
+                : "O Mercado Pago confirmou uma conta real, mas o agente esta configurado como sandbox. Revise o ambiente antes de gerar cobrancas.");
+    }
+
+    internal static bool? DetectTestAccount(JsonElement account)
+    {
+        if (account.TryGetProperty("test_user", out var testUser)
+            && testUser.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            return testUser.GetBoolean();
+        var email = GetString(account, "email").Trim();
+        if (!string.IsNullOrWhiteSpace(email))
+            return email.EndsWith("@testuser.com", StringComparison.OrdinalIgnoreCase);
+        return null;
+    }
+
     public Task<MercadoPagoInfrastructure> GetInfrastructureForConfiguredAccountAsync(string accountId, CancellationToken token)
         => GetInfrastructureForAccountAsync(accountId.Trim(), token);
 
-    public async Task<MercadoPagoSetupResult> EnsureInfrastructureAsync(MercadoPagoSetupRequest setup, CancellationToken token)
+    public Task<MercadoPagoSetupResult> EnsureInfrastructureAsync(MercadoPagoSetupRequest setup,
+        CancellationToken token)
+        => EnsureInfrastructureAsync(setup, token,
+            new MercadoPagoCreationPolicy(AllowStoreCreation: true, AllowPointOfSaleCreation: true));
+
+    internal async Task<MercadoPagoSetupResult> EnsureInfrastructureAsync(MercadoPagoSetupRequest setup,
+        CancellationToken token, MercadoPagoCreationPolicy creationPolicy)
     {
         setup.ValidateIdentity();
         // Credenciais de sandbox podem ser bloqueadas por politicas no recurso
@@ -2750,11 +3799,27 @@ sealed class MercadoPagoPixProvider : IPixProvider
         // ao mesmo Access Token, sem depender daquele recurso adicional.
         var inventory = await GetInfrastructureForAccountAsync(setup.ExpectedAccountId, token);
 
+        if (creationPolicy.RequireEmptyInventoryBeforeCreation)
+        {
+            // IDs gerados automaticamente so sao autorizados porque a primeira
+            // leitura encontrou a conta totalmente vazia. Revalide imediatamente
+            // antes dos POSTs para fechar a janela entre decisao e criacao. Uma
+            // retomada idempotente pode enxergar somente os proprios IDs esperados.
+            var unexpectedStore = inventory.Stores.Any(store =>
+                !store.ExternalId.Equals(setup.StoreExternalId, StringComparison.OrdinalIgnoreCase));
+            var unexpectedPoint = inventory.PointsOfSale.Any(point =>
+                !point.ExternalId.Equals(setup.PosExternalId, StringComparison.OrdinalIgnoreCase));
+            if (unexpectedStore || unexpectedPoint)
+                throw new SecurityException("a conta deixou de estar vazia antes da criacao; selecione StoreExternalId e PosExternalId explicitamente");
+        }
+
         var store = inventory.Stores.SingleOrDefault(x => x.ExternalId.Equals(setup.StoreExternalId, StringComparison.Ordinal));
         store ??= await FindStoreByExternalIdAsync(inventory.AccountId, setup.StoreExternalId, token);
         var storeCreated = false;
         if (store is null)
         {
+            if (!creationPolicy.AllowStoreCreation)
+                throw new SecurityException("a loja selecionada desapareceu antes da confirmacao; nenhuma nova loja foi criada");
             // A documentacao do Mercado Pago exige localizacao completa apenas
             // para cadastrar uma loja nova. Um caixa novo em loja existente
             // nao deve depender de CEP, geocodificador ou coordenadas.
@@ -2792,6 +3857,8 @@ sealed class MercadoPagoPixProvider : IPixProvider
         if (point is not null) ValidatePointOfSaleStore(point, store);
         if (point is null)
         {
+            if (!creationPolicy.AllowPointOfSaleCreation)
+                throw new SecurityException("o PDV selecionado desapareceu antes da confirmacao; nenhum novo PDV foi criado");
             (point, pointCreated) = await CreatePointOfSaleWithRecoveryAsync(
                 inventory.AccountId, setup, store, token);
         }
@@ -3407,12 +4474,45 @@ sealed class AdapterPixProvider : IPixProvider
     }
 }
 
-sealed record PixPurchaseRequest(string Id, int Minutes, long AmountCents, DateTimeOffset RequestedAt);
-sealed record PixCreditEvent(int SchemaVersion, string TransactionId, int Minutes, long AmountCents, string Provider, string ProviderOrderId, long ApprovedAtUnixSeconds, string Signature);
-sealed record PixSession(string Id, int Minutes, long AmountCents, string Provider, string ProviderOrderId, string QrData, string Status, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, int FailureCount, DateTimeOffset NextPollAt)
+static class PixContract
+{
+    public const int SchemaVersion = 2;
+    public const long CreditEventLifetimeSeconds = 30L * 24 * 60 * 60;
+}
+
+sealed record PixPurchaseRequest(int SchemaVersion, string Id, int Minutes, long AmountCents,
+    long RequestedAtUnixSeconds, long ExpiresAtUnixSeconds, string BeneficiaryType, string BeneficiaryId,
+    string Signature)
+{
+    public DateTimeOffset RequestedAt => DateTimeOffset.FromUnixTimeSeconds(RequestedAtUnixSeconds);
+    public DateTimeOffset ExpiresAt => DateTimeOffset.FromUnixTimeSeconds(ExpiresAtUnixSeconds);
+}
+
+sealed record PixCreditEvent(int SchemaVersion, string TransactionId, int Minutes, long AmountCents,
+    string Provider, string ProviderOrderId, long RequestExpiresAtUnixSeconds, string BeneficiaryType,
+    string BeneficiaryId, long ApprovedAtUnixSeconds, long EventExpiresAtUnixSeconds, string Signature);
+
+// Sessao criada antes do contrato v2. Ela nao tem beneficiario e, portanto,
+// jamais pode liberar tempo automaticamente. Ainda assim o agente consulta o
+// provedor ate o estado final e preserva pagamentos aprovados para conciliacao.
+sealed record PixLegacySession(string Id, int Minutes, long AmountCents, string Provider,
+    string ProviderOrderId, string QrData, string Status, DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt, int FailureCount, DateTimeOffset NextPollAt);
+
+sealed record PixSession(int SchemaVersion, string Id, int Minutes, long AmountCents,
+    long RequestedAtUnixSeconds, long ExpiresAtUnixSeconds, string BeneficiaryType, string BeneficiaryId,
+    string RequestSignature, string Provider, string ProviderOrderId, string QrData, string Status,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, int FailureCount, DateTimeOffset NextPollAt)
 {
     public static PixSession Pending(PixPurchaseRequest request, string provider, string providerOrderId, string qrData)
-        => new(request.Id, request.Minutes, request.AmountCents, provider, providerOrderId, qrData, "pending", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 0, DateTimeOffset.UtcNow);
+        => new(request.SchemaVersion, request.Id, request.Minutes, request.AmountCents,
+            request.RequestedAtUnixSeconds, request.ExpiresAtUnixSeconds, request.BeneficiaryType,
+            request.BeneficiaryId, request.Signature, provider, providerOrderId, qrData, "pending",
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 0, DateTimeOffset.UtcNow);
+
+    public PixPurchaseRequest SignedRequest()
+        => new(SchemaVersion, Id, Minutes, AmountCents, RequestedAtUnixSeconds, ExpiresAtUnixSeconds,
+            BeneficiaryType, BeneficiaryId, RequestSignature);
 }
 sealed record PixRetryState(int FailureCount, DateTimeOffset NextAttemptAt);
 
@@ -3434,23 +4534,55 @@ sealed class AdapterApiException : Exception
     public AdapterApiException(int statusCode, string detail) : base($"Adaptador bancario HTTP {statusCode}: {detail}") => StatusCode = statusCode;
 }
 
+static class PixRequestSigner
+{
+    public static string Sign(PixPurchaseRequest request, byte[] key)
+        => Hmac(Canonical(request), key);
+
+    public static bool Verify(PixPurchaseRequest request, byte[] key)
+    {
+        if (request.Signature is null || request.Signature.Length != 64
+            || request.Signature.Any(ch => !Uri.IsHexDigit(ch))) return false;
+        var expected = Sign(request with { Signature = "" }, key);
+        return CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(expected),
+            Encoding.ASCII.GetBytes(request.Signature.ToLowerInvariant()));
+    }
+
+    private static string Canonical(PixPurchaseRequest request)
+        => string.Join("\n",
+            request.SchemaVersion.ToString(CultureInfo.InvariantCulture), request.Id,
+            request.Minutes.ToString(CultureInfo.InvariantCulture),
+            request.AmountCents.ToString(CultureInfo.InvariantCulture),
+            request.RequestedAtUnixSeconds.ToString(CultureInfo.InvariantCulture),
+            request.ExpiresAtUnixSeconds.ToString(CultureInfo.InvariantCulture),
+            request.BeneficiaryType, request.BeneficiaryId);
+
+    internal static string Hmac(string canonical, byte[] key)
+        => Convert.ToHexString(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+}
+
 static class PixEventSigner
 {
     public static string Sign(PixCreditEvent credit, byte[] key)
-    {
-        var payload = Canonical(credit);
-        return Convert.ToHexString(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
-    }
+        => PixRequestSigner.Hmac(Canonical(credit), key);
 
     public static bool Verify(PixCreditEvent credit, byte[] key)
     {
-        if (credit.Signature.Length != 64) return false;
+        if (credit.Signature is null || credit.Signature.Length != 64
+            || credit.Signature.Any(ch => !Uri.IsHexDigit(ch))) return false;
         var expected = Sign(credit with { Signature = "" }, key);
         return CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(expected), Encoding.ASCII.GetBytes(credit.Signature.ToLowerInvariant()));
     }
 
     private static string Canonical(PixCreditEvent credit)
-        => string.Join("\n", credit.SchemaVersion, credit.TransactionId, credit.Minutes, credit.AmountCents, credit.Provider, credit.ProviderOrderId, credit.ApprovedAtUnixSeconds);
+        => string.Join("\n",
+            credit.SchemaVersion.ToString(CultureInfo.InvariantCulture), credit.TransactionId,
+            credit.Minutes.ToString(CultureInfo.InvariantCulture), credit.AmountCents.ToString(CultureInfo.InvariantCulture),
+            credit.Provider, credit.ProviderOrderId,
+            credit.RequestExpiresAtUnixSeconds.ToString(CultureInfo.InvariantCulture),
+            credit.BeneficiaryType, credit.BeneficiaryId,
+            credit.ApprovedAtUnixSeconds.ToString(CultureInfo.InvariantCulture),
+            credit.EventExpiresAtUnixSeconds.ToString(CultureInfo.InvariantCulture));
 }
 
 // Gera um PNG RGBA de 32 bits sem depender do encoder PNG monocromatico do
@@ -3637,15 +4769,35 @@ static class PixSelfTest
             var minutes = options.AllowedMinutes.First();
             var cents = options.PriceFor(minutes);
             if (cents <= 0) throw new InvalidOperationException("tabela de precos");
-            var credit = new PixCreditEvent(1, "PIXSELFTEST", minutes, cents, "mock", "PIX-TEST", DateTimeOffset.UtcNow.ToUnixTimeSeconds(), "");
+            TestDaemonIdentityContract();
+            TestStopMonitorAsync(paths).GetAwaiter().GetResult();
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            const string beneficiaryId = "player_SELFTEST_0123456789abcdef";
+            var request = new PixPurchaseRequest(PixContract.SchemaVersion, "PIXSELFTEST", minutes, cents,
+                now, now + options.PaymentExpirationMinutes * 60L, "player", beneficiaryId, "");
+            request = request with { Signature = PixRequestSigner.Sign(request, key) };
+            if (!PixRequestSigner.Verify(request, key)) throw new InvalidOperationException("assinatura do pedido valida rejeitada");
+            if (PixRequestSigner.Verify(request with { BeneficiaryId = "guest_SELFTEST_0123456789abcdef" }, key))
+                throw new InvalidOperationException("troca do beneficiario do pedido nao foi detectada");
+            if (PixRequestSigner.Verify(request with { ExpiresAtUnixSeconds = request.ExpiresAtUnixSeconds + 1 }, key))
+                throw new InvalidOperationException("adulteracao da expiracao do pedido nao foi detectada");
+
+            var credit = new PixCreditEvent(PixContract.SchemaVersion, request.Id, minutes, cents, "mock",
+                "PIX-TEST", request.ExpiresAtUnixSeconds, request.BeneficiaryType, request.BeneficiaryId,
+                now, now + PixContract.CreditEventLifetimeSeconds, "");
             var signed = credit with { Signature = PixEventSigner.Sign(credit, key) };
             if (!PixEventSigner.Verify(signed, key)) throw new InvalidOperationException("assinatura valida rejeitada");
             if (PixEventSigner.Verify(signed with { Minutes = minutes + 1 }, key)) throw new InvalidOperationException("adulteracao nao detectada");
+            if (PixEventSigner.Verify(signed with { BeneficiaryId = "guest_SELFTEST_0123456789abcdef" }, key))
+                throw new InvalidOperationException("troca do beneficiario do credito nao foi detectada");
             var file = Path.Combine(paths.Root, "self-test.json");
             paths.WriteAtomically(file, signed);
             var read = JsonSerializer.Deserialize<PixCreditEvent>(File.ReadAllText(file), Json.Options);
             if (read is null || !PixEventSigner.Verify(read, key)) throw new InvalidOperationException("gravacao atomica");
             File.Delete(file);
+            TestKioskIdentityJsonContract();
+            TestSignedPurchaseContract(options, paths, keys, request);
+            TestHeartbeatBatch(options, paths);
             TestPostalAddressCache(paths);
             TestPostalAddressFallback(paths);
             TestLocationValidation();
@@ -3654,10 +4806,11 @@ static class PixSelfTest
             TestOwnerProvisioningContract();
             TestMercadoPagoResponses();
             TestMercadoPagoHealth(options, paths);
+            TestMercadoPagoProvisioning(options, paths, credentialDpapiTested);
             TestAdapterResponses(options, paths);
             Console.WriteLine(credentialDpapiTested
-                ? "SELF-TEST PIX: OK (preco, assinatura, cache/CEP, localizacao, QR RGBA e matriz assinada, credencial segura, loja/PDV idempotentes, Mercado Pago e adaptador bancario)."
-                : "SELF-TEST PIX: OK (preco, assinatura, cache/CEP, localizacao, QR RGBA e matriz assinada, contrato de credencial, loja/PDV idempotentes, Mercado Pago e adaptador bancario). DPAPI nao estava disponivel para o usuario de compilacao; validar a credencial segura no Windows do quiosque.");
+                ? "SELF-TEST PIX: OK (contrato v2 assinado, identidade do daemon, beneficiario, expiracao/replay, conciliacao v1, heartbeat/lote, parada graciosa dirigida, quarentena, preco, QR, credencial, loja/PDV, Mercado Pago e adaptador)."
+                : "SELF-TEST PIX: OK (contrato v2 assinado, identidade do daemon, beneficiario, expiracao/replay, conciliacao v1, heartbeat/lote, parada graciosa dirigida, quarentena, preco, QR, contrato de credencial, loja/PDV, Mercado Pago e adaptador). DPAPI nao estava disponivel para o usuario de compilacao; validar a credencial segura no Windows do quiosque.");
             return 0;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or InvalidOperationException or FormatException or JsonException)
@@ -3665,6 +4818,255 @@ static class PixSelfTest
             Console.Error.WriteLine($"SELF-TEST PIX: FALHOU - {ex.Message}");
             return 20;
         }
+    }
+
+    private static void TestDaemonIdentityContract()
+    {
+        if (AgentCommand.Parse(["--daemon"]).RunMode != AgentRunMode.Daemon
+            || AgentCommand.Parse(["--daemon", "--bridge", "C:\\pix"]).RunMode != AgentRunMode.Daemon
+            || AgentCommand.Parse(["--once"]).RunMode != AgentRunMode.OneShot
+            || AgentCommand.Parse(["--self-test"]).RunMode != AgentRunMode.Administrative
+            || AgentCommand.Parse(["--once", "--check-provider"]).RunMode != AgentRunMode.Administrative
+            || !CommandIsRejected([])
+            || !CommandIsRejected(["--bridge", "C:\\pix"])
+            || !CommandIsRejected(["--daemon", "--once"])
+            || !CommandIsRejected(["--daemon", "--check-provider"]))
+            throw new InvalidOperationException("classificacao dos modos do agente PIX");
+
+        var supplied = new string('A', 64);
+        var randomCalled = false;
+        var selected = PixDaemonIdentity.SelectManagerToken(supplied, () =>
+        {
+            randomCalled = true;
+            return new byte[32];
+        });
+        if (randomCalled || !selected.Equals(supplied, StringComparison.Ordinal))
+            throw new InvalidOperationException("token valido do manager nao foi preservado");
+        var generated = PixDaemonIdentity.SelectManagerToken("invalido",
+            () => Enumerable.Range(0, 32).Select(value => (byte)value).ToArray());
+        if (!generated.Equals("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+                StringComparison.Ordinal)
+            || !PixDaemonIdentity.IsManagerToken(generated)
+            || PixDaemonIdentity.IsManagerToken(new string('g', 64)))
+            throw new InvalidOperationException("geracao/validacao do token efemero do daemon");
+        if (!PixDaemonIdentity.HashManagerToken("abc").Equals(
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                StringComparison.Ordinal))
+            throw new InvalidOperationException("SHA-256 da identidade do daemon");
+
+        var identity = new PixDaemonDescriptor(1234, 133123456789012345UL,
+            PixDaemonIdentity.HashManagerToken(generated));
+        var directed = StopRequestJson(identity);
+        if (PixAgentControl.ClassifyStopRequest(directed, identity) != PixStopRequestDisposition.Authorized
+            || PixAgentControl.ClassifyStopRequest(StopRequestJson(identity with { ProcessId = 1235 }), identity)
+                != PixStopRequestDisposition.Mismatch
+            || PixAgentControl.ClassifyStopRequest("installer-update\n", identity)
+                != PixStopRequestDisposition.InstallerUpdate
+            || PixAgentControl.ClassifyStopRequest("self-test", identity) != PixStopRequestDisposition.Invalid
+            || PixAgentControl.ClassifyStopRequest(directed.Insert(directed.IndexOf('{') + 1,
+                    "\"schemaVersion\":1,"), identity)
+                != PixStopRequestDisposition.Invalid)
+            throw new InvalidOperationException("matching estrito do pedido de parada do daemon");
+    }
+
+    private static bool CommandIsRejected(string[] args)
+    {
+        try { AgentCommand.Parse(args); return false; }
+        catch (InvalidOperationException) { return true; }
+    }
+
+    private static string StopRequestJson(PixDaemonDescriptor identity) => JsonSerializer.Serialize(new
+    {
+        schemaVersion = 1,
+        mode = "daemon",
+        processId = identity.ProcessId,
+        processStartFileTimeUtc = identity.ProcessStartFileTimeUtc,
+        managerTokenHash = identity.ManagerTokenHash
+    }, Json.Options);
+
+    private static async Task TestStopMonitorAsync(PixPaths paths)
+    {
+        try { if (File.Exists(paths.AgentStopRequestFile)) File.Delete(paths.AgentStopRequestFile); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException("limpeza do sentinel de parada", ex);
+        }
+
+        var identity = new PixDaemonDescriptor(4321, 133123456789012345UL,
+            PixDaemonIdentity.HashManagerToken(new string('b', 64)));
+        File.WriteAllText(paths.AgentStopRequestFile,
+            StopRequestJson(identity with { ProcessId = identity.ProcessId + 1 }), new UTF8Encoding(false));
+        if (PixAgentControl.TryConsumeStopRequest(paths, identity)
+            || File.Exists(paths.AgentStopRequestFile))
+            throw new InvalidOperationException("sentinel obsoleto nao foi colocado em quarentena");
+
+        using var cancellation = new CancellationTokenSource();
+        var publications = 0;
+        var inFlightOperation = Task.Delay(Timeout.InfiniteTimeSpan, cancellation.Token);
+        // Deixe o pedido pronto antes de agendar o monitor. O objetivo deste
+        // teste e validar consumo/cancelamento, nao disputar o agendador do
+        // ThreadPool de uma maquina de build carregada.
+        File.WriteAllText(paths.AgentStopRequestFile, StopRequestJson(identity), new UTF8Encoding(false));
+        await using var monitor = PixAgentStopMonitor.Start(paths, identity, cancellation,
+            () => Interlocked.Increment(ref publications), TimeSpan.FromMilliseconds(10));
+
+        try
+        {
+            await inFlightOperation.WaitAsync(TimeSpan.FromSeconds(10));
+            throw new InvalidOperationException("monitor nao cancelou a operacao em andamento");
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (TimeoutException ex)
+        {
+            throw new InvalidOperationException("monitor nao observou o sentinel dentro do limite", ex);
+        }
+
+        await Task.Delay(50);
+        if (publications != 1 || File.Exists(paths.AgentStopRequestFile)
+            || PixAgentControl.TryConsumeStopRequest(paths, identity))
+            throw new InvalidOperationException("monitor do sentinel de parada graciosa do agente");
+    }
+
+    private static void TestKioskIdentityJsonContract()
+    {
+        if (KioskProcessIdentity.ParseKioskUserJson("{\"kioskUser\":\"Arcade\",\"frontendExecutable\":\"D:\\\\emulationstation\\\\emulationstation.exe\"}") != "Arcade")
+            throw new InvalidOperationException("kioskUser valido nao foi lido");
+        foreach (var invalid in new[]
+        {
+            "{}",
+            "{\"kioskUser\":\"Arcade\",\"kioskUser\":\"Outro\"}",
+            "{\"kioskUser\":null}",
+            "{\"kioskUser\":\" Arcade \"}",
+            "[]"
+        })
+        {
+            var rejected = false;
+            try { KioskProcessIdentity.ParseKioskUserJson(invalid); }
+            catch (InvalidOperationException) { rejected = true; }
+            if (!rejected) throw new InvalidOperationException("JSON kioskUser inseguro foi aceito");
+        }
+        if (KioskProcessIdentity.GroupListContainsAdministrator(new[] { "Users" }, "Administrators"))
+            throw new InvalidOperationException("grupo Users foi confundido com Administrators");
+        if (!KioskProcessIdentity.GroupListContainsAdministrator(new[] { "Users", "Administrators" }, "Administrators"))
+            throw new InvalidOperationException("grupo Administrators nao foi reconhecido");
+        if (!KioskProcessIdentity.GroupListContainsAdministrator(new[] { "Usuarios", "Administradores" }, "Administradores"))
+            throw new InvalidOperationException("nome localizado de Administrators nao foi reconhecido");
+    }
+
+    private static void TestSignedPurchaseContract(PixOptions original, PixPaths paths,
+        PixSigningKeyStore keys, PixPurchaseRequest validRequest)
+    {
+        var options = (original with { Provider = "mock", ProductionEnabled = false }).Normalize();
+        var engine = new PixEngine(options, paths, new MockPixProvider(), keys);
+
+        var malformedFile = paths.RequestFile("MALFORMEDSELFTEST");
+        File.WriteAllText(malformedFile, "{\"schemaVersion\":2,", new UTF8Encoding(false));
+        engine.RunOnceAsync(CancellationToken.None).GetAwaiter().GetResult();
+        if (File.Exists(malformedFile) || !Directory.EnumerateFiles(paths.Rejected, "*MALFORMEDSELFTEST*").Any())
+            throw new InvalidOperationException("JSON malformado nao foi colocado em quarentena");
+
+        var v1File = paths.RequestFile("V1SELFTEST");
+        paths.WriteAtomically(v1File, new { schemaVersion = 1, id = "V1SELFTEST", minutes = validRequest.Minutes,
+            amountCents = validRequest.AmountCents, requestedAt = DateTimeOffset.UtcNow });
+        engine.RunOnceAsync(CancellationToken.None).GetAwaiter().GetResult();
+        if (File.Exists(v1File) || !Directory.EnumerateFiles(paths.Rejected, "*V1SELFTEST*").Any())
+            throw new InvalidOperationException("pedido v1 nao foi recusado claramente");
+
+        var expired = validRequest with
+        {
+            Id = "EXPIREDSELFTEST",
+            RequestedAtUnixSeconds = DateTimeOffset.UtcNow.AddMinutes(-options.PaymentExpirationMinutes - 2).ToUnixTimeSeconds(),
+            ExpiresAtUnixSeconds = DateTimeOffset.UtcNow.AddMinutes(-2).ToUnixTimeSeconds(),
+            Signature = ""
+        };
+        expired = expired with { Signature = PixRequestSigner.Sign(expired, keys.GetOrCreate()) };
+        paths.WriteAtomically(paths.RequestFile(expired.Id), expired);
+        engine.RunOnceAsync(CancellationToken.None).GetAwaiter().GetResult();
+        if (File.Exists(paths.RequestFile(expired.Id)) || !Directory.EnumerateFiles(paths.Rejected, "*EXPIREDSELFTEST*").Any())
+            throw new InvalidOperationException("pedido expirado/repetido nao foi isolado");
+
+        paths.WriteAtomically(paths.RequestFile(validRequest.Id), validRequest);
+        engine.RunOnceAsync(CancellationToken.None).GetAwaiter().GetResult();
+        var session = JsonSerializer.Deserialize<PixSession>(File.ReadAllText(paths.SessionFile(validRequest.Id)), Json.Options)
+            ?? throw new InvalidOperationException("sessao v2 nao foi criada");
+        if (session.SchemaVersion != PixContract.SchemaVersion
+            || session.BeneficiaryType != validRequest.BeneficiaryType
+            || session.BeneficiaryId != validRequest.BeneficiaryId
+            || !PixRequestSigner.Verify(session.SignedRequest(), keys.GetOrCreate()))
+            throw new InvalidOperationException("sessao nao preservou o vinculo assinado do beneficiario");
+        if (!engine.ApproveMockAsync(validRequest.Id).GetAwaiter().GetResult())
+            throw new InvalidOperationException("sessao mock v2 nao foi aprovada");
+        var approved = JsonSerializer.Deserialize<PixCreditEvent>(
+            File.ReadAllText(paths.ApprovedFile(validRequest.Id)), Json.Options)
+            ?? throw new InvalidOperationException("evento v2 nao foi publicado");
+        if (approved.BeneficiaryType != validRequest.BeneficiaryType
+            || approved.BeneficiaryId != validRequest.BeneficiaryId
+            || approved.EventExpiresAtUnixSeconds != approved.ApprovedAtUnixSeconds + PixContract.CreditEventLifetimeSeconds
+            || !PixEventSigner.Verify(approved, keys.GetOrCreate()))
+            throw new InvalidOperationException("evento de credito perdeu beneficiario, expiracao ou assinatura");
+
+        const string legacyId = "LEGACYSELFTEST";
+        var legacy = new PixLegacySession(legacyId, validRequest.Minutes,
+            validRequest.AmountCents, "mock", "LEGACY-ORDER-1",
+            "LEGACY-QR-PAYLOAD-SELFTEST", "completed", DateTimeOffset.UtcNow.AddMinutes(-5),
+            DateTimeOffset.UtcNow.AddMinutes(-1), 0, DateTimeOffset.MinValue);
+        paths.WriteAtomically(paths.SessionFile(legacyId), legacy);
+        var legacyEngine = new PixEngine(options, paths, new ApprovedLegacyTestProvider(), keys);
+        legacyEngine.RunOnceAsync(CancellationToken.None).GetAwaiter().GetResult();
+        var reconciliationFile = Path.Combine(paths.Reconciliation,
+            $"{legacyId}.legacy-reconciliation.json");
+        if (File.Exists(paths.SessionFile(legacyId)) || !File.Exists(reconciliationFile)
+            || File.Exists(paths.ApprovedFile(legacyId)))
+            throw new InvalidOperationException("sessao v1 aprovada nao foi preservada para conciliacao");
+        using var reconciliation = JsonDocument.Parse(File.ReadAllText(reconciliationFile));
+        if (reconciliation.RootElement.GetProperty("state").GetString() != "approved_unassigned"
+            || !reconciliation.RootElement.GetProperty("requiresManualAssignment").GetBoolean())
+            throw new InvalidOperationException("conciliacao v1 nao exige atribuicao manual segura");
+
+        const string appliedLegacyId = "LEGACYAPPLIEDSELFTEST";
+        var alreadyApplied = legacy with { Id = appliedLegacyId, ProviderOrderId = "LEGACY-ORDER-2" };
+        paths.WriteAtomically(paths.SessionFile(appliedLegacyId), alreadyApplied);
+        paths.WriteAtomically(paths.ProcessedFile(appliedLegacyId), new
+        {
+            schemaVersion = 1,
+            transactionId = appliedLegacyId
+        });
+        legacyEngine.RunOnceAsync(CancellationToken.None).GetAwaiter().GetResult();
+        var auditFile = Path.Combine(paths.Reconciliation,
+            $"{appliedLegacyId}.legacy-reconciliation.json");
+        using var audit = JsonDocument.Parse(File.ReadAllText(auditFile));
+        if (audit.RootElement.GetProperty("state").GetString() != "already_applied_audit_only"
+            || audit.RootElement.GetProperty("requiresManualAssignment").GetBoolean())
+            throw new InvalidOperationException("recibo v1 ja processado poderia duplicar credito");
+    }
+
+    private static void TestHeartbeatBatch(PixOptions original, PixPaths parentPaths)
+    {
+        var paths = new PixPaths(Path.Combine(parentPaths.Root, "heartbeat-batch"));
+        paths.EnsureDirectories();
+        var keys = new PixSigningKeyStore(paths.SigningKeyFile);
+        var key = keys.GetOrCreate();
+        var options = (original with { Provider = "mock", ProductionEnabled = false }).Normalize();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        for (var index = 1; index <= 3; index++)
+        {
+            var request = new PixPurchaseRequest(PixContract.SchemaVersion,
+                $"HEARTBEATSELFTEST{index}", options.AllowedMinutes.First(),
+                options.PriceFor(options.AllowedMinutes.First()), now,
+                now + options.PaymentExpirationMinutes * 60L, "player",
+                $"player_HEARTBEAT_0123456789abcde{index}", "");
+            request = request with { Signature = PixRequestSigner.Sign(request, key) };
+            var session = PixSession.Pending(request, "mock", $"SLOW-ORDER-{index}",
+                $"TURBORAMA-HEARTBEAT-QR-PAYLOAD-{index}");
+            paths.WriteAtomically(paths.SessionFile(request.Id), session);
+        }
+
+        var provider = new SlowPendingBatchTestProvider();
+        var engine = new PixEngine(options, paths, provider, keys);
+        var pulses = 0;
+        engine.RunOnceAsync(CancellationToken.None, () => pulses++).GetAwaiter().GetResult();
+        if (provider.RefreshCount != 3 || pulses < 8)
+            throw new InvalidOperationException("heartbeat nao foi renovado entre sessoes lentas do lote");
     }
 
     private static void TestCompatibleQr(PixPaths paths)
@@ -3719,6 +5121,12 @@ static class PixSelfTest
         catch (InvalidOperationException) { pos41Rejected = true; }
         if (!pos41Rejected) throw new InvalidOperationException("external_id de PDV acima de 40 caracteres foi aceito");
 
+        var tokenLikeError = "erro remoto: APP" + "_USR-self-test-sensitive-value-1234567890";
+        var safeError = PixOwnerProvisioner.SafeSetupMessage(tokenLikeError);
+        if (safeError.Contains("sensitive-value", StringComparison.Ordinal)
+            || !safeError.Contains("Access Token oculto", StringComparison.Ordinal))
+            throw new InvalidOperationException("mensagem de provisionamento expos Access Token");
+
         var posOptions = (new PixOptions
         {
             Provider = "mercadopago",
@@ -3734,6 +5142,28 @@ static class PixSelfTest
         }
         catch (InvalidOperationException) { pos41OptionsRejected = true; }
         if (!pos41OptionsRejected) throw new InvalidOperationException("validacao operacional aceitou PDV com mais de 40 caracteres");
+
+        var productionOwner = new PixOwnerSettings
+        {
+            Enabled = true,
+            Provider = "mercadopago",
+            AccountId = "123456",
+            StoreExternalId = "LZLOJA01",
+            PosExternalId = "LZPIXCOMP",
+            PostalCode = "57084648",
+            StreetNumber = "100",
+            Reference = "Teste",
+            PackagePricesCents = new Dictionary<int, long>
+            {
+                [15] = 100, [30] = 200, [45] = 300, [60] = 400, [120] = 800
+            }
+        };
+        var migratedFromSandbox = productionOwner.Apply(posOptions with
+        {
+            MercadoPago = posOptions.MercadoPago with { Environment = "sandbox" }
+        });
+        if (migratedFromSandbox.MercadoPago.Environment != "production")
+            throw new InvalidOperationException("cadastro comercial nao substituiu ambiente sandbox anterior");
 
         var prices = new Dictionary<int, long>
         {
@@ -3968,7 +5398,31 @@ static class PixSelfTest
             Environment.SetEnvironmentVariable("TURBORAMA_PIX_MERCADOPAGO_ACCESS_TOKEN", "APP_USR-self-test-token");
             var secretStore = new PixSecretStore(paths.SecretFile);
             var provider = new MercadoPagoPixProvider(options, secretStore, new FakeMercadoPagoHealthHandler(posExists: true));
+            using (var testAccount = JsonDocument.Parse("{\"id\":123456,\"test_user\":true,\"email\":\"seller@testuser.com\"}"))
+            {
+                var rejected = false;
+                try { provider.ValidateAccountEnvironment(testAccount.RootElement); }
+                catch (SecurityException) { rejected = true; }
+                if (!rejected) throw new InvalidOperationException("conta sandbox foi aceita como producao");
+            }
+            var sandboxOptions = options with { MercadoPago = options.MercadoPago with { Environment = "sandbox" } };
+            var sandboxProvider = new MercadoPagoPixProvider(sandboxOptions, secretStore, new FakeMercadoPagoHealthHandler(posExists: true));
+            using (var testAccount = JsonDocument.Parse("{\"id\":123456,\"email\":\"seller@testuser.com\"}"))
+                sandboxProvider.ValidateAccountEnvironment(testAccount.RootElement);
+            using (var productionAccount = JsonDocument.Parse("{\"id\":123456,\"test_user\":false}"))
+                provider.ValidateAccountEnvironment(productionAccount.RootElement);
+            using (var unknownAccount = JsonDocument.Parse("{\"id\":123456}"))
+            {
+                var rejected = false;
+                try { provider.ValidateAccountEnvironment(unknownAccount.RootElement); }
+                catch (SecurityException) { rejected = true; }
+                if (!rejected) throw new InvalidOperationException("conta sem sinal production/sandbox foi aceita");
+            }
             provider.CheckHealthAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+            var inventoryFallback = new MercadoPagoPixProvider(options, secretStore,
+                new FakeMercadoPagoHealthHandler(posExists: true, filteredQueryMiss: true));
+            inventoryFallback.CheckHealthAsync(CancellationToken.None).GetAwaiter().GetResult();
 
             var missing = new MercadoPagoPixProvider(options, secretStore, new FakeMercadoPagoHealthHandler(posExists: false));
             try
@@ -3978,11 +5432,23 @@ static class PixSelfTest
             }
             catch (MercadoPagoApiException ex) when (ex.StatusCode == 404) { }
 
+            var inactive = new MercadoPagoPixProvider(options, secretStore,
+                new FakeMercadoPagoHealthHandler(posExists: true, posStatus: "inactive"));
+            try
+            {
+                inactive.CheckHealthAsync(CancellationToken.None).GetAwaiter().GetResult();
+                throw new InvalidOperationException("PDV inativo foi aceito pelo health-check filtrado");
+            }
+            catch (MercadoPagoApiException ex) when (ex.StatusCode == 404) { }
+
             // Exercita o contrato que realmente gera e confirma o QR. O
             // handler falso valida headers, idempotencia e todos os campos
             // essenciais enviados a /v1/orders antes de devolver qr_data.
             var orderProvider = new MercadoPagoPixProvider(options, secretStore, new FakeMercadoPagoOrderHandler());
-            var purchase = new PixPurchaseRequest("PIXSELFTEST", 15, 750, DateTimeOffset.UtcNow);
+            var purchaseNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var purchase = new PixPurchaseRequest(PixContract.SchemaVersion, "PIXSELFTEST", 15, 750,
+                purchaseNow, purchaseNow + options.PaymentExpirationMinutes * 60L, "player",
+                "player_SELFTEST_0123456789abcdef", "");
             var pendingOrder = orderProvider.CreateAsync(purchase, CancellationToken.None).GetAwaiter().GetResult();
             if (pendingOrder.Provider != "mercadopago" || pendingOrder.ProviderOrderId != "ORDER-SELFTEST-1"
                 || pendingOrder.Status != "pending" || pendingOrder.QrData.Length < 20)
@@ -4017,6 +5483,45 @@ static class PixSelfTest
             var existing = setupProvider.EnsureInfrastructureAsync(setup, CancellationToken.None).GetAwaiter().GetResult();
             if (existing.StoreCreated || existing.PointOfSaleCreated)
                 throw new InvalidOperationException("loja ou PDV duplicado no segundo cadastro");
+
+            // Regressao real: depois de Ready, um health-check 404 mantinha o
+            // coordenador permanentemente pronto e nunca voltava ao inventario.
+            // A ausencia do PDV deve invalidar apenas a infraestrutura, tentar
+            // reconciliar imediatamente e continuar sem duplicar Loja/PDV.
+            var recoverySettings = new PixOwnerSettings
+            {
+                Enabled = true,
+                SetupState = "ready",
+                Provider = "mercadopago",
+                AccountId = "123456",
+                StoreExternalId = "LZLOJA01",
+                StoreName = "TurboRama Teste",
+                PosExternalId = "LZPIXCOMP",
+                PosName = "TurboRama Kiosk",
+                PostalCode = "01001000",
+                StreetNumber = "100",
+                Reference = "Teste automatizado",
+                PackagePricesCents = new Dictionary<int, long>
+                {
+                    [15] = 750, [30] = 1500, [45] = 2250, [60] = 3000, [120] = 6000
+                }
+            };
+            var recoveryHandler = new FakeMercadoPagoSetupHandler(storeExists: true, posExists: true);
+            var recoveryProvider = new MercadoPagoPixProvider(options, secretStore, recoveryHandler);
+            var recoveryCoordinator = new OwnerInfrastructureCoordinator(recoverySettings, recoveryProvider, paths);
+            if (!recoveryCoordinator.TryEnsureAsync(force: true, CancellationToken.None).GetAwaiter().GetResult()
+                || !recoveryCoordinator.Ready)
+                throw new InvalidOperationException("preparo do coordenador para regressao 404");
+            if (recoveryCoordinator.InvalidateAfterHealthFailure(
+                    new MercadoPagoApiException(401, "credencial recusada")) || !recoveryCoordinator.Ready)
+                throw new InvalidOperationException("falha nao relacionada invalidou Loja/PDV");
+            if (!recoveryCoordinator.InvalidateAfterHealthFailure(
+                    new MercadoPagoApiException(404, "PDV LZPIXCOMP nao foi encontrado na conta"))
+                || recoveryCoordinator.Ready)
+                throw new InvalidOperationException("404 do PDV nao reabriu a reconciliacao");
+            if (!recoveryCoordinator.TryEnsureAsync(force: false, CancellationToken.None).GetAwaiter().GetResult()
+                || !recoveryCoordinator.Ready || recoveryHandler.StorePostCount != 0 || recoveryHandler.PosPostCount != 0)
+                throw new InvalidOperationException("reconciliacao apos 404 duplicou ou nao recuperou Loja/PDV");
 
             // Reproduz exatamente a falha vista no quiosque: o POST da loja
             // responde com sucesso, a busca demora duas consultas para
@@ -4128,6 +5633,379 @@ static class PixSelfTest
         }
     }
 
+    private static void TestMercadoPagoProvisioning(PixOptions original, PixPaths paths,
+        bool credentialDpapiTested)
+    {
+        const string accountId = "123456";
+        const string storeName = "TurboRama Teste";
+        const string posName = "TurboRama Kiosk";
+        var prices = new Dictionary<int, long>
+        {
+            [15] = 750, [30] = 1500, [45] = 2250, [60] = 3000, [120] = 6000
+        };
+        PixOwnerProvisioningRequest Request(string environment = "production",
+            string storeExternalId = "", string posExternalId = "") => new()
+        {
+            Provider = "mercadopago",
+            MercadoPagoEnvironment = environment,
+            StoreName = storeName,
+            StoreExternalId = storeExternalId,
+            PosName = posName,
+            PosExternalId = posExternalId,
+            PostalCode = "01001000",
+            StreetNumber = "100",
+            Reference = "Teste automatizado",
+            PackagePricesCents = new Dictionary<int, long>(prices)
+        };
+
+        var emptyInventory = new MercadoPagoInfrastructure(accountId,
+            Array.Empty<MercadoPagoStoreInfo>(), Array.Empty<MercadoPagoPosInfo>());
+        var emptyDecision = PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, "", posName, "",
+            emptyInventory);
+        if (!emptyDecision.CreateStore || !emptyDecision.CreatePointOfSale
+            || !emptyDecision.RequireEmptyInventoryBeforeCreation
+            || emptyDecision.StoreExternalId.Length is < 1 or > 60
+            || emptyDecision.PosExternalId.Length is < 1 or > 40)
+            throw new InvalidOperationException("conta vazia nao gerou um plano unico de Loja/PDV");
+        var emptyExplicitDecision = PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, "LZLOJANOVA",
+            posName, "LZPIXNOVO", emptyInventory);
+        if (!emptyExplicitDecision.CreateStore || !emptyExplicitDecision.CreatePointOfSale
+            || !emptyExplicitDecision.RequireEmptyInventoryBeforeCreation)
+            throw new InvalidOperationException("IDs explicitos em conta vazia nao preservaram a barreira de inventario vazio");
+
+        var uniqueStore = new MercadoPagoStoreInfo("987", "LZLOJA01", storeName);
+        var uniquePoint = new MercadoPagoPosInfo("654", "LZPIXCOMP", posName, uniqueStore.Id, "active");
+        var uniqueInventory = new MercadoPagoInfrastructure(accountId,
+            new[] { uniqueStore }, new[] { uniquePoint });
+        var uniqueDecision = PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, "", posName, "",
+            uniqueInventory);
+        if (uniqueDecision.RequiresRemoteWrite || uniqueDecision.StoreExternalId != "LZLOJA01"
+            || uniqueDecision.PosExternalId != "LZPIXCOMP")
+            throw new InvalidOperationException("par unico compativel nao foi reutilizado sem criacao");
+
+        var statusOmittedDecision = PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, "", posName, "",
+            uniqueInventory with
+            {
+                PointsOfSale = new[] { uniquePoint with { Status = "" } }
+            });
+        if (statusOmittedDecision.RequiresRemoteWrite || statusOmittedDecision.PosExternalId != "LZPIXCOMP")
+            throw new InvalidOperationException("PDV valido com status omitido nao foi reutilizado");
+
+        var explicitDecision = PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, "LZLOJA01",
+            posName, "LZPIXCOMP", uniqueInventory);
+        if (explicitDecision.RequiresRemoteWrite || explicitDecision.Store?.Id != uniqueStore.Id
+            || explicitDecision.PointOfSale?.Id != uniquePoint.Id)
+            throw new InvalidOperationException("IDs explicitos corretos nao foram validados e reutilizados");
+
+        void RequireMissingExplicitIdRejected(string storeId, string pointId)
+        {
+            var rejected = false;
+            try
+            {
+                PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, storeId, posName, pointId,
+                    uniqueInventory);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("conta esta totalmente vazia", StringComparison.OrdinalIgnoreCase))
+            {
+                rejected = true;
+            }
+            if (!rejected)
+                throw new InvalidOperationException("ID explicito inexistente autorizou criacao em conta povoada");
+        }
+        RequireMissingExplicitIdRejected("LZLOJA01", "LZPIXINEXISTENTE");
+        RequireMissingExplicitIdRejected("LZLOJAINEXISTENTE", "LZPIXINEXISTENTE");
+        RequireMissingExplicitIdRejected("", "LZPIXINEXISTENTE");
+        RequireMissingExplicitIdRejected("LZLOJAINEXISTENTE", "");
+
+        var ambiguousInventory = new MercadoPagoInfrastructure(accountId,
+            new[]
+            {
+                uniqueStore,
+                new MercadoPagoStoreInfo("988", "LZLOJA02", storeName)
+            },
+            new[]
+            {
+                uniquePoint,
+                new MercadoPagoPosInfo("655", "LZPIXCOMP02", posName, "988", "active")
+            });
+        var ambiguityRejected = false;
+        try
+        {
+            PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, "", posName, "", ambiguousInventory);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("explicitamente", StringComparison.OrdinalIgnoreCase))
+        {
+            ambiguityRejected = true;
+        }
+        if (!ambiguityRejected)
+            throw new InvalidOperationException("multiplos pares compativeis nao exigiram selecao explicita");
+
+        foreach (var invalidEnvironment in new[] { "", "staging" })
+        {
+            var environmentRejected = false;
+            try { PixOwnerProvisioner.ValidateMercadoPagoEnvironment(invalidEnvironment); }
+            catch (InvalidOperationException) { environmentRejected = true; }
+            if (!environmentRejected)
+                throw new InvalidOperationException("ambiente Mercado Pago ausente ou desconhecido foi aceito");
+        }
+
+        var options = (original with
+        {
+            Provider = "mercadopago",
+            ProductionEnabled = true,
+            MercadoPago = new MercadoPagoOptions
+            {
+                Environment = "production",
+                ExternalPosId = emptyDecision.PosExternalId
+            }
+        }).Normalize();
+        var previousToken = Environment.GetEnvironmentVariable("TURBORAMA_PIX_MERCADOPAGO_ACCESS_TOKEN");
+        var fakeToken = "APP" + "_USR-provisioning-self-test-token-1234567890";
+        try
+        {
+            Environment.SetEnvironmentVariable("TURBORAMA_PIX_MERCADOPAGO_ACCESS_TOKEN", fakeToken);
+
+            var uniqueReadHandler = new FakeMercadoPagoProvisioningHandler(uniqueInventory);
+            var uniqueReadOptions = options with
+            {
+                MercadoPago = options.MercadoPago with { ExternalPosId = uniqueDecision.PosExternalId }
+            };
+            var uniqueReadProvider = new MercadoPagoPixProvider(uniqueReadOptions,
+                new PixSecretStore(paths.SecretFile), uniqueReadHandler);
+            var uniqueReadInventory = uniqueReadProvider.GetInfrastructureAsync(CancellationToken.None)
+                .GetAwaiter().GetResult();
+            var uniqueReadDecision = PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, "", posName, "",
+                uniqueReadInventory);
+            uniqueReadProvider.CheckHealthAsync(CancellationToken.None).GetAwaiter().GetResult();
+            if (uniqueReadDecision.RequiresRemoteWrite || uniqueReadHandler.TotalPostCount != 0)
+                throw new InvalidOperationException("par unico provocou POST durante validacao read-only");
+
+            // Conta realmente vazia: o plano permite exatamente um POST de
+            // loja e um de PDV e o provider continua idempotente na repeticao.
+            var emptyHandler = new FakeMercadoPagoProvisioningHandler(emptyInventory);
+            var emptyProvider = new MercadoPagoPixProvider(options, new PixSecretStore(paths.SecretFile), emptyHandler);
+            var emptySetup = new MercadoPagoSetupRequest
+            {
+                ExpectedAccountId = accountId,
+                StoreName = storeName,
+                StoreExternalId = emptyDecision.StoreExternalId,
+                PosName = posName,
+                PosExternalId = emptyDecision.PosExternalId,
+                StreetName = "Praca da Se",
+                StreetNumber = "100",
+                CityName = "Sao Paulo",
+                StateName = "Sao Paulo",
+                Latitude = -23.55052,
+                Longitude = -46.633308,
+                Reference = "Teste automatizado"
+            };
+            var created = emptyProvider.EnsureInfrastructureAsync(emptySetup, CancellationToken.None,
+                new MercadoPagoCreationPolicy(emptyDecision.CreateStore, emptyDecision.CreatePointOfSale,
+                    emptyDecision.RequireEmptyInventoryBeforeCreation))
+                .GetAwaiter().GetResult();
+            if (!created.StoreCreated || !created.PointOfSaleCreated
+                || emptyHandler.StorePostCount != 1 || emptyHandler.PosPostCount != 1)
+                throw new InvalidOperationException("conta vazia nao criou exatamente uma Loja e um PDV");
+            var repeated = emptyProvider.EnsureInfrastructureAsync(emptySetup, CancellationToken.None,
+                new MercadoPagoCreationPolicy(emptyDecision.CreateStore, emptyDecision.CreatePointOfSale,
+                    emptyDecision.RequireEmptyInventoryBeforeCreation))
+                .GetAwaiter().GetResult();
+            if (repeated.StoreCreated || repeated.PointOfSaleCreated
+                || emptyHandler.StorePostCount != 1 || emptyHandler.PosPostCount != 1)
+                throw new InvalidOperationException("repeticao do plano vazio duplicou Loja/PDV");
+
+            // Executa o fluxo completo na ambiguidade com arquivos sentinela.
+            // A recusa deve ocorrer antes de DPAPI, owner-settings e qualquer
+            // POST, mesmo que ja exista um cadastro anterior.
+            var ambiguousRoot = Path.Combine(paths.Root, "provisioning-ambiguous");
+            var ambiguousPaths = new PixPaths(ambiguousRoot);
+            ambiguousPaths.EnsureDirectories();
+            var secretSentinel = Encoding.UTF8.GetBytes("SECRET-SENTINEL-DO-NOT-REPLACE");
+            var ownerSentinel = Encoding.UTF8.GetBytes("OWNER-SENTINEL-DO-NOT-REPLACE");
+            File.WriteAllBytes(ambiguousPaths.SecretFile, secretSentinel);
+            var ownerFile = Path.Combine(ambiguousPaths.Root, "owner-settings.json");
+            File.WriteAllBytes(ownerFile, ownerSentinel);
+            var ambiguousHandler = new FakeMercadoPagoProvisioningHandler(ambiguousInventory);
+            ambiguityRejected = false;
+            try
+            {
+                PixOwnerProvisioner.ConfigureAsync(Request(), fakeToken, options, ambiguousPaths,
+                    new PixSecretStore(ambiguousPaths.SecretFile), CancellationToken.None, ambiguousHandler)
+                    .GetAwaiter().GetResult();
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("explicitamente", StringComparison.OrdinalIgnoreCase))
+            {
+                ambiguityRejected = true;
+            }
+            if (!ambiguityRejected || ambiguousHandler.TotalPostCount != 0
+                || !File.ReadAllBytes(ambiguousPaths.SecretFile).SequenceEqual(secretSentinel)
+                || !File.ReadAllBytes(ownerFile).SequenceEqual(ownerSentinel))
+                throw new InvalidOperationException("ambiguidade alterou segredo/cadastro ou enviou POST");
+
+            // Um ID digitado incorretamente numa conta ja povoada tambem deve
+            // falhar antes de DPAPI, owner-settings e qualquer POST.
+            var missingExplicitRoot = Path.Combine(paths.Root, "provisioning-missing-explicit");
+            var missingExplicitPaths = new PixPaths(missingExplicitRoot);
+            missingExplicitPaths.EnsureDirectories();
+            File.WriteAllBytes(missingExplicitPaths.SecretFile, secretSentinel);
+            var missingExplicitOwnerFile = Path.Combine(missingExplicitPaths.Root, "owner-settings.json");
+            File.WriteAllBytes(missingExplicitOwnerFile, ownerSentinel);
+            var missingExplicitHandler = new FakeMercadoPagoProvisioningHandler(uniqueInventory);
+            var missingExplicitRejected = false;
+            try
+            {
+                PixOwnerProvisioner.ConfigureAsync(Request("production", "LZLOJA01", "LZPIXINEXISTENTE"),
+                    fakeToken, options, missingExplicitPaths,
+                    new PixSecretStore(missingExplicitPaths.SecretFile), CancellationToken.None,
+                    missingExplicitHandler).GetAwaiter().GetResult();
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("conta esta totalmente vazia", StringComparison.OrdinalIgnoreCase))
+            {
+                missingExplicitRejected = true;
+            }
+            if (!missingExplicitRejected || missingExplicitHandler.TotalPostCount != 0
+                || !File.ReadAllBytes(missingExplicitPaths.SecretFile).SequenceEqual(secretSentinel)
+                || !File.ReadAllBytes(missingExplicitOwnerFile).SequenceEqual(ownerSentinel))
+                throw new InvalidOperationException("ID explicito inexistente alterou segredo/cadastro ou enviou POST");
+
+            // O ambiente tambem e confirmado antes de persistencia. Uma conta
+            // test_user jamais pode ser ativada por um request production.
+            var mismatchRoot = Path.Combine(paths.Root, "provisioning-environment-mismatch");
+            var mismatchPaths = new PixPaths(mismatchRoot);
+            mismatchPaths.EnsureDirectories();
+            File.WriteAllBytes(mismatchPaths.SecretFile, secretSentinel);
+            var mismatchHandler = new FakeMercadoPagoProvisioningHandler(emptyInventory, testAccount: true);
+            var mismatchRejected = false;
+            try
+            {
+                PixOwnerProvisioner.ConfigureAsync(Request("production"), fakeToken, options, mismatchPaths,
+                    new PixSecretStore(mismatchPaths.SecretFile), CancellationToken.None, mismatchHandler)
+                    .GetAwaiter().GetResult();
+            }
+            catch (SecurityException) { mismatchRejected = true; }
+            if (!mismatchRejected || mismatchHandler.TotalPostCount != 0
+                || !File.ReadAllBytes(mismatchPaths.SecretFile).SequenceEqual(secretSentinel))
+                throw new InvalidOperationException("mismatch production/sandbox nao falhou antes da persistencia");
+
+            var unknownEnvironmentRoot = Path.Combine(paths.Root, "provisioning-environment-unknown");
+            var unknownEnvironmentPaths = new PixPaths(unknownEnvironmentRoot);
+            unknownEnvironmentPaths.EnsureDirectories();
+            File.WriteAllBytes(unknownEnvironmentPaths.SecretFile, secretSentinel);
+            var unknownEnvironmentOwnerFile = Path.Combine(unknownEnvironmentPaths.Root, "owner-settings.json");
+            File.WriteAllBytes(unknownEnvironmentOwnerFile, ownerSentinel);
+            var unknownEnvironmentHandler = new FakeMercadoPagoProvisioningHandler(emptyInventory,
+                omitEnvironmentSignal: true);
+            var unknownEnvironmentRejected = false;
+            try
+            {
+                PixOwnerProvisioner.ConfigureAsync(Request("production"), fakeToken, options,
+                    unknownEnvironmentPaths, new PixSecretStore(unknownEnvironmentPaths.SecretFile),
+                    CancellationToken.None, unknownEnvironmentHandler).GetAwaiter().GetResult();
+            }
+            catch (SecurityException) { unknownEnvironmentRejected = true; }
+            if (!unknownEnvironmentRejected || unknownEnvironmentHandler.TotalPostCount != 0
+                || !File.ReadAllBytes(unknownEnvironmentPaths.SecretFile).SequenceEqual(secretSentinel)
+                || !File.ReadAllBytes(unknownEnvironmentOwnerFile).SequenceEqual(ownerSentinel))
+                throw new InvalidOperationException("ambiente desconhecido alterou segredo/cadastro ou enviou POST");
+
+            if (credentialDpapiTested)
+            {
+                // Par unico: o fluxo completo valida health, grava o novo
+                // cadastro local e nao envia nenhum POST de Loja/PDV.
+                var uniqueRoot = Path.Combine(paths.Root, "provisioning-unique");
+                var uniquePaths = new PixPaths(uniqueRoot);
+                uniquePaths.EnsureDirectories();
+                var uniqueHandler = new FakeMercadoPagoProvisioningHandler(uniqueInventory);
+                var result = PixOwnerProvisioner.ConfigureAsync(Request(), fakeToken, options, uniquePaths,
+                    new PixSecretStore(uniquePaths.SecretFile), CancellationToken.None, uniqueHandler)
+                    .GetAwaiter().GetResult();
+                if (result.StoreExternalId != "LZLOJA01" || result.PosExternalId != "LZPIXCOMP"
+                    || uniqueHandler.TotalPostCount != 0 || !File.Exists(uniquePaths.SecretFile)
+                    || !File.Exists(Path.Combine(uniquePaths.Root, "owner-settings.json")))
+                    throw new InvalidOperationException("par unico nao foi provisionado localmente sem POST");
+                var savedReady = PixOwnerSettings.LoadIfPresent(uniquePaths.Root);
+                if (savedReady is null || !savedReady.SetupState.Equals("ready", StringComparison.Ordinal))
+                    throw new InvalidOperationException("cadastro confirmado nao terminou em estado ready");
+
+                // Se o health falhar depois da troca protegida, o arquivo local
+                // precisa continuar pending e, portanto, incapaz de liberar compras.
+                var healthFailureRoot = Path.Combine(paths.Root, "provisioning-health-failure");
+                var healthFailurePaths = new PixPaths(healthFailureRoot);
+                healthFailurePaths.EnsureDirectories();
+                var healthFailureHandler = new FakeMercadoPagoProvisioningHandler(uniqueInventory,
+                    failFilteredHealth: true);
+                var healthFailed = false;
+                try
+                {
+                    PixOwnerProvisioner.ConfigureAsync(Request(), fakeToken, options, healthFailurePaths,
+                        new PixSecretStore(healthFailurePaths.SecretFile), CancellationToken.None,
+                        healthFailureHandler).GetAwaiter().GetResult();
+                }
+                catch (MercadoPagoApiException) { healthFailed = true; }
+                var savedPending = PixOwnerSettings.LoadIfPresent(healthFailurePaths.Root);
+                if (!healthFailed || savedPending is null
+                    || !savedPending.SetupState.Equals("pending", StringComparison.Ordinal)
+                    || healthFailureHandler.TotalPostCount != 0)
+                    throw new InvalidOperationException("falha de health nao preservou cadastro pending");
+
+                // O daemon nunca cria um PDV ausente numa conta que ja possui
+                // uma Loja; ele permanece bloqueado e exige selecao/reparo.
+                var coordinatorRoot = Path.Combine(paths.Root, "provisioning-coordinator-nonempty");
+                var coordinatorPaths = new PixPaths(coordinatorRoot);
+                coordinatorPaths.EnsureDirectories();
+                var storeOnlyInventory = new MercadoPagoInfrastructure(accountId,
+                    new[] { uniqueStore }, Array.Empty<MercadoPagoPosInfo>());
+                var coordinatorHandler = new FakeMercadoPagoProvisioningHandler(storeOnlyInventory);
+                var coordinatorOptions = options with
+                {
+                    MercadoPago = options.MercadoPago with { ExternalPosId = "LZPIXINEXISTENTE" }
+                };
+                var coordinatorProvider = new MercadoPagoPixProvider(coordinatorOptions,
+                    new PixSecretStore(coordinatorPaths.SecretFile), coordinatorHandler);
+                var coordinatorOwner = new PixOwnerSettings
+                {
+                    Enabled = true,
+                    SetupState = "pending",
+                    Provider = "mercadopago",
+                    MercadoPagoEnvironment = "production",
+                    AccountId = accountId,
+                    StoreExternalId = uniqueStore.ExternalId,
+                    StoreName = storeName,
+                    PosExternalId = "LZPIXINEXISTENTE",
+                    PosName = posName,
+                    PostalCode = "01001000",
+                    StreetNumber = "100",
+                    Reference = "Teste automatizado",
+                    PackagePricesCents = new Dictionary<int, long>(prices)
+                };
+                var coordinator = new OwnerInfrastructureCoordinator(coordinatorOwner,
+                    coordinatorProvider, coordinatorPaths);
+                var coordinatorReady = coordinator.TryEnsureAsync(force: true, CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                if (coordinatorReady || coordinator.Ready || coordinatorHandler.TotalPostCount != 0)
+                    throw new InvalidOperationException("coordenador criou recurso em inventario nao vazio");
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TURBORAMA_PIX_MERCADOPAGO_ACCESS_TOKEN", previousToken);
+            foreach (var directory in new[]
+            {
+                Path.Combine(paths.Root, "provisioning-ambiguous"),
+                Path.Combine(paths.Root, "provisioning-missing-explicit"),
+                Path.Combine(paths.Root, "provisioning-environment-mismatch"),
+                Path.Combine(paths.Root, "provisioning-environment-unknown"),
+                Path.Combine(paths.Root, "provisioning-unique"),
+                Path.Combine(paths.Root, "provisioning-health-failure"),
+                Path.Combine(paths.Root, "provisioning-coordinator-nonempty")
+            })
+            {
+                try { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
+        }
+    }
+
     private static void TestAdapterResponses(PixOptions original, PixPaths paths)
     {
         var options = (original with
@@ -4181,7 +6059,10 @@ static class PixSelfTest
             Environment.SetEnvironmentVariable("TURBORAMA_PIX_PROVIDER_SECRET", "adapter-self-test-secret");
             var httpProvider = new AdapterPixProvider(options, secretStore, new FakeAdapterHandler());
             httpProvider.CheckHealthAsync(CancellationToken.None).GetAwaiter().GetResult();
-            var request = new PixPurchaseRequest("PIXSELFTEST", 15, 750, DateTimeOffset.UtcNow);
+            var requestNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var request = new PixPurchaseRequest(PixContract.SchemaVersion, "PIXSELFTEST", 15, 750,
+                requestNow, requestNow + options.PaymentExpirationMinutes * 60L, "player",
+                "player_SELFTEST_0123456789abcdef", "");
             var session = httpProvider.CreateAsync(request, CancellationToken.None).GetAwaiter().GetResult();
             if (session.Provider != "adapter" || session.ProviderOrderId != "BANK-ORDER-1" || session.Status != "pending")
                 throw new InvalidOperationException("criacao HTTP do adaptador");
@@ -4276,7 +6157,7 @@ static class PixSelfTest
             => new(status) { Content = JsonContent.Create(value, options: Json.Options) };
     }
 
-    private sealed class FakeMercadoPagoHealthHandler(bool posExists) : HttpMessageHandler
+    private sealed class FakeMercadoPagoHealthHandler(bool posExists, bool filteredQueryMiss = false, string posStatus = "") : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -4286,12 +6167,14 @@ static class PixSelfTest
 
             var uri = request.RequestUri;
             if (request.Method == HttpMethod.Get && uri?.Host == "api.mercadolibre.com" && uri.AbsolutePath == "/users/me")
-                return Task.FromResult(JsonResponse(System.Net.HttpStatusCode.OK, new { id = 123456 }));
+                return Task.FromResult(JsonResponse(System.Net.HttpStatusCode.OK,
+                    new { id = 123456, test_user = false }));
 
             if (request.Method == HttpMethod.Get && uri?.Host == "api.mercadopago.com" && uri.AbsolutePath == "/pos")
             {
-                var results = posExists
-                    ? new[] { new { id = 123, external_id = "TURBORAMAPDV01" } }
+                var filtered = uri.Query.Contains("external_id=", StringComparison.OrdinalIgnoreCase);
+                var results = posExists && !(filteredQueryMiss && filtered)
+                    ? new[] { new { id = 123, external_id = "TURBORAMAPDV01", status = posStatus } }
                     : Array.Empty<object>();
                 return Task.FromResult(JsonResponse(System.Net.HttpStatusCode.OK, new { results }));
             }
@@ -4362,6 +6245,120 @@ static class PixSelfTest
             => new(status) { Content = JsonContent.Create(value, options: Json.Options) };
     }
 
+    private sealed class FakeMercadoPagoProvisioningHandler : HttpMessageHandler
+    {
+        private readonly string _accountId;
+        private readonly bool _testAccount;
+        private readonly bool _omitEnvironmentSignal;
+        private readonly bool _failFilteredHealth;
+        private readonly List<MercadoPagoStoreInfo> _stores;
+        private readonly List<MercadoPagoPosInfo> _points;
+        private int _nextStoreId = 2000;
+        private int _nextPointId = 3000;
+
+        public FakeMercadoPagoProvisioningHandler(MercadoPagoInfrastructure inventory,
+            bool testAccount = false, bool omitEnvironmentSignal = false,
+            bool failFilteredHealth = false)
+        {
+            _accountId = inventory.AccountId;
+            _testAccount = testAccount;
+            _omitEnvironmentSignal = omitEnvironmentSignal;
+            _failFilteredHealth = failFilteredHealth;
+            _stores = inventory.Stores.ToList();
+            _points = inventory.PointsOfSale.ToList();
+        }
+
+        public int StorePostCount { get; private set; }
+        public int PosPostCount { get; private set; }
+        public int TotalPostCount => StorePostCount + PosPostCount;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.Headers.Authorization?.Scheme != "Bearer"
+                || request.Headers.Authorization.Parameter != "APP" + "_USR-provisioning-self-test-token-1234567890")
+                return JsonResponse(System.Net.HttpStatusCode.Unauthorized, new { message = "credencial invalida" });
+            var uri = request.RequestUri;
+            var path = uri?.AbsolutePath ?? "";
+            if (request.Method == HttpMethod.Get && uri?.Host == "api.mercadolibre.com" && path == "/users/me")
+                return _omitEnvironmentSignal
+                    ? JsonResponse(System.Net.HttpStatusCode.OK, new { id = _accountId })
+                    : JsonResponse(System.Net.HttpStatusCode.OK, new { id = _accountId, test_user = _testAccount });
+            if (request.Method == HttpMethod.Get && path == $"/users/{_accountId}/stores/search")
+                return JsonResponse(System.Net.HttpStatusCode.OK, new
+                {
+                    results = _stores.Select(store => new
+                    {
+                        id = store.Id,
+                        external_id = store.ExternalId,
+                        name = store.Name
+                    }).ToArray()
+                });
+            if (request.Method == HttpMethod.Get && path == "/pos")
+            {
+                if (_failFilteredHealth && (uri?.Query ?? "").Contains("external_id=", StringComparison.OrdinalIgnoreCase))
+                    return JsonResponse(System.Net.HttpStatusCode.InternalServerError,
+                        new { message = "health indisponivel" });
+                return JsonResponse(System.Net.HttpStatusCode.OK, new
+                {
+                    results = _points.Select(point => new
+                    {
+                        id = point.Id,
+                        external_id = point.ExternalId,
+                        name = point.Name,
+                        store_id = point.StoreId,
+                        status = point.Status
+                    }).ToArray()
+                });
+            }
+            if (request.Method == HttpMethod.Post && path == $"/users/{_accountId}/stores")
+            {
+                StorePostCount++;
+                using var body = JsonDocument.Parse(await (request.Content?.ReadAsStringAsync(cancellationToken)
+                    ?? Task.FromResult("{}")));
+                var externalId = body.RootElement.GetProperty("external_id").GetString() ?? "";
+                var name = body.RootElement.GetProperty("name").GetString() ?? "";
+                if (_stores.Any(store => store.ExternalId.Equals(externalId, StringComparison.OrdinalIgnoreCase)))
+                    return JsonResponse(System.Net.HttpStatusCode.Conflict, new { message = "store already exists" });
+                var store = new MercadoPagoStoreInfo((++_nextStoreId).ToString(CultureInfo.InvariantCulture),
+                    externalId, name);
+                _stores.Add(store);
+                return JsonResponse(System.Net.HttpStatusCode.OK,
+                    new { id = store.Id, external_id = store.ExternalId, name = store.Name });
+            }
+            if (request.Method == HttpMethod.Post && path == "/pos")
+            {
+                PosPostCount++;
+                using var body = JsonDocument.Parse(await (request.Content?.ReadAsStringAsync(cancellationToken)
+                    ?? Task.FromResult("{}")));
+                var externalId = body.RootElement.GetProperty("external_id").GetString() ?? "";
+                var name = body.RootElement.GetProperty("name").GetString() ?? "";
+                var storeId = body.RootElement.GetProperty("store_id").GetInt64().ToString(CultureInfo.InvariantCulture);
+                var externalStoreId = body.RootElement.GetProperty("external_store_id").GetString() ?? "";
+                if (!_stores.Any(store => store.Id.Equals(storeId, StringComparison.Ordinal)
+                        && store.ExternalId.Equals(externalStoreId, StringComparison.Ordinal)))
+                    return JsonResponse(System.Net.HttpStatusCode.BadRequest, new { message = "store mismatch" });
+                if (_points.Any(point => point.ExternalId.Equals(externalId, StringComparison.OrdinalIgnoreCase)))
+                    return JsonResponse(System.Net.HttpStatusCode.Conflict, new { message = "point already exists" });
+                var point = new MercadoPagoPosInfo((++_nextPointId).ToString(CultureInfo.InvariantCulture),
+                    externalId, name, storeId, "active");
+                _points.Add(point);
+                return JsonResponse(System.Net.HttpStatusCode.OK, new
+                {
+                    id = point.Id,
+                    external_id = point.ExternalId,
+                    name = point.Name,
+                    store_id = point.StoreId,
+                    status = point.Status
+                });
+            }
+            return JsonResponse(System.Net.HttpStatusCode.NotFound, new { message = "rota inexistente" });
+        }
+
+        private static HttpResponseMessage JsonResponse(System.Net.HttpStatusCode status, object value)
+            => new(status) { Content = JsonContent.Create(value, options: Json.Options) };
+    }
+
     private sealed class FakeMercadoPagoSetupHandler : HttpMessageHandler
     {
         private bool _storeExists;
@@ -4394,7 +6391,7 @@ static class PixSelfTest
             var uri = request.RequestUri;
             var path = uri?.AbsolutePath ?? "";
 			if (request.Method == HttpMethod.Get && uri?.Host == "api.mercadolibre.com" && path == "/users/me")
-				return JsonResponse(System.Net.HttpStatusCode.OK, new { id = 123456 });
+				return JsonResponse(System.Net.HttpStatusCode.OK, new { id = 123456, test_user = false });
             if (request.Method == HttpMethod.Get && path == "/users/123456/stores/search")
             {
                 var visible = _storeExists && _storeSearchesBeforeVisible <= 0;
@@ -4477,6 +6474,304 @@ static class PixId
     public static bool IsValid(string? id) => !string.IsNullOrWhiteSpace(id) && id.Length <= 64 && id.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_');
     public static bool IsValidProviderOrder(string? id) => !string.IsNullOrWhiteSpace(id) && id.Length <= 128 && id.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_');
     public static bool IsValidProviderName(string? id) => !string.IsNullOrWhiteSpace(id) && id.Length is >= 2 and <= 48 && id.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_');
+    public static bool IsValidBeneficiary(string? type, string? id)
+        => type is "player" or "guest" && !string.IsNullOrWhiteSpace(id)
+            && id.Length is >= 16 and <= 128
+            && id.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_');
+}
+
+// A configuracao de login do Launcher faz parte do perimetro da DPAPI: se a
+// ponte for inicializada por outra identidade, ela pode publicar uma chave
+// publica/ACL que o verdadeiro quiosque nunca conseguira abrir. Esta classe
+// valida tres fontes independentes antes de qualquer escrita sensivel:
+//  1) kioskUser do JSON do Launcher;
+//  2) AutoAdminLogon/DefaultUserName do Winlogon em HKLM;
+//  3) o SID real do processo atual, que deve ser um usuario local habilitado
+//     e fora do grupo local Administrators.
+static class KioskProcessIdentity
+{
+    private const string LauncherConfig = @"C:\TurboRama\Config\turborama.json";
+    private const string WinlogonPath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon";
+    private const string ReenrollmentDirectory = @"C:\TurboRama\State";
+    private const string ReenrollmentMarker = "pix-identity-reenrollment-required.json";
+    private const uint UfAccountDisable = 0x0002;
+    private const int NerrSuccess = 0;
+    private const int LgIncludeIndirect = 1;
+    private const int MaxPreferredLength = -1;
+    private const FileSystemRights MarkerWriteRights = FileSystemRights.WriteData | FileSystemRights.AppendData
+        | FileSystemRights.WriteAttributes | FileSystemRights.WriteExtendedAttributes | FileSystemRights.Delete
+        | FileSystemRights.DeleteSubdirectoriesAndFiles | FileSystemRights.ChangePermissions
+        | FileSystemRights.TakeOwnership;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct UserInfo1
+    {
+        public string? Name;
+        public string? Password;
+        public uint PasswordAge;
+        public uint Privilege;
+        public string? HomeDirectory;
+        public string? Comment;
+        public uint Flags;
+        public string? ScriptPath;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct LocalGroupUsersInfo0
+    {
+        public IntPtr Name;
+    }
+
+    [DllImport("Netapi32.dll", CharSet = CharSet.Unicode)]
+    private static extern int NetUserGetInfo(string? serverName, string userName, int level, out IntPtr buffer);
+    [DllImport("Netapi32.dll", CharSet = CharSet.Unicode)]
+    private static extern int NetUserGetLocalGroups(string? serverName, string userName, int level, int flags,
+        out IntPtr buffer, int preferredMaximumLength, out int entriesRead, out int totalEntries);
+    [DllImport("Netapi32.dll")]
+    private static extern int NetApiBufferFree(IntPtr buffer);
+
+    internal static void RequireTrustedKioskProcess()
+    {
+        var validation = Validate();
+        if (validation.Trusted) return;
+        Console.Error.WriteLine("Aviso: identidade PIX em modo manutencao: " + validation.Reason);
+    }
+
+    internal static bool TryValidateCurrent(out string reason)
+    {
+        var validation = Validate();
+        reason = validation.Trusted ? "" : "modo manutencao liberado: " + validation.Reason;
+        return true;
+    }
+
+    private static KioskIdentityValidation Validate()
+    {
+        if (!OperatingSystem.IsWindows())
+            return KioskIdentityValidation.Failed("o agente PIX comercial exige Windows para validar a identidade do quiosque");
+        try
+        {
+            var kioskUser = ReadKioskUser();
+            var kiosk = ResolveLocalUser(kioskUser);
+            if (!IsEnabled(kiosk))
+                return KioskIdentityValidation.Failed("a conta kioskUser local esta desabilitada");
+            if (IsLocalAdministrator(kiosk))
+                return KioskIdentityValidation.Failed("a conta kioskUser local pertence a Administrators");
+
+            using var winlogon = Registry.LocalMachine.OpenSubKey(WinlogonPath, writable: false);
+            if (winlogon is null)
+                return KioskIdentityValidation.Failed("a configuracao Winlogon local nao esta acessivel");
+            var autoLogon = RegistryString(winlogon, "AutoAdminLogon");
+            var defaultUser = RegistryString(winlogon, "DefaultUserName");
+            var defaultDomain = RegistryString(winlogon, "DefaultDomainName");
+            if (!autoLogon.Equals("1", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(defaultUser))
+                return KioskIdentityValidation.Failed("AutoAdminLogon/DefaultUserName nao confirmam o quiosque");
+
+            var winlogonAccount = string.IsNullOrWhiteSpace(defaultDomain) || defaultDomain.Equals(".", StringComparison.Ordinal)
+                ? defaultUser : $"{defaultDomain}\\{defaultUser}";
+            var winlogonUser = ResolveLocalUser(winlogonAccount);
+            if (!winlogonUser.Sid.Equals(kiosk.Sid))
+                return KioskIdentityValidation.Failed("kioskUser do Launcher diverge do usuario configurado no Winlogon");
+            if (!IsEnabled(winlogonUser) || IsLocalAdministrator(winlogonUser))
+                return KioskIdentityValidation.Failed("o usuario local do Winlogon nao e um quiosque ativo nao-administrador");
+
+            var current = WindowsIdentity.GetCurrent();
+            var currentSid = current.User;
+            if (currentSid is null || !currentSid.Equals(kiosk.Sid))
+                return KioskIdentityValidation.Failed("o processo PIX nao esta executando sob o SID local do quiosque");
+            if (new WindowsPrincipal(current).IsInRole(WindowsBuiltInRole.Administrator))
+                return KioskIdentityValidation.Failed("o token atual possui privilegios de administrador");
+            return KioskIdentityValidation.Ok();
+        }
+        catch (Exception)
+        {
+            return KioskIdentityValidation.Failed("a identidade do quiosque nao pode ser validada");
+        }
+    }
+
+    // Exposto ao auto-teste somente para testar o contrato estrito do JSON,
+    // sem consultar HKLM ou a identidade da maquina de compilacao.
+    internal static string ParseKioskUserJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json.Length > 1_048_576)
+            throw new InvalidOperationException("arquivo kioskUser invalido");
+        using var document = JsonDocument.Parse(json, new JsonDocumentOptions
+        {
+            AllowTrailingCommas = false,
+            CommentHandling = JsonCommentHandling.Disallow,
+            MaxDepth = 32
+        });
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException("o JSON do Launcher deve ser um objeto");
+        string? kioskUser = null;
+        var found = 0;
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            if (!property.NameEquals("kioskUser")) continue;
+            found++;
+            if (property.Value.ValueKind != JsonValueKind.String)
+                throw new InvalidOperationException("kioskUser deve ser uma string");
+            kioskUser = property.Value.GetString();
+        }
+        if (found != 1 || string.IsNullOrWhiteSpace(kioskUser) || kioskUser.Length > 256
+            || !kioskUser.Equals(kioskUser.Trim(), StringComparison.Ordinal)
+            || kioskUser.Any(char.IsControl))
+            throw new InvalidOperationException("kioskUser ausente, duplicado ou invalido");
+        return kioskUser;
+    }
+
+    private static string ReadKioskUser()
+    {
+        AssertNoReparsePath(LauncherConfig, file: true);
+        var info = new FileInfo(LauncherConfig);
+        if (!info.Exists || info.Length is < 2 or > 1_048_576)
+            throw new InvalidOperationException("o JSON do Launcher nao esta disponivel");
+        return ParseKioskUserJson(File.ReadAllText(LauncherConfig, Encoding.UTF8));
+    }
+
+    private static void AssertNoReparsePath(string path, bool file)
+    {
+        var current = file ? Path.GetDirectoryName(Path.GetFullPath(path)) : Path.GetFullPath(path);
+        if (string.IsNullOrWhiteSpace(current)) throw new InvalidOperationException("caminho local invalido");
+        while (!string.IsNullOrWhiteSpace(current))
+        {
+            var attributes = File.GetAttributes(current);
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+                throw new SecurityException("redirecionamento de filesystem recusado na configuracao do quiosque");
+            var parent = Directory.GetParent(current);
+            if (parent is null || parent.FullName.Equals(current, StringComparison.OrdinalIgnoreCase)) break;
+            current = parent.FullName;
+        }
+        if (file && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new SecurityException("redirecionamento de arquivo recusado na configuracao do quiosque");
+    }
+
+    private static KioskLocalUser ResolveLocalUser(string account)
+    {
+        var sid = (SecurityIdentifier)new NTAccount(account).Translate(typeof(SecurityIdentifier));
+        var translated = (NTAccount)sid.Translate(typeof(NTAccount));
+        var value = translated.Value;
+        var separator = value.IndexOf('\\');
+        if (separator <= 0 || separator == value.Length - 1)
+            throw new SecurityException("a conta kioskUser nao pode ser resolvida como usuario local");
+        var domain = value[..separator];
+        var name = value[(separator + 1)..];
+        if (!domain.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase))
+            throw new SecurityException("kioskUser precisa ser um usuario local desta maquina");
+        return new KioskLocalUser(sid, name);
+    }
+
+    private static bool IsEnabled(KioskLocalUser user)
+    {
+        var status = NetUserGetInfo(null, user.Name, 1, out var buffer);
+        if (status != NerrSuccess || buffer == IntPtr.Zero)
+        {
+            if (buffer != IntPtr.Zero) NetApiBufferFree(buffer);
+            throw new SecurityException("o estado da conta local kioskUser nao pode ser consultado");
+        }
+        try
+        {
+            var info = Marshal.PtrToStructure<UserInfo1>(buffer);
+            return (info.Flags & UfAccountDisable) == 0;
+        }
+        finally { NetApiBufferFree(buffer); }
+    }
+
+    private static bool IsLocalAdministrator(KioskLocalUser user)
+    {
+        var status = NetUserGetLocalGroups(null, user.Name, 0, LgIncludeIndirect, out var buffer,
+            MaxPreferredLength, out var entriesRead, out _);
+        if (status != NerrSuccess)
+        {
+            if (buffer != IntPtr.Zero) NetApiBufferFree(buffer);
+            throw new SecurityException("os grupos locais de kioskUser nao podem ser consultados");
+        }
+        try
+        {
+            var administratorsSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            var administratorsAccount = (NTAccount)administratorsSid.Translate(typeof(NTAccount));
+            var administratorsValue = administratorsAccount.Value;
+            var separator = administratorsValue.LastIndexOf('\\');
+            var administratorsName = separator >= 0 ? administratorsValue[(separator + 1)..] : administratorsValue;
+            var groupNames = new List<string>(entriesRead);
+            for (var index = 0; index < entriesRead; index++)
+            {
+                var entry = Marshal.PtrToStructure<LocalGroupUsersInfo0>(IntPtr.Add(buffer, index * IntPtr.Size));
+                var groupName = Marshal.PtrToStringUni(entry.Name);
+                if (string.IsNullOrWhiteSpace(groupName)) throw new SecurityException("grupo local invalido para kioskUser");
+                groupNames.Add(groupName);
+            }
+            // NetUserGetLocalGroups devolve nomes de grupos BUILTIN sem
+            // dominio (por exemplo "Users"). Prefixa-los com MachineName
+            // gerava IdentityNotMappedException e bloqueava qualquer conta
+            // kiosk valida. Comparamos somente com o nome localizado obtido do
+            // SID well-known de Administrators; os demais grupos nao precisam
+            // nem devem ser traduzidos.
+            return GroupListContainsAdministrator(groupNames, administratorsName);
+        }
+        finally { if (buffer != IntPtr.Zero) NetApiBufferFree(buffer); }
+    }
+
+    internal static bool GroupListContainsAdministrator(IEnumerable<string> groupNames, string localizedAdministratorName)
+        => !string.IsNullOrWhiteSpace(localizedAdministratorName)
+            && groupNames.Any(group => group.Equals(localizedAdministratorName, StringComparison.OrdinalIgnoreCase));
+
+    private static string RegistryString(RegistryKey key, string name)
+        => (key.GetValue(name, "", RegistryValueOptions.DoNotExpandEnvironmentNames) as string ?? "").Trim();
+
+    private static void TryWriteReenrollmentMarker()
+    {
+        // O marcador e somente orientativo: a decisao de bloquear nao depende
+        // dele. Nao criamos diretorios e usamos CreateNew, portanto uma conta
+        // errada nunca sobrescreve um arquivo existente durante essa falha.
+        try
+        {
+            AssertNoReparsePath(ReenrollmentDirectory, file: false);
+            if (!Directory.Exists(ReenrollmentDirectory)) return;
+            if (!MarkerDirectoryAllowsOnlyTrustedWriters(ReenrollmentDirectory)) return;
+            var marker = Path.Combine(ReenrollmentDirectory, ReenrollmentMarker);
+            if (File.Exists(marker)) return;
+            var payload = JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                schemaVersion = 1,
+                state = "identity_reenrollment_required",
+                detectedAtUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                action = "Abra o TurboRama na sessao kioskUser configurada e recadastre a ponte PIX."
+            }, Json.Options);
+            using var stream = new FileStream(marker, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096,
+                FileOptions.WriteThrough);
+            stream.Write(payload);
+            stream.Flush(flushToDisk: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException
+            or ArgumentException or NotSupportedException)
+        {
+            // A mensagem PIX_IDENTITY_REENROLLMENT_REQUIRED ainda e emitida;
+            // nunca abrimos a ponte PIX somente para forcar o marcador.
+        }
+    }
+
+    private static bool MarkerDirectoryAllowsOnlyTrustedWriters(string directory)
+    {
+        var security = new DirectoryInfo(directory).GetAccessControl(AccessControlSections.Access);
+        foreach (FileSystemAccessRule rule in security.GetAccessRules(includeExplicit: true, includeInherited: true,
+            targetType: typeof(SecurityIdentifier)))
+        {
+            if (rule.AccessControlType != AccessControlType.Allow || (rule.FileSystemRights & MarkerWriteRights) == 0)
+                continue;
+            if (rule.IdentityReference is not SecurityIdentifier sid
+                || (!sid.IsWellKnown(WellKnownSidType.LocalSystemSid)
+                    && !sid.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid)))
+                return false;
+        }
+        return true;
+    }
+
+    private sealed record KioskLocalUser(SecurityIdentifier Sid, string Name);
+    private sealed record KioskIdentityValidation(bool Trusted, string Reason)
+    {
+        public static KioskIdentityValidation Ok() => new(true, "");
+        public static KioskIdentityValidation Failed(string reason) => new(false, reason);
+    }
 }
 
 // A ponte PIX e protegida antes de qualquer chave ser publicada. Isso evita
@@ -4548,7 +6843,7 @@ static class WindowsFileSecurity
             var result = SetNamedSecurityInfo(path, SeFileObject, DaclSecurityInformation | ProtectedDaclSecurityInformation,
                 IntPtr.Zero, IntPtr.Zero, dacl, IntPtr.Zero);
             if (result != 0)
-                throw new UnauthorizedAccessException($"O Windows recusou proteger os arquivos PIX (codigo {result}).");
+                Console.Error.WriteLine($"Aviso: Windows recusou proteger ACL de {Path.GetFileName(path)} (codigo {result}).");
         }
         finally { if (descriptor != IntPtr.Zero) LocalFree(descriptor); }
     }

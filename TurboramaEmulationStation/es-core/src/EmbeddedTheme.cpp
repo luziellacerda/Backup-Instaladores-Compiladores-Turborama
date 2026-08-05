@@ -9,6 +9,7 @@
 #include "utils/md5.h"
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <mutex>
 #include <vector>
@@ -35,6 +36,16 @@ namespace
 
 	static const size_t sKeyLen = sizeof(sKey) / sizeof(sKey[0]);
 	static const size_t sDecryptChunkSize = 4 * 1024 * 1024;
+	static const char sPayloadHeader[] = "TRTHEME1:";
+	static const size_t sPayloadIdentityLength = 32;
+
+	struct EmbeddedPayload
+	{
+		const unsigned char* data = nullptr;
+		size_t size = 0;
+		size_t archiveOffset = 0;
+		std::string identity;
+	};
 
 	void setHiddenDirectory(const std::string& path)
 	{
@@ -50,11 +61,8 @@ namespace
 		return base;
 	}
 
-	bool decryptResourceToFile(std::string& payloadHash, size_t& payloadSize)
+	bool loadEmbeddedPayload(EmbeddedPayload& payload)
 	{
-		payloadHash.clear();
-		payloadSize = 0;
-
 #if WIN32
 		HMODULE module = GetModuleHandle(NULL);
 		HRSRC resource = FindResource(module, MAKEINTRESOURCE(IDR_EMBEDDED_THEME), RT_RCDATA);
@@ -71,13 +79,49 @@ namespace
 			return false;
 		}
 
-		const DWORD size = SizeofResource(module, resource);
-		const unsigned char* data = (const unsigned char*)LockResource(loaded);
-		if (data == NULL || size == 0)
+		payload.size = SizeofResource(module, resource);
+		payload.data = (const unsigned char*)LockResource(loaded);
+		const size_t prefixLength = sizeof(sPayloadHeader) - 1;
+		const size_t headerLength = prefixLength + sPayloadIdentityLength + 1;
+		if (payload.data == NULL || payload.size <= headerLength)
 		{
-			LOG(LogError) << "EmbeddedTheme: embedded theme resource is empty.";
+			LOG(LogError) << "EmbeddedTheme: embedded theme resource is empty or incomplete.";
 			return false;
 		}
+		if (!std::equal(sPayloadHeader, sPayloadHeader + prefixLength, payload.data)
+			|| payload.data[headerLength - 1] != '\n')
+		{
+			LOG(LogError) << "EmbeddedTheme: payload identity header is missing; rebuild the executable.";
+			return false;
+		}
+
+		payload.identity.assign(reinterpret_cast<const char*>(payload.data + prefixLength), sPayloadIdentityLength);
+		if (!std::all_of(payload.identity.begin(), payload.identity.end(), [](unsigned char ch) {
+			return std::isxdigit(ch) != 0;
+		}))
+		{
+			LOG(LogError) << "EmbeddedTheme: payload identity header is invalid.";
+			return false;
+		}
+		std::transform(payload.identity.begin(), payload.identity.end(), payload.identity.begin(), [](unsigned char ch) {
+			return (char)std::tolower(ch);
+		});
+		payload.archiveOffset = headerLength;
+		return true;
+#else
+		(void)payload;
+		return false;
+#endif
+	}
+
+	bool decryptResourceToFile(const EmbeddedPayload& payload, size_t& payloadSize)
+	{
+		payloadSize = 0;
+
+#if WIN32
+		if (payload.data == nullptr || payload.archiveOffset >= payload.size)
+			return false;
+		const size_t archiveSize = payload.size - payload.archiveOffset;
 
 		const std::string cacheRoot = getCacheDirectory();
 		const std::string tempZip = Utils::FileSystem::getCanonicalPath(cacheRoot + "/.theme.pack.zip");
@@ -93,16 +137,16 @@ namespace
 		std::vector<unsigned char> chunk;
 		chunk.reserve(sDecryptChunkSize);
 
-		for (DWORD offset = 0; offset < size; )
+		for (size_t offset = 0; offset < archiveSize; )
 		{
-			const DWORD length = std::min<DWORD>(sDecryptChunkSize, size - offset);
+			const size_t length = std::min<size_t>(sDecryptChunkSize, archiveSize - offset);
 			chunk.resize(length);
 
-			for (DWORD i = 0; i < length; i++)
-				chunk[i] = data[offset + i] ^ sKey[(offset + i) % sKeyLen];
+			for (size_t i = 0; i < length; i++)
+				chunk[i] = payload.data[payload.archiveOffset + offset + i] ^ sKey[(offset + i) % sKeyLen];
 
 			output.write(reinterpret_cast<const char*>(chunk.data()), length);
-			md5.update(reinterpret_cast<const char*>(chunk.data()), length);
+			md5.update(reinterpret_cast<const char*>(chunk.data()), (MD5::size_type)length);
 
 			offset += length;
 		}
@@ -116,12 +160,21 @@ namespace
 		}
 
 		md5.finalize();
-		payloadHash = md5.hexdigest();
-		payloadSize = size;
+		const std::string actualIdentity = md5.hexdigest();
+		if (actualIdentity != payload.identity)
+		{
+			LOG(LogError) << "EmbeddedTheme: payload identity does not match its archive; rebuild the executable.";
+			Utils::FileSystem::removeFile(tempZip);
+			return false;
+		}
+		payloadSize = archiveSize;
 
-		LOG(LogInfo) << "EmbeddedTheme: decrypted " << size << " bytes from executable.";
-		return Utils::FileSystem::exists(tempZip);
+		LOG(LogInfo) << "EmbeddedTheme: decrypted " << archiveSize << " bytes from executable.";
+		// Este arquivo acabou de ser criado. Nao aceite um resultado negativo
+		// antigo do FileSystemCache durante a primeira inicializacao.
+		return Utils::FileSystem::exists(tempZip, false);
 #else
+		(void)payload;
 		return false;
 #endif
 	}
@@ -162,7 +215,9 @@ namespace
 		}
 
 		LOG(LogInfo) << "EmbeddedTheme: extracted " << extracted << " files.";
-		return Utils::FileSystem::exists(targetPath + "/theme.xml");
+		// theme.xml pode ter sido consultado antes da extracao e estar cacheado
+		// como inexistente. A confirmacao pos-escrita precisa tocar o disco.
+		return Utils::FileSystem::exists(targetPath + "/theme.xml", false);
 	}
 
 	bool isThemeSetAlias(const std::string& themeSet)
@@ -180,27 +235,17 @@ namespace
 			Settings::getInstance()->setString("ThemeSet", EmbeddedTheme::THEME_SET_ID);
 	}
 
-	bool findCachedTheme(std::string& cachedPath)
+	bool findCachedTheme(const std::string& payloadIdentity, std::string& cachedPath)
 	{
 		const std::string cacheRoot = getCacheDirectory();
-		if (!Utils::FileSystem::isDirectory(cacheRoot))
+		if (!Utils::FileSystem::isDirectory(cacheRoot) || payloadIdentity.size() < 12)
 			return false;
 
-		for (const auto& entry : Utils::FileSystem::getDirContent(cacheRoot, false, true))
-		{
-			if (!Utils::FileSystem::isDirectory(entry))
-				continue;
-
-			const std::string themeXml = entry + "/theme.xml";
-			const std::string markerPath = entry + "/.payload";
-			if (!Utils::FileSystem::exists(themeXml) || !Utils::FileSystem::exists(markerPath))
-				continue;
-
-			cachedPath = entry;
-			return true;
-		}
-
-		return false;
+		cachedPath = Utils::FileSystem::getCanonicalPath(cacheRoot + "/" + payloadIdentity.substr(0, 12));
+		const std::string markerPath = cachedPath + "/.payload";
+		return Utils::FileSystem::exists(cachedPath + "/theme.xml", false)
+			&& Utils::FileSystem::exists(markerPath, false)
+			&& Utils::FileSystem::readAllText(markerPath) == payloadIdentity;
 	}
 
 	void ensureDefaultSubsetSettings()
@@ -234,8 +279,11 @@ bool EmbeddedTheme::initialize()
 
 	const std::string cacheRoot = getCacheDirectory();
 	std::string extractPath;
+	EmbeddedPayload payload;
+	if (!loadEmbeddedPayload(payload))
+		return false;
 
-	if (findCachedTheme(extractPath))
+	if (findCachedTheme(payload.identity, extractPath))
 	{
 		sRootPath = extractPath;
 		sAvailable = true;
@@ -246,17 +294,16 @@ bool EmbeddedTheme::initialize()
 		return true;
 	}
 
-	std::string payloadHash;
 	size_t payloadSize = 0;
-	if (!decryptResourceToFile(payloadHash, payloadSize))
+	if (!decryptResourceToFile(payload, payloadSize))
 		return false;
 
 	const std::string tempZip = Utils::FileSystem::getCanonicalPath(cacheRoot + "/.theme.pack.zip");
-	extractPath = Utils::FileSystem::getCanonicalPath(cacheRoot + "/" + payloadHash.substr(0, 12));
+	extractPath = Utils::FileSystem::getCanonicalPath(cacheRoot + "/" + payload.identity.substr(0, 12));
 	const std::string markerPath = extractPath + "/.payload";
 
-	const bool markerMatches = Utils::FileSystem::exists(markerPath) && Utils::FileSystem::readAllText(markerPath) == payloadHash;
-	const bool themeReady = Utils::FileSystem::exists(extractPath + "/theme.xml");
+	const bool markerMatches = Utils::FileSystem::exists(markerPath, false) && Utils::FileSystem::readAllText(markerPath) == payload.identity;
+	const bool themeReady = Utils::FileSystem::exists(extractPath + "/theme.xml", false);
 
 	if (!markerMatches || !themeReady)
 	{
@@ -273,7 +320,7 @@ bool EmbeddedTheme::initialize()
 			return false;
 		}
 
-		Utils::FileSystem::writeAllText(markerPath, payloadHash);
+		Utils::FileSystem::writeAllText(markerPath, payload.identity);
 		setHiddenDirectory(markerPath);
 	}
 
@@ -316,7 +363,7 @@ std::string EmbeddedTheme::getThemePath(const std::string& system)
 		return "";
 
 	const std::string systemTheme = sRootPath + "/" + system + "/theme.xml";
-	if (Utils::FileSystem::exists(systemTheme))
+	if (Utils::FileSystem::exists(systemTheme, false))
 		return systemTheme;
 
 	return sRootPath + "/theme.xml";

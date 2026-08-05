@@ -1,17 +1,25 @@
 #include "guis/GuiPixOwnerSettings.h"
 
 #include "LocaleES.h"
+#include "Paths.h"
 #include "Settings.h"
 #include "Window.h"
 #include "guis/GuiMsgBox.h"
 #include "guis/GuiTextEditPopup.h"
 #include "guis/GuiTextEditPopupKeyboard.h"
 #include "renderers/Renderer.h"
+#include "utils/FileSystemUtil.h"
+#include "utils/StringUtil.h"
 
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
 #include <sstream>
+#include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 GuiPixOwnerSettings::GuiPixOwnerSettings(Window* window)
 	: GuiComponent(window)
@@ -87,6 +95,80 @@ void GuiPixOwnerSettings::editPrice(int minutes)
 		});
 }
 
+void GuiPixOwnerSettings::launchOwnerConfigurator()
+{
+#ifdef _WIN32
+	HANDLE processToken = nullptr;
+	TOKEN_ELEVATION elevation{};
+	DWORD elevationSize = 0;
+	const bool elevationKnown = OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &processToken) != FALSE
+		&& GetTokenInformation(processToken, TokenElevation, &elevation, sizeof(elevation), &elevationSize) != FALSE;
+	if (processToken != nullptr) CloseHandle(processToken);
+	if (!elevationKnown || elevation.TokenIsElevated != 0)
+	{
+		mWindow->pushGui(new GuiMsgBox(mWindow,
+			_("O CONFIGURADOR PIX PRECISA DA SESSAO NORMAL DA CONTA WINDOWS ARCADE.\n\n"
+				"Feche o EmulationStation aberto como administrador e entre novamente pelo Launcher do quiosque."),
+			_("OK"), nullptr, ICON_ERROR));
+		return;
+	}
+
+	const std::string configuredDirectory = Paths::getExePath();
+	if (configuredDirectory.empty())
+	{
+		mWindow->pushGui(new GuiMsgBox(mWindow,
+			_("Nao foi possivel identificar a pasta desta instalacao do EmulationStation."),
+			_("OK"), nullptr, ICON_ERROR));
+		return;
+	}
+
+	const std::string workingDirectory = Utils::FileSystem::getAbsolutePath(configuredDirectory);
+	const std::string configurator = Utils::FileSystem::combine(
+		workingDirectory, "CONFIGURAR-USER-TOKEN-PIX.exe");
+	if (!Utils::FileSystem::isAbsolute(configurator)
+		|| !Utils::FileSystem::isRegularFile(configurator))
+	{
+		mWindow->pushGui(new GuiMsgBox(mWindow,
+			_("O CONFIGURADOR PIX NAO FOI ENCONTRADO NESTA INSTALACAO.\n\n"
+				"Reinstale ou repare o modulo PIX e tente novamente."),
+			_("OK"), nullptr, ICON_ERROR));
+		return;
+	}
+
+	const std::wstring executable = Utils::String::convertToWideString(configurator);
+	const std::wstring directory = Utils::String::convertToWideString(workingDirectory);
+	std::wstring commandLine = L"\"" + executable + L"\"";
+	std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
+	mutableCommand.push_back(L'\0');
+
+	STARTUPINFOW startup{};
+	startup.cb = sizeof(startup);
+	startup.dwFlags = STARTF_USESHOWWINDOW;
+	startup.wShowWindow = SW_SHOWNORMAL;
+	PROCESS_INFORMATION process{};
+	if (!CreateProcessW(executable.c_str(), mutableCommand.data(), nullptr, nullptr, FALSE,
+		0, nullptr, directory.c_str(), &startup, &process))
+	{
+		const DWORD windowsError = GetLastError();
+		mWindow->pushGui(new GuiMsgBox(mWindow,
+			_("NAO FOI POSSIVEL ABRIR O CONFIGURADOR PIX.\n\n"
+				"Confirme que o EmulationStation esta aberto normalmente na conta Windows Arcade, "
+				"sem Executar como administrador.\n\nErro do Windows: ") + std::to_string(windowsError),
+			_("OK"), nullptr, ICON_ERROR));
+		return;
+	}
+
+	CloseHandle(process.hThread);
+	CloseHandle(process.hProcess);
+	mWindow->displayNotificationMessage(
+		_("CONFIGURADOR PIX ABERTO NESTA MESMA SESSAO. CONCLUA O CADASTRO E VOLTE A ESTA TELA."), 8);
+#else
+	mWindow->pushGui(new GuiMsgBox(mWindow,
+		_("O configurador protegido do PIX esta disponivel somente no Windows."),
+		_("OK"), nullptr, ICON_ERROR));
+#endif
+}
+
 void GuiPixOwnerSettings::rebuild()
 {
 	mMenu.clear();
@@ -125,15 +207,10 @@ void GuiPixOwnerSettings::rebuild()
 	}
 
 	mMenu.addGroup(_("CREDENCIAL PROTEGIDA"));
-	mMenu.addEntry(_("CONTA E CREDENCIAL: USAR CONFIGURADOR DO WINDOWS"), true,
-		[this] {
-			mWindow->pushGui(new GuiMsgBox(mWindow,
-				_("Por seguranca, a credencial nao e digitada com o controle.\n\n"
-					"No Windows, abra:\nD:\\emulationstation\\CONFIGURAR-USER-TOKEN-PIX.exe\n\n"
-					"O programa identifica a conta real, cria ou reaproveita Loja e PDV, valida tudo e salva a credencial protegida. "
-					"Nao informe Client ID, Public Key ou ID da aplicacao como User ID."),
-				_("OK"), nullptr, ICON_INFORMATION));
-		});
+	mMenu.addEntry(_("ABRIR CONFIGURADOR PIX AGORA"), true,
+		[this] { launchOwnerConfigurator(); });
+	mMenu.addEntry(_("SESSAO OBRIGATORIA: CONTA WINDOWS ARCADE"), false);
+	mMenu.addEntry(_("ABRA NORMALMENTE - NAO USE EXECUTAR COMO ADMINISTRADOR"), false);
 
 	mMenu.addGroup(_("PRECOS PARA O CLIENTE"));
 	for (const int minutes : { 15, 30, 45, 60, 120 })
@@ -162,7 +239,7 @@ void GuiPixOwnerSettings::saveAndActivate()
 {
 	mWindow->pushGui(new GuiMsgBox(mWindow,
 		_("Salvar as alteracoes deste estabelecimento e ativar o PIX?\n\n"
-			"Para trocar conta, credencial, Loja ou PDV, use CONFIGURAR-USER-TOKEN-PIX.exe no Windows."),
+			"Para trocar conta, credencial, Loja ou PDV, cancele e use ABRIR CONFIGURADOR PIX AGORA nesta tela."),
 		_("SIM, ATIVAR"), [this] {
 			std::string error;
 			if (!PixAgentManager::saveOwnerSettings(mDraft, "", error))
@@ -179,7 +256,7 @@ void GuiPixOwnerSettings::saveAndActivate()
 				return;
 			}
 			mWindow->pushGui(new GuiMsgBox(mWindow,
-				_("DADOS SALVOS.\n\nO EmulationStation preservou a conta e o provedor atuais. Para trocar o proprietario ou validar uma nova credencial, abra CONFIGURAR-USER-TOKEN-PIX.exe no Windows."),
+				_("DADOS SALVOS.\n\nO EmulationStation preservou a conta e o provedor atuais. Para trocar o proprietario ou validar uma nova credencial, use ABRIR CONFIGURADOR PIX AGORA nesta tela."),
 				_("OK"), [this] { rebuild(); }, ICON_INFORMATION));
 		},
 		_("CANCELAR"), nullptr, ICON_QUESTION));

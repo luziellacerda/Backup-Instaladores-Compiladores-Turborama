@@ -6,8 +6,23 @@ param(
     [Parameter(Mandatory=$true)][string]$Output
 )
 $ErrorActionPreference = 'Stop'
+$outputFull = [IO.Path]::GetFullPath($Output)
+$outputParent = [IO.Path]::GetFullPath((Split-Path -Parent $outputFull)).TrimEnd('\')
+$localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+if ([string]::IsNullOrWhiteSpace($localAppData)) {
+    throw 'Nao foi possivel localizar LocalAppData para o candidato temporario.'
+}
+$expectedCandidateParent = [IO.Path]::GetFullPath((Join-Path $localAppData 'Temp\TurboRama-v25-build\pack\PIX-COMERCIAL\GERADO-v25')).TrimEnd('\')
+if (-not [string]::Equals($outputParent, $expectedCandidateParent, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Saida recusada: o empacotador so monta o candidato temporario esperado ($outputFull)."
+}
 $files = @($Bootstrapper, $Installer, $SevenZip, $Payload)
 foreach ($file in $files) { if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Arquivo ausente: $file" } }
+$expectedSevenZipHash = '223B873C50380FE9A39F1A22B6ABF8D46DB506E1C08D08312902F6F3CD1F7AC3'
+$actualSevenZipHash = (Get-FileHash -LiteralPath $SevenZip -Algorithm SHA256).Hash
+if ($actualSevenZipHash -ne $expectedSevenZipHash) {
+    throw "7za.exe recusado: SHA-256 divergente (esperado $expectedSevenZipHash; atual $actualSevenZipHash)."
+}
 $temporary = $Output + '.new'
 $replacementBackup = $Output + '.previous'
 $outputDirectory = Split-Path -Parent $Output

@@ -6,13 +6,14 @@
 #include <bcrypt.h>
 #include <commdlg.h>
 #include <shellapi.h>
-#include <tlhelp32.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <climits>
 #include <ctime>
 #include <cstring>
+#include <cwctype>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,10 @@ namespace
 	constexpr int ID_CLOSE = 1007;
 	constexpr int ID_TOKEN_LABEL = 1008;
 	constexpr int ID_SECURITY_TITLE = 1009;
+	constexpr DWORD kAgentAdministrativeTimeoutMs = 90000;
+	constexpr DWORD kIdentityPreflightTimeoutMs = 15000;
+	constexpr size_t kAgentOutputLimit = 16384;
+	constexpr UINT WM_APP_IDENTITY_PREFLIGHT = WM_APP + 41;
 	constexpr int ID_SECURITY_TEXT = 1010;
 	constexpr int ID_DESTINATION = 1011;
 	const wchar_t* kClassName = L"TurboRamaPixCredentialEditor";
@@ -42,6 +47,10 @@ namespace
 	const wchar_t* kCredentialUpdateStatusFile = L"credential-update-status.json";
 	HWND gToken = nullptr;
 	HWND gStatus = nullptr;
+	HWND gPaste = nullptr;
+	HWND gImport = nullptr;
+	HWND gShow = nullptr;
+	HWND gSave = nullptr;
 	HFONT gFont = nullptr;
 	HFONT gSmallFont = nullptr;
 	HFONT gLabelFont = nullptr;
@@ -53,6 +62,16 @@ namespace
 	HICON gApplicationIcon = nullptr;
 	COLORREF gStatusColor = RGB(161, 224, 82);
 	bool gTokenVisible = false;
+	bool gIdentityApproved = false;
+
+	struct AgentCommandResult
+	{
+		bool launched = false;
+		bool timedOut = false;
+		bool exitConfirmed = false;
+		DWORD exitCode = 999;
+		std::string output;
+	};
 
 	constexpr COLORREF kBackground = RGB(5, 9, 14);
 	constexpr COLORREF kHeaderTop = RGB(13, 24, 32);
@@ -111,6 +130,68 @@ namespace
 		if (length <= 0) return {};
 		std::string result(length, '\0');
 		WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), (int)value.size(), result.data(), length, nullptr, nullptr);
+		return result;
+	}
+
+	std::wstring wideUtf8(const std::string& value)
+	{
+		if (value.empty() || value.size() > static_cast<size_t>(INT_MAX)) return {};
+		const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+			static_cast<int>(value.size()), nullptr, 0);
+		if (length <= 0) return {};
+		std::wstring result(static_cast<size_t>(length), L'\0');
+		if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+			static_cast<int>(value.size()), result.data(), length) != length) return {};
+		return result;
+	}
+
+	std::wstring sanitizeAgentOutput(const std::string& raw)
+	{
+		std::wstring decoded = wideUtf8(raw);
+		if (!decoded.empty() && decoded.front() == 0xFEFF) decoded.erase(decoded.begin());
+		std::wstring compact;
+		compact.reserve(std::min<size_t>(decoded.size(), 1024));
+		bool pendingSpace = false;
+		for (const wchar_t character : decoded)
+		{
+			if (iswspace(character) != 0)
+			{
+				pendingSpace = !compact.empty();
+				continue;
+			}
+			if (iswcntrl(character) != 0) continue;
+			if (pendingSpace && !compact.empty()) compact.push_back(L' ');
+			pendingSpace = false;
+			compact.push_back(character);
+			if (compact.size() >= 2048) break;
+		}
+
+		// Estes modos administrativos nunca recebem o Access Token. Ainda assim,
+		// uma saida inesperada do agente nao pode fazer uma credencial aparecer na UI.
+		const std::wstring marker = L"APP_USR-";
+		size_t position = 0;
+		while ((position = compact.find(marker, position)) != std::wstring::npos)
+		{
+			size_t end = position + marker.size();
+			while (end < compact.size() && iswspace(compact[end]) == 0
+				&& compact[end] != L'\"' && compact[end] != L'\'' && compact[end] != L','
+				&& compact[end] != L';' && end - position <= 384) ++end;
+			compact.replace(position, end - position, L"[CREDENCIAL OCULTA]");
+			position += 20;
+		}
+		if (compact.size() > 900) compact = compact.substr(0, 897) + L"...";
+		SecureZeroMemory(decoded.data(), decoded.size() * sizeof(wchar_t));
+		return compact;
+	}
+
+	std::wstring windowsErrorMessage(DWORD code)
+	{
+		wchar_t* message = nullptr;
+		const DWORD length = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM
+			| FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, code, 0, reinterpret_cast<wchar_t*>(&message), 0, nullptr);
+		std::wstring result = length > 0 && message ? std::wstring(message, length) : std::wstring{};
+		if (message) LocalFree(message);
+		while (!result.empty() && iswspace(result.back()) != 0) result.pop_back();
 		return result;
 	}
 
@@ -300,15 +381,22 @@ namespace
 	{
 		const std::wstring destination = join(bridge, kCredentialUpdateFile);
 		const std::wstring temporary = destination + L"." + std::to_wstring(GetCurrentProcessId()) + L".tmp";
-		const std::string json = "{\"schemaVersion\":3,\"requestId\":\"" + requestId
+		std::string json = "{\"schemaVersion\":3,\"requestId\":\"" + requestId
 			+ "\",\"keyFingerprint\":\"" + fingerprint + "\",\"encryptedPayload\":\"" + encryptedPayload
 			+ "\",\"createdAtUnixSeconds\":" + std::to_string((long long)time(nullptr)) + "}";
 		DeleteFileW(temporary.c_str());
-		if (!writeAll(temporary, json)) { error = L"N\u00E3o foi poss\u00EDvel gravar a atualiza\u00E7\u00E3o segura do token."; return false; }
+		if (!writeAll(temporary, json))
+		{
+			SecureZeroMemory(json.data(), json.size());
+			error = L"N\u00E3o foi poss\u00EDvel gravar a atualiza\u00E7\u00E3o segura do token.";
+			return false;
+		}
 		if (!MoveFileExW(temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
 		{
+			SecureZeroMemory(json.data(), json.size());
 			DeleteFileW(temporary.c_str()); error = L"N\u00E3o foi poss\u00EDvel entregar o token cifrado ao servi\u00E7o PIX."; return false;
 		}
+		SecureZeroMemory(json.data(), json.size());
 		return true;
 	}
 
@@ -320,30 +408,6 @@ namespace
 		std::replace(result.begin(), result.end(), L'/', L'\\');
 		std::transform(result.begin(), result.end(), result.begin(), ::towlower);
 		return result;
-	}
-
-	void stopExact(const std::wstring& expectedPath)
-	{
-		const std::wstring expected = normalized(expectedPath);
-		HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-		if (snapshot == INVALID_HANDLE_VALUE) return;
-		PROCESSENTRY32W entry{}; entry.dwSize = sizeof(entry);
-		if (Process32FirstW(snapshot, &entry))
-		{
-			do
-			{
-				HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE, FALSE, entry.th32ProcessID);
-				if (!process) continue;
-				wchar_t image[32768]{}; DWORD length = 32768;
-				if (QueryFullProcessImageNameW(process, 0, image, &length) && normalized(image) == expected)
-				{
-					TerminateProcess(process, 0);
-					WaitForSingleObject(process, 5000);
-				}
-				CloseHandle(process);
-			} while (Process32NextW(snapshot, &entry));
-		}
-		CloseHandle(snapshot);
 	}
 
 	bool resolveAgentCommand(const std::wstring& bridge, const std::wstring& mode, std::wstring& root,
@@ -376,57 +440,179 @@ namespace
 			executable = appHost;
 			command = L"\"" + appHost + L"\" " + mode + L" --bridge \"" + bridge + L"\"";
 		}
-		else { error = L"O agente PIX n\u00E3o foi instalado. Execute primeiro o instalador comercial v16."; return false; }
+		else { error = L"O agente PIX n\u00E3o foi instalado. Execute primeiro o instalador comercial v25."; return false; }
 		return true;
+	}
+
+	void drainAgentOutput(HANDLE pipe, std::string& output)
+	{
+		char buffer[2048];
+		for (;;)
+		{
+			DWORD available = 0;
+			if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr) || available == 0) return;
+			DWORD received = 0;
+			const DWORD requested = std::min<DWORD>(available, static_cast<DWORD>(sizeof(buffer)));
+			if (!ReadFile(pipe, buffer, requested, &received, nullptr) || received == 0) return;
+			if (output.size() < kAgentOutputLimit)
+			{
+				const size_t remaining = kAgentOutputLimit - output.size();
+				output.append(buffer, std::min<size_t>(received, remaining));
+			}
+		}
+	}
+
+	bool runAgentCommand(const std::wstring& bridge, const std::wstring& mode, DWORD timeoutMs,
+		AgentCommandResult& result, std::wstring& error)
+	{
+		result = {};
+		std::wstring root, executable, command;
+		if (!resolveAgentCommand(bridge, mode, root, executable, command, error)) return false;
+
+		SECURITY_ATTRIBUTES security{};
+		security.nLength = sizeof(security);
+		security.bInheritHandle = TRUE;
+		HANDLE readPipe = nullptr, writePipe = nullptr;
+		if (!CreatePipe(&readPipe, &writePipe, &security, 0)
+			|| !SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0))
+		{
+			const DWORD code = GetLastError();
+			if (readPipe) CloseHandle(readPipe);
+			if (writePipe) CloseHandle(writePipe);
+			error = L"O Windows n\u00E3o conseguiu abrir o canal de diagn\u00F3stico do agente PIX";
+			const std::wstring detail = windowsErrorMessage(code);
+			if (!detail.empty()) error += L": " + detail;
+			return false;
+		}
+
+		HANDLE nullInput = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+			&security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (nullInput == INVALID_HANDLE_VALUE)
+		{
+			const DWORD code = GetLastError();
+			CloseHandle(readPipe); CloseHandle(writePipe);
+			error = L"O Windows n\u00E3o conseguiu preparar a entrada segura do agente PIX";
+			const std::wstring detail = windowsErrorMessage(code);
+			if (!detail.empty()) error += L": " + detail;
+			return false;
+		}
+
+		std::vector<wchar_t> mutableCommand(command.begin(), command.end());
+		mutableCommand.push_back(L'\0');
+		STARTUPINFOW startup{};
+		startup.cb = sizeof(startup);
+		startup.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+		startup.wShowWindow = SW_HIDE;
+		startup.hStdInput = nullInput;
+		startup.hStdOutput = writePipe;
+		startup.hStdError = writePipe;
+		PROCESS_INFORMATION process{};
+		const BOOL created = CreateProcessW(executable.c_str(), mutableCommand.data(), nullptr, nullptr, TRUE,
+			CREATE_NO_WINDOW, nullptr, root.c_str(), &startup, &process);
+		const DWORD creationError = created ? ERROR_SUCCESS : GetLastError();
+		CloseHandle(writePipe);
+		CloseHandle(nullInput);
+		if (!created)
+		{
+			CloseHandle(readPipe);
+			error = L"N\u00E3o foi poss\u00EDvel iniciar o agente PIX";
+			const std::wstring detail = windowsErrorMessage(creationError);
+			if (!detail.empty()) error += L": " + detail;
+			return false;
+		}
+
+		result.launched = true;
+		CloseHandle(process.hThread);
+		const ULONGLONG started = GetTickCount64();
+		for (;;)
+		{
+			drainAgentOutput(readPipe, result.output);
+			const DWORD wait = WaitForSingleObject(process.hProcess, 50);
+			if (wait == WAIT_OBJECT_0)
+			{
+				result.exitConfirmed = true;
+				break;
+			}
+			if (wait == WAIT_FAILED) break;
+			if (GetTickCount64() - started < timeoutMs) continue;
+			result.timedOut = true;
+			const bool terminated = TerminateProcess(process.hProcess, 21) != FALSE;
+			result.exitConfirmed = terminated && WaitForSingleObject(process.hProcess, 5000) == WAIT_OBJECT_0;
+			break;
+		}
+		drainAgentOutput(readPipe, result.output);
+		if (result.exitConfirmed) GetExitCodeProcess(process.hProcess, &result.exitCode);
+		CloseHandle(process.hProcess);
+		CloseHandle(readPipe);
+		if (!result.exitConfirmed && !result.timedOut)
+		{
+			error = L"O Windows n\u00E3o confirmou a sa\u00EDda do agente PIX.";
+			return false;
+		}
+		return true;
+	}
+
+	void appendAgentFailureDetail(std::wstring& error, const AgentCommandResult& result)
+	{
+		const std::wstring detail = sanitizeAgentOutput(result.output);
+		if (!detail.empty()) error += L"\n\nMotivo informado pelo servi\u00E7o PIX: " + detail;
+		if (result.exitConfirmed) error += L"\n\nC\u00F3digo do agente: " + std::to_wstring(result.exitCode) + L".";
+	}
+
+	bool mapKioskIdentityResult(const AgentCommandResult& result, std::wstring& error)
+	{
+		if (result.launched && result.exitConfirmed && !result.timedOut && result.exitCode == 0) return true;
+		error = L"Este programa s\u00F3 pode proteger a credencial no usu\u00E1rio autom\u00E1tico do quiosque configurado no Launcher.";
+		if (result.timedOut)
+			error += L" O teste de identidade ultrapassou o tempo de seguran\u00E7a e foi encerrado.";
+		appendAgentFailureDetail(error, result);
+		return false;
+	}
+
+	bool validateKioskIdentity(const std::wstring& bridge, std::wstring& error)
+	{
+		AgentCommandResult result;
+		if (!runAgentCommand(bridge, L"--check-kiosk-identity", kIdentityPreflightTimeoutMs, result, error)) return false;
+		return mapKioskIdentityResult(result, error);
 	}
 
 	bool ensureAgentPublicKey(const std::wstring& bridge, std::wstring& error)
 	{
 		if (fileExists(join(bridge, kPublicKeyFile))) return true;
-		std::wstring root, executable, command;
-		if (!resolveAgentCommand(bridge, L"--prepare-credential-editor", root, executable, command, error)) return false;
-		std::vector<wchar_t> mutableCommand(command.begin(), command.end()); mutableCommand.push_back(L'\0');
-		STARTUPINFOW startup{}; startup.cb = sizeof(startup); startup.dwFlags = STARTF_USESHOWWINDOW; startup.wShowWindow = SW_HIDE;
-		PROCESS_INFORMATION process{};
-		if (CreateProcessW(executable.c_str(), mutableCommand.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, root.c_str(), &startup, &process))
+		AgentCommandResult result;
+		if (!runAgentCommand(bridge, L"--prepare-credential-editor", kAgentAdministrativeTimeoutMs, result, error)) return false;
+		if (result.timedOut)
 		{
-			CloseHandle(process.hThread);
-			const DWORD wait = WaitForSingleObject(process.hProcess, 10000);
-			DWORD exitCode = 999;
-			GetExitCodeProcess(process.hProcess, &exitCode);
-			CloseHandle(process.hProcess);
-			if (wait != WAIT_OBJECT_0 || (exitCode != 0 && exitCode != 12))
-			{
-				error = L"O servi\u00E7o PIX n\u00E3o conseguiu preparar a chave segura. Execute novamente o instalador comercial v16.";
-				return false;
-			}
+			error = L"O agente PIX ultrapassou 90 segundos ao preparar a chave segura e foi encerrado.";
+			appendAgentFailureDetail(error, result);
+			return false;
 		}
-		else { error = L"N\u00E3o foi poss\u00EDvel iniciar o agente PIX para preparar a chave segura."; return false; }
+		if (result.exitCode != 0 && result.exitCode != 12)
+		{
+			error = L"O servi\u00E7o PIX recusou a prepara\u00E7\u00E3o da chave segura.";
+			appendAgentFailureDetail(error, result);
+			return false;
+		}
 		for (int attempt = 0; attempt < 160; ++attempt)
 		{
 			if (fileExists(join(bridge, kPublicKeyFile))) return true;
 			Sleep(200);
 		}
-		error = L"O agente PIX em execu\u00E7\u00E3o ainda n\u00E3o possui a atualiza\u00E7\u00E3o de credencial segura. Instale a atualiza\u00E7\u00E3o PIX e abra o EmulationStation uma vez.";
+		error = L"O agente PIX foi iniciado, mas n\u00E3o publicou a chave segura para este usu\u00E1rio do quiosque.";
+		appendAgentFailureDetail(error, result);
 		return false;
 	}
 
 	bool triggerCredentialAcceptance(const std::wstring& bridge, std::wstring& error)
 	{
-		std::wstring root, executable, command;
-		if (!resolveAgentCommand(bridge, L"--accept-credential-once", root, executable, command, error)) return false;
-		std::vector<wchar_t> mutableCommand(command.begin(), command.end()); mutableCommand.push_back(L'\0');
-		STARTUPINFOW startup{}; startup.cb = sizeof(startup); startup.dwFlags = STARTF_USESHOWWINDOW; startup.wShowWindow = SW_HIDE;
-		PROCESS_INFORMATION process{};
-		if (!CreateProcessW(executable.c_str(), mutableCommand.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
-			nullptr, root.c_str(), &startup, &process))
-		{
-			error = L"N\u00E3o foi poss\u00EDvel iniciar o agente PIX para receber o Access Token.";
-			return false;
-		}
-		CloseHandle(process.hThread);
-		CloseHandle(process.hProcess);
-		return true;
+		AgentCommandResult result;
+		if (!runAgentCommand(bridge, L"--accept-credential-once", kAgentAdministrativeTimeoutMs, result, error)) return false;
+		if (!result.timedOut && (result.exitCode == 0 || result.exitCode == 12)) return true;
+		error = result.timedOut
+			? L"O agente PIX ultrapassou 90 segundos ao receber a credencial cifrada e foi encerrado."
+			: L"O agente PIX recusou o recebimento da credencial cifrada.";
+		appendAgentFailureDetail(error, result);
+		return false;
 	}
 
 	bool isStatus(const std::string& text, const char* value)
@@ -455,6 +641,7 @@ namespace
 
 	bool submitTokenToAgent(const std::wstring& bridge, const std::string& token, std::wstring& error)
 	{
+		if (!validateKioskIdentity(bridge, error)) return false;
 		if (!validToken(token, error)) return false;
 		if (!ensureDirectory(bridge)) { error = L"N\u00E3o foi poss\u00EDvel criar ou acessar a pasta PIX."; return false; }
 		if (!ensureAgentPublicKey(bridge, error)) return false;

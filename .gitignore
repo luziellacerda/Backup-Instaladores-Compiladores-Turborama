@@ -28,6 +28,8 @@
 **/.dotnet-cli/
 **/.dotnet-home/
 **/.nuget-packages/
+TurboramaEmulationStation/tools/TurboRamaScreenScraper/config.json
+TurboramaEmulationStation/tools/TurboRamaScreenScraper/download-log.txt
 TurboramaEmulationStation/build-pix-commercial-v14/
 TurboramaEmulationStation/PIX-COMERCIAL/GERADO-v14/
 
@@ -37,6 +39,8 @@ TurboramaEmulationStation/PIX-COMERCIAL/GERADO-v14/
 
 # --- Binarios e pacotes compilados ---
 *.exe
+# Ferramenta de build auditada e pinada; necessaria em clone limpo.
+!TurboramaEmulationStation/tools/TurboRamaCommercialInstaller/vendor/7za.exe
 *.dll
 *.pdb
 *.ilk

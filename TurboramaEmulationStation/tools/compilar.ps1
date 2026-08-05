@@ -15,8 +15,8 @@ $Script:BuildDir = Join-Path $Root 'build'
 $Script:OutputExe = Join-Path $Root 'bin\x64\Release\emulationstation.exe'
 $Script:TmpDir = Join-Path $BuildDir 'tmp'
 $Script:ThemeXml = Join-Path $Root 'embedded-theme\TURBORAMA\theme.xml'
-$Script:EmbeddedThemeBin = Join-Path $Root 'es-app\src\embedded_theme.bin'
-$Script:PackScript = Join-Path $Root 'tools\pack_embedded_theme.py'
+$Script:EmbeddedThemeBin = Join-Path $BuildDir 'es-app\generated\embedded_theme.bin'
+$Script:PackScript = Join-Path $Root 'tools\Pack-EmbeddedTheme.ps1'
 $Script:LogFile = Join-Path $BuildDir 'compilar.log'
 $Script:TurboPcDest = 'G:\TURBOPCINSTALL\build\sistema\emulationstation\emulationstation.exe'
 
@@ -248,13 +248,9 @@ function Find-VsWhereTool {
 
 function Resolve-BuildTools {
     $tools = [ordered]@{
-        Python = $null
         CMake  = $null
         MSBuild = $null
     }
-
-    $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-    if ($pythonCmd) { $tools.Python = $pythonCmd.Source }
 
     $tools.CMake = Find-VsWhereTool 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
     if (-not $tools.CMake) {
@@ -292,11 +288,11 @@ function Test-BuildEnvironment {
     Write-StepInfo "theme.xml atualizado em $($themeInfo.LastWriteTime.ToString('dd/MM/yyyy HH:mm:ss'))"
     Write-StepInfo 'Coloque sempre o tema novo em: embedded-theme\TURBORAMA\'
 
-    Update-BuildProgress -StepId 1 -StepPercent 35 -Activity 'Checando Python'
-    if (-not $Tools.Python) {
-        throw 'Python nao encontrado no PATH. Instale Python 3 e reinicie o terminal.'
+    Update-BuildProgress -StepId 1 -StepPercent 35 -Activity 'Checando empacotador local do tema'
+    if (-not (Test-Path -LiteralPath $PackScript -PathType Leaf)) {
+        throw "Empacotador local do tema nao encontrado: $PackScript"
     }
-    Write-StepOk "Python: $($Tools.Python)"
+    Write-StepOk 'Empacotador do tema: PowerShell/.NET (Python nao necessario)'
 
     Update-BuildProgress -StepId 1 -StepPercent 60 -Activity 'Checando CMake'
     if (-not $Tools.CMake) {
@@ -405,13 +401,16 @@ function Invoke-CMakeConfigure {
 }
 
 function Invoke-PackTheme {
-    param(
-        [string]$PythonPath
-    )
-
     Update-BuildProgress -StepId 4 -StepPercent 15 -Activity 'Lendo arquivos do tema'
 
-    $exitCode = Invoke-BuildCommand -Command $PythonPath -Arguments @($PackScript) -StepId 4 -OnLine {
+    $powerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (-not (Test-Path -LiteralPath $powerShell -PathType Leaf)) {
+        throw 'Windows PowerShell 5.1 nao foi encontrado para empacotar o tema.'
+    }
+    $exitCode = Invoke-BuildCommand -Command $powerShell -Arguments @(
+        '-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$PackScript,
+        '-Source',(Join-Path $Root 'embedded-theme'),'-Output',$EmbeddedThemeBin
+    ) -StepId 4 -OnLine {
         param($Line)
         if ($Line -match 'Packed|Output|files') {
             Update-BuildProgress -StepId 4 -StepPercent 70 -Activity $Line
@@ -590,7 +589,7 @@ function Start-Build {
         Invoke-CMakeConfigure -CMakePath $tools.CMake
 
         Write-StepHeader -StepId 4 -Detail 'Criando embedded_theme.bin'
-        Invoke-PackTheme -PythonPath $tools.Python
+        Invoke-PackTheme
 
         Write-StepHeader -StepId 5 -Detail 'Gerando emulationstation.exe (Release x64)'
         Invoke-MsBuildCompile -MsBuildPath $tools.MSBuild
