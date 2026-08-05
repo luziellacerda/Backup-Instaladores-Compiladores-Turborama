@@ -1509,13 +1509,13 @@ namespace
 		const bool pressed = (item->itemState & ODS_SELECTED) != 0;
 		const bool disabled = (item->itemState & ODS_DISABLED) != 0;
 		const COLORREF fill = disabled ? RGB(36,45,55)
-			: primary ? (pressed ? RGB(0,137,174) : RGB(0,190,231)) : (pressed ? RGB(34,48,68) : RGB(18,31,48));
+			: primary ? (pressed ? RGB(110,190,31) : RGB(143,232,46)) : (pressed ? RGB(34,48,68) : RGB(18,31,48));
 		RECT area=item->rcItem; InflateRect(&area,-1,-1);
-		HBRUSH brush=CreateSolidBrush(fill); HPEN pen=CreatePen(PS_SOLID,primary?2:1,primary?RGB(84,225,255):RGB(74,94,119));
+		HBRUSH brush=CreateSolidBrush(fill); HPEN pen=CreatePen(PS_SOLID,primary?2:1,primary?RGB(177,240,93):RGB(74,94,119));
 		HGDIOBJ oldBrush=SelectObject(item->hDC,brush); HGDIOBJ oldPen=SelectObject(item->hDC,pen);
 		RoundRect(item->hDC,area.left,area.top,area.right,area.bottom,12,12);
 		SelectObject(item->hDC,oldPen);SelectObject(item->hDC,oldBrush);DeleteObject(pen);DeleteObject(brush);
-		SetBkMode(item->hDC,TRANSPARENT); SetTextColor(item->hDC,disabled?RGB(125,135,145):(primary?RGB(5,15,25):RGB(230,239,249))); SelectObject(item->hDC,gFont);
+		SetBkMode(item->hDC,TRANSPARENT); SetTextColor(item->hDC,disabled?RGB(125,135,145):(primary?RGB(7,16,12):RGB(230,239,249))); SelectObject(item->hDC,gFont);
 		wchar_t caption[128]{}; GetWindowTextW(item->hwndItem,caption,128); DrawTextW(item->hDC,caption,-1,&area,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
 	}
 
@@ -1537,38 +1537,38 @@ namespace
 		PAINTSTRUCT ps{}; HDC dc=BeginPaint(window,&ps); RECT client{}; GetClientRect(window,&client);
 		FillRect(dc,&client,gBackgroundBrush);
 		RECT sidebar{0,0,270,client.bottom}; FillRect(dc,&sidebar,gPanelBrush);
-		RECT header{270,0,client.right,116}; HBRUSH headerBrush=CreateSolidBrush(RGB(8,22,37)); FillRect(dc,&header,headerBrush); DeleteObject(headerBrush);
-		RECT accent{270,112,client.right,116};HBRUSH accentBrush=CreateSolidBrush(RGB(0,195,235));FillRect(dc,&accent,accentBrush);DeleteObject(accentBrush);
-		RECT accentGold{270,112,480,116};HBRUSH gold=CreateSolidBrush(RGB(236,186,58));FillRect(dc,&accentGold,gold);DeleteObject(gold);
+		RECT header{270,0,client.right,116}; HBRUSH headerBrush=CreateSolidBrush(RGB(8,20,29)); FillRect(dc,&header,headerBrush); DeleteObject(headerBrush);
+		RECT accent{270,112,client.right,116};HBRUSH accentBrush=CreateSolidBrush(RGB(31,211,218));FillRect(dc,&accent,accentBrush);DeleteObject(accentBrush);
+		RECT accentGold{270,112,520,116};HBRUSH gold=CreateSolidBrush(RGB(143,232,46));FillRect(dc,&accentGold,gold);DeleteObject(gold);
 
 		if(gIcon)DrawIconEx(dc,30,24,gIcon,54,54,0,nullptr,DI_NORMAL);
 		drawTextLine(dc,gHeaderFont,RGB(244,248,253),98,26,L"LZ GAMES");
-		drawTextLine(dc,gSmallFont,RGB(0,210,245),100,57,L"TURBORAMA  •  PIX");
+		drawTextLine(dc,gSmallFont,RGB(143,232,46),100,57,L"TURBORAMA  •  PIX");
 		drawTextLine(dc,gTitleFont,RGB(245,249,255),316,26,L"Central comercial PIX");
 		drawTextLine(dc,gFont,RGB(137,161,188),318,68,L"Conecte, valide e ative o recebimento em uma única tela.");
 
-		RECT stepsCard{24,118,246,452};fillBox(dc,stepsCard,RGB(8,20,34),RGB(30,55,77),16);
-		drawTextLine(dc,gSmallFont,RGB(236,186,58),44,142,L"CONFIGURAÇÃO ASSISTIDA");
+		RECT stepsCard{24,118,246,452};fillBox(dc,stepsCard,RGB(8,20,34),RGB(36,67,86),16);
+		drawTextLine(dc,gSmallFont,RGB(244,194,66),44,142,L"CONFIGURAÇÃO ASSISTIDA");
 		const wchar_t* steps[]={L"Provedor",L"Credencial segura",L"Estabelecimento",L"Pacotes e preços",L"Validação final"};
 		for(int i=0;i<5;++i)
 		{
-			const int y=188+i*49;RECT circle{42,y-4,70,y+24};fillBox(dc,circle,i==4?RGB(37,52,29):RGB(10,42,60),i==4?RGB(236,186,58):RGB(0,180,222),28);
+			const int y=188+i*49;RECT circle{42,y-4,70,y+24};fillBox(dc,circle,i==4?RGB(37,52,29):RGB(10,42,60),i==4?RGB(143,232,46):RGB(31,211,218),28);
 			wchar_t number[3]{};wsprintfW(number,L"%d",i+1);RECT numberArea=circle;
 			SelectObject(dc,gSmallFont);SetTextColor(dc,RGB(242,247,252));SetBkMode(dc,TRANSPARENT);DrawTextW(dc,number,-1,&numberArea,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
 			drawTextLine(dc,gStepFont,RGB(222,234,246),84,y,steps[i]);
 			if(i<4){RECT connector{55,y+25,57,y+42};HBRUSH line=CreateSolidBrush(RGB(30,69,92));FillRect(dc,&connector,line);DeleteObject(line);}
 		}
 
-		RECT safeCard{24,470,246,674};fillBox(dc,safeCard,RGB(7,24,27),RGB(38,91,76),16);
-		drawTextLine(dc,gHeaderFont,RGB(114,226,160),44,494,L"SEGURO");
+		RECT safeCard{24,470,246,674};fillBox(dc,safeCard,RGB(7,24,27),RGB(46,107,82),16);
+		drawTextLine(dc,gHeaderFont,RGB(143,232,46),44,494,L"SEGURO");
 		RECT safeText{44,534,226,640};SelectObject(dc,gSmallFont);SetTextColor(dc,RGB(157,185,183));SetBkMode(dc,TRANSPARENT);
 		DrawTextW(dc,L"A credencial é cifrada pelo Windows e nunca aparece em arquivos comuns.\n\nO titular da conta é reconhecido automaticamente.",-1,&safeText,DT_LEFT|DT_WORDBREAK);
 
-		RECT providerCard{292,132,1020,292};fillBox(dc,providerCard,RGB(10,24,40),RGB(34,63,88),16);
-		RECT establishmentCard{292,298,1020,518};fillBox(dc,establishmentCard,RGB(10,24,40),RGB(34,63,88),16);
-		RECT priceCard{292,525,1020,624};fillBox(dc,priceCard,RGB(10,24,40),RGB(34,63,88),16);
-		RECT statusCard{316,630,996,690};fillBox(dc,statusCard,RGB(6,21,31),RGB(32,85,104),14);
-		RECT statusAccent{316,630,322,690};HBRUSH statusBrush=CreateSolidBrush(GetWindowLongPtrW(gStatus,GWLP_USERDATA)?RGB(236,85,92):RGB(0,198,231));FillRect(dc,&statusAccent,statusBrush);DeleteObject(statusBrush);
+		RECT providerCard{292,132,1020,292};fillBox(dc,providerCard,RGB(12,24,36),RGB(42,62,76),16);
+		RECT establishmentCard{292,298,1020,518};fillBox(dc,establishmentCard,RGB(12,24,36),RGB(42,62,76),16);
+		RECT priceCard{292,525,1020,624};fillBox(dc,priceCard,RGB(12,24,36),RGB(42,62,76),16);
+		RECT statusCard{316,630,996,690};fillBox(dc,statusCard,RGB(6,21,31),RGB(38,91,104),14);
+		RECT statusAccent{316,630,322,690};HBRUSH statusBrush=CreateSolidBrush(GetWindowLongPtrW(gStatus,GWLP_USERDATA)?RGB(255,105,105):RGB(143,232,46));FillRect(dc,&statusAccent,statusBrush);DeleteObject(statusBrush);
 		EndPaint(window,&ps);
 	}
 
@@ -1607,7 +1607,7 @@ namespace
 		case WM_CTLCOLORSTATIC:
 		{
 			HDC dc=(HDC)wParam; SetBkMode(dc,TRANSPARENT);
-			if((HWND)lParam==gStatus) SetTextColor(dc,GetWindowLongPtrW(gStatus,GWLP_USERDATA)?RGB(255,118,118):RGB(129,224,255));
+			if((HWND)lParam==gStatus) SetTextColor(dc,GetWindowLongPtrW(gStatus,GWLP_USERDATA)?RGB(255,118,118):RGB(161,224,82));
 			else SetTextColor(dc,RGB(150,173,198)); return (LRESULT)GetStockObject(HOLLOW_BRUSH);
 		}
 		case WM_CTLCOLOREDIT: case WM_CTLCOLORLISTBOX:
@@ -1761,7 +1761,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show)
 	SetProcessDPIAware(); int count{}; wchar_t** args=CommandLineToArgvW(GetCommandLineW(),&count);
 	if(args&&count>1&&std::wstring(args[1])==L"--self-test"){LocalFree(args);return selfTest()?0:20;} if(args)LocalFree(args);
 	INITCOMMONCONTROLSEX controls{sizeof(controls),ICC_STANDARD_CLASSES};InitCommonControlsEx(&controls);
-	gBackgroundBrush=CreateSolidBrush(RGB(7,17,31));gFieldBrush=CreateSolidBrush(RGB(13,27,44));gPanelBrush=CreateSolidBrush(RGB(5,13,24));
+		gBackgroundBrush=CreateSolidBrush(RGB(5,9,14));gFieldBrush=CreateSolidBrush(RGB(6,12,18));gPanelBrush=CreateSolidBrush(RGB(7,14,21));
 	gIcon=(HICON)LoadImageW(instance,MAKEINTRESOURCEW(1),IMAGE_ICON,64,64,LR_DEFAULTCOLOR);
 	WNDCLASSEXW wc{sizeof(wc)};wc.lpfnWndProc=windowProc;wc.hInstance=instance;wc.hIcon=gIcon;wc.hIconSm=gIcon;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.hbrBackground=gBackgroundBrush;wc.lpszClassName=kClassName;
 	if(!RegisterClassExW(&wc))return 2;

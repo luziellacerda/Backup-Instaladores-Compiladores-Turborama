@@ -724,8 +724,7 @@ namespace
 		GetClientRect(window, &client);
 		fill(device, client, kBackground);
 
-		// A malha quase imperceptivel acrescenta profundidade sem competir com
-		// os controles. Toda a interface continua sendo desenhada nativamente.
+		// Textura leve para dar identidade visual sem alterar o comportamento dos controles.
 		for (int x = 32; x < client.right; x += 96)
 		{
 			RECT gridLine{ x, 148, x + 1, client.bottom };
@@ -757,11 +756,11 @@ namespace
 		}
 
 		RECT brand{ 134, 22, client.right - 270, 44 };
-		text(device, gBrandFont, kGreen, L"LZ GAMES  /  TURBORAMA", brand, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+		text(device, gBrandFont, RGB(183, 246, 96), L"LZ GAMES  /  TURBORAMA", brand, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 		RECT titleArea{ 132, 45, client.right - 250, 86 };
 		text(device, gTitleFont, kText, L"Central segura de pagamento PIX", titleArea, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 		RECT subtitle{ 134, 88, client.right - 40, 118 };
-		text(device, gFont, kMuted, L"Conecte sua conta Mercado Pago ao sistema de cr\u00E9ditos da m\u00E1quina.", subtitle,
+		text(device, gFont, RGB(176, 196, 210), L"Conecte sua conta Mercado Pago ao sistema de cr\u00E9ditos da m\u00E1quina.", subtitle,
 			DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 
 		RECT modeBadge{ client.right - 286, 26, client.right - 34, 58 };
@@ -790,7 +789,7 @@ namespace
 		text(device, gSmallFont, kMuted, L"Cole o Access Token completo. Ele ser\u00E1 protegido antes de sair desta tela.", tokenHint,
 			DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 		RECT inputFrame{ 52, 228, client.right - 52, 282 };
-		roundedBox(device, inputFrame, kEdit, RGB(62, 84, 99), 12, 2);
+		roundedBox(device, inputFrame, kEdit, RGB(75, 101, 116), 12, 2);
 
 		RECT securityCard{ 32, 372, client.right - 32, 530 };
 		roundedBox(device, securityCard, RGB(12, 21, 29), kBorder, 20);
@@ -803,7 +802,7 @@ namespace
 		text(device, gSmallFont, RGB(111, 137, 153), L"STATUS DA CONEX\u00C3O", statusLabel,
 			DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 		RECT statusStrip{ 52, 484, client.right - 52, 518 };
-		roundedBox(device, statusStrip, RGB(10, 17, 23), RGB(35, 49, 61), 12);
+		roundedBox(device, statusStrip, RGB(10, 17, 23), RGB(45, 65, 78), 12);
 		HBRUSH statusBrush = CreateSolidBrush(gStatusColor);
 		HGDIOBJ oldBrush = SelectObject(device, statusBrush);
 		HGDIOBJ oldPen = SelectObject(device, GetStockObject(NULL_PEN));
