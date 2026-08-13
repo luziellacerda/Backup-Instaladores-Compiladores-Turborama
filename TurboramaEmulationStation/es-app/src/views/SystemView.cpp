@@ -28,10 +28,20 @@
 #include "BindingManager.h"
 #include "guis/GuiRetroAchievements.h"
 #include "components/CarouselComponent.h"
+#include "EmbeddedTheme.h"
+#include "utils/FileSystemUtil.h"
+
+#include <cmath>
+#include <iomanip>
+#include <sstream>
 
 SystemView::SystemView(Window* window) : GuiComponent(window),
 	mViewNeedsReload(true),
-	mSystemInfo(window, _("SYSTEM INFO"), Font::get(FONT_SIZE_SMALL), 0x33333300, ALIGN_CENTER), mYButton("y")
+	mSystemInfo(window, _("SYSTEM INFO"), Font::get(FONT_SIZE_SMALL), 0x33333300, ALIGN_CENTER),
+	mHomePixQrImage(window, true),
+	mHomePixOffer(window, "15 MINUTOS\n5 REAIS", Font::get(FONT_SIZE_LARGE), 0x62FF55FF, ALIGN_CENTER),
+	mHomePixInstruction(window, _("GERANDO QR PIX..."), Font::get(FONT_SIZE_SMALL), 0xEAF5FFFF, ALIGN_CENTER),
+	mYButton("y")
 {
 	mExtraTransitionSpeed = 500.0f;
 	mExtraTransitionHorizontal = false;
@@ -53,8 +63,30 @@ SystemView::SystemView(Window* window) : GuiComponent(window),
 	mExtrasTransitionActive = false;
 	mPressedCursor = -1;
 	mPressedPoint = Vector2i(-1, -1);
+	mHomePixQrSize = 0.f;
+	mHomePixQrModuleCount = 0;
+	mHomePixPollElapsedMs = 0;
+	mHomePixRequestElapsedMs = 0;
+	mHomePixConfigCheckElapsedMs = 0;
+	mHomePixRetryElapsedMs = 0;
+	mHomePixRetryDelayMs = 1200;
+	mHomePixEffectElapsedMs = 0;
+	mHomePixRequestActive = false;
+	mHomePixQrReady = false;
+	mHomePixPackage = { 15, 500 };
+	mHomePixQrImage.setAllowFading(false);
+	mHomePixQrImage.setIsLinear(false);
+	mHomePixQrImage.setRoundCorners(0.0585f);
+	mHomePixQrImage.setVisible(false);
+	// Contorno escuro e fonte em negrito mantem as mensagens legiveis mesmo
+	// quando o video ou a arte do sistema passam por tras do QR.
+	mHomePixOffer.setGlowColor(0x000000E8);
+	mHomePixOffer.setGlowSize(2);
+	mHomePixInstruction.setGlowColor(0x000000F0);
+	mHomePixInstruction.setGlowSize(2);
 
 	setSize((float)Renderer::getScreenWidth(), (float)Renderer::getScreenHeight());
+	layoutHomePix();
 	populate();
 }
 
@@ -623,6 +655,9 @@ void SystemView::update(int deltaTime)
 
 	GuiComponent::update(deltaTime);
 
+	if (!mDisable && !mScreensaverActive)
+		updateHomePix(deltaTime);
+
 	if (mYButton.isLongPressed(deltaTime))
 	{
 		bool netPlay = SystemData::isNetplayActivated() && SystemConf::getInstance()->getBool("global.netplay");
@@ -631,6 +666,308 @@ void SystemView::update(int deltaTime)
 		else
 			showQuickSearch();
 	}
+}
+
+std::string SystemView::formatHomePixOffer(const PixPackage& package) const
+{
+	std::ostringstream output;
+	output << package.minutes << " MINUTOS - ";
+	if (package.amountCents > 0 && package.amountCents % 100 == 0)
+	{
+		const long long reais = package.amountCents / 100;
+		output << reais << (reais == 1 ? " REAL" : " REAIS");
+	}
+	else
+	{
+		output << "R$ " << (package.amountCents / 100) << ','
+			<< std::setw(2) << std::setfill('0') << (package.amountCents % 100);
+	}
+	return output.str();
+}
+
+void SystemView::layoutHomePix()
+{
+	const float width = (float)Renderer::getScreenWidth();
+	const float height = (float)Renderer::getScreenHeight();
+	// O QR ocupa o ultimo encaixe a direita da fileira do carrossel, depois das
+	// celulas visiveis. As mensagens ficam centralizadas logo abaixo.
+	mHomePixQrSize = std::min(width * 0.125519625f, height * 0.22920975f);
+	mHomePixQrPosition = Vector2f(width * 0.84f, height * 0.12f);
+	mHomePixQrImage.setPosition(mHomePixQrPosition.x(), mHomePixQrPosition.y());
+	mHomePixQrImage.setMaxSize(mHomePixQrSize, mHomePixQrSize);
+
+	const float textWidth = width * 0.17f;
+	const float textLeft = mHomePixQrPosition.x() + (mHomePixQrSize - textWidth) * 0.5f;
+	std::string boldFontPath = Font::getDefaultPath();
+	const std::string embeddedRoot = EmbeddedTheme::getRootPath();
+	const std::string embeddedBoldFont = embeddedRoot + "/_theme_inc/fonts/SST Bold.ttf";
+	if (!embeddedRoot.empty() && Utils::FileSystem::exists(embeddedBoldFont, false))
+		boldFontPath = embeddedBoldFont;
+	mHomePixOffer.setFont(Font::get((int)(height * 0.024f), boldFontPath));
+	mHomePixOffer.setPosition(textLeft, mHomePixQrPosition.y() + mHomePixQrSize + height * 0.010f);
+	mHomePixOffer.setSize(textWidth, height * 0.032f);
+	mHomePixInstruction.setFont(Font::get((int)(height * 0.0145f), boldFontPath));
+	mHomePixInstruction.setPosition(textLeft, mHomePixQrPosition.y() + mHomePixQrSize + height * 0.044f);
+	mHomePixInstruction.setSize(textWidth, height * 0.022f);
+}
+
+void SystemView::updateHomePixOffer()
+{
+	mHomePixOffer.setText(formatHomePixOffer(mHomePixPackage));
+}
+
+void SystemView::resetHomePixRequest(int retryDelayMs, const std::string& status)
+{
+	mHomePixRequestActive = false;
+	mHomePixRequestId.clear();
+	mHomePixLoadedQrPath.clear();
+	mHomePixQrModules.clear();
+	mHomePixQrModuleCount = 0;
+	mHomePixQrReady = false;
+	mHomePixQrImage.setVisible(false);
+	mHomePixPollElapsedMs = 0;
+	mHomePixRequestElapsedMs = 0;
+	mHomePixConfigCheckElapsedMs = 0;
+	mHomePixRetryElapsedMs = 0;
+	mHomePixRetryDelayMs = std::max(1000, retryDelayMs);
+	mHomePixInstruction.setText(status);
+}
+
+void SystemView::startHomePixRequest()
+{
+	std::string error;
+	PixPublicOptions options;
+	if (!PixBridge::loadPublicOptions(options, error))
+	{
+		mHomePixInstruction.setText(_("PIX INICIANDO..."));
+		mHomePixRetryDelayMs = 5000;
+		return;
+	}
+
+	int requestedMinutes = Settings::getInstance()->getInt("PixHomeQrMinutes");
+	if (requestedMinutes <= 0) requestedMinutes = 15;
+	auto selected = std::find_if(options.packages.begin(), options.packages.end(),
+		[requestedMinutes](const PixPackage& package) { return package.minutes == requestedMinutes; });
+	if (selected == options.packages.end())
+	{
+		selected = std::find_if(options.packages.begin(), options.packages.end(),
+			[](const PixPackage& package) { return package.minutes == 15; });
+		if (selected == options.packages.end()) selected = options.packages.begin();
+	}
+	if (selected == options.packages.end())
+	{
+		mHomePixInstruction.setText(_("PIX SEM PACOTE DISPONIVEL"));
+		mHomePixRetryDelayMs = 10000;
+		return;
+	}
+
+	PixBeneficiary beneficiary;
+	if (!PixBridge::getCurrentBeneficiary(beneficiary, error))
+	{
+		mHomePixInstruction.setText(_("PIX AGUARDANDO CARTEIRA"));
+		mHomePixRetryDelayMs = 5000;
+		return;
+	}
+
+	std::string requestId;
+	if (!PixBridge::createPurchaseRequest(*selected, beneficiary, requestId, error))
+	{
+		LOG(LogWarning) << "[PIX HOME] cobranca automatica ainda indisponivel: " << error;
+		mHomePixInstruction.setText(_("PIX INICIANDO..."));
+		mHomePixRetryDelayMs = 5000;
+		return;
+	}
+
+	mHomePixOptions = options;
+	mHomePixPackage = *selected;
+	mHomePixBeneficiary = beneficiary;
+	mHomePixRequestId = requestId;
+	mHomePixLoadedQrPath.clear();
+	mHomePixQrModules.clear();
+	mHomePixQrModuleCount = 0;
+	mHomePixQrImage.setVisible(false);
+	mHomePixQrReady = false;
+	mHomePixPollElapsedMs = 1000;
+	mHomePixRequestElapsedMs = 0;
+	mHomePixConfigCheckElapsedMs = 0;
+	mHomePixRequestActive = true;
+	updateHomePixOffer();
+	mHomePixInstruction.setText(_("GERANDO QR PIX..."));
+	LOG(LogInfo) << "[PIX HOME] pedido automatico criado para "
+		<< mHomePixPackage.minutes << " minutos";
+}
+
+void SystemView::pollHomePixRequest()
+{
+	if (!mHomePixRequestActive || mHomePixRequestId.empty()) return;
+	const PixPurchaseInfo info = PixBridge::getPurchaseInfo(mHomePixRequestId);
+	if (info.qrModuleCount > 0
+		&& info.qrModules.size() == (size_t)info.qrModuleCount * info.qrModuleCount
+		&& info.qrMatrixPath != mHomePixLoadedQrPath)
+	{
+		mHomePixQrModules = info.qrModules;
+		mHomePixQrModuleCount = info.qrModuleCount;
+		mHomePixLoadedQrPath = info.qrMatrixPath;
+		mHomePixQrImage.setVisible(false);
+		mHomePixQrReady = true;
+	}
+	else if (mHomePixQrModules.empty() && !info.qrImageData.empty()
+		&& info.qrImagePath != mHomePixLoadedQrPath)
+	{
+		mHomePixQrImage.setImage((const char*)info.qrImageData.data(), info.qrImageData.size());
+		if (mHomePixQrImage.hasImage())
+		{
+			mHomePixLoadedQrPath = info.qrImagePath;
+			mHomePixQrImage.setVisible(true);
+			mHomePixQrReady = true;
+		}
+	}
+
+	switch (info.state)
+	{
+	case PixPurchaseState::Generating:
+	case PixPurchaseState::Unknown:
+		mHomePixInstruction.setText(_("GERANDO QR PIX..."));
+		if (mHomePixRequestElapsedMs > 45000)
+			resetHomePixRequest(5000, _("RENOVANDO QR PIX..."));
+		break;
+	case PixPurchaseState::Pending:
+		mHomePixInstruction.setText(mHomePixQrReady
+			? _("ESCANEIE E PAGUE COM PIX")
+			: _("GERANDO QR PIX..."));
+		if (mHomePixRequestElapsedMs > (mHomePixOptions.paymentExpirationMinutes * 60 + 30) * 1000)
+			resetHomePixRequest(1500, _("RENOVANDO QR PIX..."));
+		break;
+	case PixPurchaseState::Approved:
+		for (const auto& message : PixBridge::processApprovedCredits())
+			mWindow->displayNotificationMessage(message, 7);
+		mHomePixInstruction.setText(_("PAGAMENTO CONFIRMADO\nLIBERANDO O TEMPO..."));
+		break;
+	case PixPurchaseState::Completed:
+		resetHomePixRequest(7000, _("PAGAMENTO CONFIRMADO!\nTEMPO LIBERADO."));
+		break;
+	case PixPurchaseState::Cancelled:
+	case PixPurchaseState::Rejected:
+		resetHomePixRequest(1800, _("QR EXPIRADO. GERANDO OUTRO..."));
+		break;
+	case PixPurchaseState::SecurityError:
+		LOG(LogError) << "[PIX HOME] pedido bloqueado por seguranca: " << info.error;
+		resetHomePixRequest(15000, _("PIX INDISPONIVEL\nCHAME O RESPONSAVEL"));
+		break;
+	}
+}
+
+void SystemView::updateHomePix(int deltaTime)
+{
+	const int elapsed = std::max(0, deltaTime);
+	mHomePixEffectElapsedMs = (mHomePixEffectElapsedMs + elapsed) % 4000;
+	const float wave = 0.5f + 0.5f * std::sin((float)mHomePixEffectElapsedMs * 0.00314159265f);
+	const unsigned int red = (unsigned int)(66 + 32 * wave);
+	const unsigned int green = (unsigned int)(223 + 32 * wave);
+	const unsigned int blue = (unsigned int)(250 - 165 * wave);
+	mHomePixOffer.setColor((red << 24) | (green << 16) | (blue << 8) | 0xFF);
+	// A cor pulsa para chamar atencao, mas a opacidade permanece total para a
+	// mensagem nunca ficar fraca ou dificil de ler.
+	mHomePixOffer.setOpacity(255);
+	mHomePixOffer.update(elapsed);
+	mHomePixInstruction.update(elapsed);
+	mHomePixQrImage.update(elapsed);
+
+	if (mHomePixRequestActive)
+	{
+		mHomePixRequestElapsedMs += elapsed;
+		mHomePixConfigCheckElapsedMs += elapsed;
+		if (mHomePixConfigCheckElapsedMs >= 3000)
+		{
+			mHomePixConfigCheckElapsedMs = 0;
+			int desiredMinutes = Settings::getInstance()->getInt("PixHomeQrMinutes");
+			if (desiredMinutes <= 0) desiredMinutes = 15;
+			PixPublicOptions currentOptions;
+			PixBeneficiary currentBeneficiary;
+			std::string ignoredError;
+			if (PixBridge::loadPublicOptions(currentOptions, ignoredError)
+				&& PixBridge::getCurrentBeneficiary(currentBeneficiary, ignoredError))
+			{
+				auto desired = std::find_if(currentOptions.packages.begin(), currentOptions.packages.end(),
+					[desiredMinutes](const PixPackage& package) { return package.minutes == desiredMinutes; });
+				if (desired == currentOptions.packages.end())
+					desired = std::find_if(currentOptions.packages.begin(), currentOptions.packages.end(),
+						[](const PixPackage& package) { return package.minutes == 15; });
+				if (desired == currentOptions.packages.end() && !currentOptions.packages.empty())
+					desired = currentOptions.packages.begin();
+				const bool packageChanged = desired != currentOptions.packages.end()
+					&& (desired->minutes != mHomePixPackage.minutes
+						|| desired->amountCents != mHomePixPackage.amountCents);
+				const bool beneficiaryChanged = currentBeneficiary.type != mHomePixBeneficiary.type
+					|| currentBeneficiary.id != mHomePixBeneficiary.id;
+				if (packageChanged || beneficiaryChanged)
+				{
+					resetHomePixRequest(500, _("ATUALIZANDO QR PIX..."));
+					return;
+				}
+			}
+		}
+		mHomePixPollElapsedMs += elapsed;
+		if (mHomePixPollElapsedMs >= 1000)
+		{
+			mHomePixPollElapsedMs = 0;
+			pollHomePixRequest();
+		}
+		return;
+	}
+
+	mHomePixRetryElapsedMs += elapsed;
+	if (mHomePixRetryElapsedMs >= mHomePixRetryDelayMs)
+	{
+		mHomePixRetryElapsedMs = 0;
+		startHomePixRequest();
+	}
+}
+
+void SystemView::renderHomePixQrMatrix(const Transform4x4f& trans)
+{
+	if (mHomePixQrModuleCount <= 0 || mHomePixQrSize <= 0
+		|| mHomePixQrModules.size() != (size_t)mHomePixQrModuleCount * mHomePixQrModuleCount) return;
+	// Margem tecnica compacta para nao parecer uma moldura decorativa.
+	const float quietModules = 1.f;
+	const float moduleSize = std::floor(mHomePixQrSize / (mHomePixQrModuleCount + quietModules * 2.f));
+	if (moduleSize < 1.f) return;
+	const float qrSize = moduleSize * mHomePixQrModuleCount;
+	const float quiet = moduleSize * quietModules;
+	const float total = qrSize + quiet * 2.f;
+	const float x = mHomePixQrPosition.x() + (mHomePixQrSize - total) * 0.5f + quiet;
+	const float y = mHomePixQrPosition.y() + (mHomePixQrSize - total) * 0.5f + quiet;
+	Renderer::setMatrix(trans);
+	// A area branca e a margem tecnica exigida pelos leitores de QR; nao ha
+	// painel, moldura, sombra ou borda decorativa ao redor do codigo.
+	Renderer::drawRoundRect(x - quiet, y - quiet, total, total,
+		std::max(3.f, total * 0.0585f), 0xFFFFFFFF);
+	for (int row = 0; row < mHomePixQrModuleCount; ++row)
+	{
+		int runStart = -1;
+		for (int column = 0; column <= mHomePixQrModuleCount; ++column)
+		{
+			const bool dark = column < mHomePixQrModuleCount
+				&& mHomePixQrModules[(size_t)row * mHomePixQrModuleCount + column] != 0;
+			if (dark && runStart < 0) runStart = column;
+			else if (!dark && runStart >= 0)
+			{
+				Renderer::drawRect(x + runStart * moduleSize, y + row * moduleSize,
+					(column - runStart) * moduleSize, moduleSize, 0x000000FF);
+				runStart = -1;
+			}
+		}
+	}
+}
+
+void SystemView::renderHomePix(const Transform4x4f& trans)
+{
+	if (mDisable || mScreensaverActive) return;
+	mHomePixOffer.render(trans);
+	mHomePixInstruction.render(trans);
+	if (!mHomePixQrReady) return;
+	if (!mHomePixQrModules.empty()) renderHomePixQrMatrix(trans);
+	else mHomePixQrImage.render(trans);
 }
 
 void SystemView::updateExtraTextBinding()
@@ -954,6 +1291,10 @@ void SystemView::render(const Transform4x4f& parentTrans)
 		renderInfoBar(trans);
 
 	renderExtras(trans, minMax.second, INT16_MAX);
+
+	// O QR comercial pertence somente a tela principal de sistemas. Ele e
+	// desenhado por ultimo para permanecer legivel sem alterar o tema ativo.
+	renderHomePix(trans);
 }
 
 std::vector<HelpPrompt> SystemView::getHelpPrompts()
@@ -1515,6 +1856,14 @@ void SystemView::onShow()
 
 	if (getSelected() != nullptr)
 		TextToSpeech::getInstance()->say(getSelected()->getFullName());
+
+	// A primeira tentativa ocorre logo apos a tela principal aparecer. Se o
+	// agente ainda estiver iniciando, updateHomePix repete sem bloquear a UI.
+	if (!mHomePixRequestActive)
+	{
+		mHomePixRetryElapsedMs = 0;
+		mHomePixRetryDelayMs = 350;
+	}
 }
 
 void SystemView::onHide()

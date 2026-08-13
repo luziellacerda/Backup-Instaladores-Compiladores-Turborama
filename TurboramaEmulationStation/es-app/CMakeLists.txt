@@ -138,8 +138,10 @@ set(ES_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LibretroRatio.h # batocera
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Win32ApiSystem.h # batocera
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CreditManager.h # turborama arcade credit
+	${CMAKE_CURRENT_SOURCE_DIR}/src/CreditWarningOverlay.h # aviso de credito sempre no topo
     ${CMAKE_CURRENT_SOURCE_DIR}/src/PixBridge.h # turborama pix bridge
     ${CMAKE_CURRENT_SOURCE_DIR}/src/PixAgentManager.h # configuracao e ciclo de vida do agente pix
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/PixBinaryTrust.h # assinatura e publisher pin dos binarios pix
     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditPlayerSelect.h # locadora player picker
     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditOperatorPanel.h # locadora painel profissional
     ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixPurchase.h # compra publica de tempo PIX
@@ -294,6 +296,19 @@ if(MSVC)
 	endif()
 
 	file(GLOB_RECURSE EMBEDDED_THEME_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/embedded-theme/*")
+	set(PROTECTED_DECORATION_FILES
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/protected-decorations/pc.trd"
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/protected-decorations/ps3.trd"
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/protected-decorations/ps4.trd"
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/protected-decorations/ps5.trd"
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/protected-decorations/switch.trd"
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/protected-decorations/windows.trd"
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/protected-decorations/xboxone.trd")
+	foreach(PROTECTED_DECORATION_FILE IN LISTS PROTECTED_DECORATION_FILES)
+		if(NOT EXISTS "${PROTECTED_DECORATION_FILE}")
+			message(FATAL_ERROR "Protected decoration payload is missing: ${PROTECTED_DECORATION_FILE}")
+		endif()
+	endforeach()
 	set(EMBEDDED_THEME_BIN "${CMAKE_CURRENT_BINARY_DIR}/generated/embedded_theme.bin")
 	add_custom_command(
 		OUTPUT "${EMBEDDED_THEME_BIN}"
@@ -310,7 +325,7 @@ if(MSVC)
 	add_custom_target(turborama_embedded_theme DEPENDS "${EMBEDDED_THEME_BIN}")
 	set_source_files_properties("${EMBEDDED_THEME_BIN}" PROPERTIES GENERATED TRUE)
 	set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/EmulationStation.rc" PROPERTIES
-		OBJECT_DEPENDS "${EMBEDDED_THEME_BIN}"
+		OBJECT_DEPENDS "${EMBEDDED_THEME_BIN};${PROTECTED_DECORATION_FILES}"
 		COMPILE_DEFINITIONS "TURBORAMA_EMBEDDED_THEME_BIN=\"${EMBEDDED_THEME_BIN}\"")
 endif()
 
@@ -321,6 +336,14 @@ add_executable(emulationstation ${ES_SOURCES} ${ES_HEADERS})
 target_link_libraries(emulationstation ${COMMON_LIBRARIES} es-core)
 if(MSVC)
 	add_dependencies(emulationstation turborama_embedded_theme)
+	if(TURBORAMA_COMMERCIAL_HARDENING)
+		# Keep SDL's stricter diagnostics on the new PIX trust boundary without
+		# turning unrelated legacy renderer deprecations into release errors.
+		set_source_files_properties(
+			${CMAKE_CURRENT_SOURCE_DIR}/src/PixAgentManager.cpp
+			${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixOwnerSettings.cpp
+			PROPERTIES COMPILE_OPTIONS "/sdl")
+	endif()
 endif()
 
 # TurboRama: copiar pasta screensaver_videos para junto do EXE compilado

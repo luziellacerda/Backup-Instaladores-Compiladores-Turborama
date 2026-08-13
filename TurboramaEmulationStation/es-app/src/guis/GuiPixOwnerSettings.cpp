@@ -2,9 +2,12 @@
 
 #include "LocaleES.h"
 #include "Paths.h"
+#include "PixBinaryTrust.h"
 #include "Settings.h"
 #include "Window.h"
+#include "components/OptionListComponent.h"
 #include "guis/GuiMsgBox.h"
+#include "guis/GuiSettings.h"
 #include "guis/GuiTextEditPopup.h"
 #include "guis/GuiTextEditPopupKeyboard.h"
 #include "renderers/Renderer.h"
@@ -95,6 +98,104 @@ void GuiPixOwnerSettings::editPrice(int minutes)
 		});
 }
 
+void GuiPixOwnerSettings::openHomeQrManager()
+{
+	const std::vector<int> packages = { 15, 30, 45, 60, 120 };
+	int selectedMinutes = Settings::getInstance()->getInt("PixHomeQrMinutes");
+	if (std::find(packages.begin(), packages.end(), selectedMinutes) == packages.end())
+		selectedMinutes = 15;
+
+	GuiSettings* manager = new GuiSettings(mWindow, _("GERENCIAR QR AUTOMATICO"));
+	manager->setSubTitle(_("ESCOLHA O TEMPO E EDITE O VALOR QUE APARECERA NA TELA PRINCIPAL"));
+	auto timeChoice = std::make_shared<OptionListComponent<int>>(mWindow, _("TEMPO DO QR PRINCIPAL"), false);
+	for (const int minutes : packages)
+	{
+		const long long cents = mDraft.pricesCents.count(minutes) ? mDraft.pricesCents[minutes] : 0;
+		timeChoice->add(std::to_string(minutes) + _(" MINUTOS - ") + formatPrice(cents),
+			minutes, minutes == selectedMinutes);
+	}
+	manager->addWithLabel(_("TEMPO DO QR PRINCIPAL"), timeChoice, true);
+
+	manager->addGroup(_("ALTERAR VALORES DOS PACOTES"));
+	for (const int minutes : packages)
+	{
+		const long long cents = mDraft.pricesCents.count(minutes) ? mDraft.pricesCents[minutes] : 0;
+		manager->addEntry(std::to_string(minutes) + _(" MINUTOS: ") + formatPrice(cents), true,
+			[this, minutes] { editPrice(minutes); });
+	}
+	manager->addSaveFunc([this, timeChoice] {
+		Settings::getInstance()->setInt("PixHomeQrMinutes", timeChoice->getSelected());
+		Settings::getInstance()->saveFile();
+		rebuild();
+	});
+	manager->setCloseButton(_("SALVAR E VOLTAR"));
+	mWindow->pushGui(manager);
+}
+
+void GuiPixOwnerSettings::openProviderManager()
+{
+	GuiSettings* manager = new GuiSettings(mWindow, _("ESCOLHER PROVEDOR PIX"));
+	manager->setSubTitle(_("A COBRANCA E FEITA PELO PROVEDOR LOCAL; A LICENCA ONLINE E UMA CAMADA SEPARADA"));
+	auto provider = std::make_shared<OptionListComponent<std::string>>(mWindow, _("PROVEDOR PIX"), false);
+	provider->add(_("MERCADO PAGO DIRETO NESTE COMPUTADOR"), "mercadopago", mDraft.provider == "mercadopago");
+	provider->add(_("OUTRO BANCO / ADAPTADOR LOCAL"), "adapter", mDraft.provider == "adapter");
+	manager->addWithLabel(_("PROVEDOR PIX"), provider, true);
+	manager->addSaveFunc([this, provider] {
+		mDraft.provider = provider->getSelected();
+		rebuild();
+	});
+	manager->setCloseButton(_("USAR ESTE PROVEDOR"));
+	mWindow->pushGui(manager);
+}
+
+void GuiPixOwnerSettings::openOnlineProtectionManager()
+{
+	GuiSettings* manager = new GuiSettings(mWindow, _("PROTECAO DESTA MAQUINA"));
+	manager->setSubTitle(_("USE TPM SOMENTE QUANDO ELE ESTIVER DISPONIVEL E ATIVO NESTE COMPUTADOR"));
+	auto profile = std::make_shared<OptionListComponent<std::string>>(mWindow, _("PERFIL DE PROTECAO"), false);
+	profile->add(_("SEM TPM - PROTECAO ONLINE"), "SOFTWARE_BOUND_ONLINE",
+		mDraft.onlineProtectionProfile == "SOFTWARE_BOUND_ONLINE");
+	profile->add(_("TPM DESTA PLACA-MAE"), "TPM_BOUND",
+		mDraft.onlineProtectionProfile == "TPM_BOUND");
+	manager->addWithLabel(_("PERFIL DE PROTECAO"), profile, true);
+	manager->addEntry(_("TROCAR TPM, PLACA-MAE OU PERFIL EXIGE NOVA LIBERACAO NO PAINEL"), false);
+	manager->addSaveFunc([this, profile] {
+		mDraft.onlineProtectionProfile = profile->getSelected();
+		rebuild();
+	});
+	manager->setCloseButton(_("USAR ESTA PROTECAO"));
+	mWindow->pushGui(manager);
+}
+
+void GuiPixOwnerSettings::activateOnlineMachine()
+{
+	mWindow->pushGui(new GuiMsgBox(mWindow,
+		_("A ativacao vincula esta instalacao a licenca cadastrada no painel TurboRama.\n\n"
+			"O codigo e usado uma unica vez, enviado por canal protegido e nunca e salvo neste computador."),
+		_("DIGITAR CODIGO"), [this] {
+			editText(_("CODIGO DE ATIVACAO GERADO NO PAINEL"), "", true,
+				[this](const std::string& entered) {
+					std::string activationCode = entered;
+					std::string error;
+					const bool activated = PixAgentManager::activateOnline(mDraft, activationCode, error);
+#ifdef _WIN32
+					if (!activationCode.empty()) SecureZeroMemory(activationCode.data(), activationCode.size());
+#else
+					std::fill(activationCode.begin(), activationCode.end(), '\0');
+#endif
+					mDraft = PixAgentManager::loadOwnerSettings();
+					if (!activated)
+					{
+						mWindow->pushGui(new GuiMsgBox(mWindow, error, _("OK"), nullptr, ICON_ERROR));
+						return;
+					}
+					mWindow->pushGui(new GuiMsgBox(mWindow,
+						_("MAQUINA ATIVADA.\n\nA licenca foi vinculada. Os precos e a cobranca PIX continuam sendo gerenciados localmente pelo TurboRama."),
+						_("OK"), [this] { rebuild(); }, ICON_INFORMATION));
+				});
+		}, _("CANCELAR"), nullptr, ICON_QUESTION));
+}
+
 void GuiPixOwnerSettings::launchOwnerConfigurator()
 {
 #ifdef _WIN32
@@ -137,6 +238,15 @@ void GuiPixOwnerSettings::launchOwnerConfigurator()
 
 	const std::wstring executable = Utils::String::convertToWideString(configurator);
 	const std::wstring directory = Utils::String::convertToWideString(workingDirectory);
+	std::string signatureError;
+	if (!PixBinaryTrust::verifyVendorBinary(executable, signatureError))
+	{
+		mWindow->pushGui(new GuiMsgBox(mWindow,
+			_("O CONFIGURADOR PIX FOI RECUSADO PELA PROTECAO COMERCIAL.\n\n")
+				+ signatureError,
+			_("OK"), nullptr, ICON_ERROR));
+		return;
+	}
 	std::wstring commandLine = L"\"" + executable + L"\"";
 	std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
 	mutableCommand.push_back(L'\0');
@@ -175,9 +285,28 @@ void GuiPixOwnerSettings::rebuild()
 	mMenu.setSubTitle(std::string(_("STATUS: ")) + PixAgentManager::statusText());
 
 	mMenu.addGroup(_("PROVEDOR PIX"));
-	mMenu.addEntry(std::string(_("PROVEDOR ATIVO: ")) + (mDraft.provider == "adapter" ? _("OUTRO BANCO / ADAPTADOR") : _("MERCADO PAGO")), true,
-		[this] { mDraft.provider = mDraft.provider == "adapter" ? "mercadopago" : "adapter"; rebuild(); });
+	const std::string providerLabel = mDraft.provider == "adapter"
+		? _("OUTRO BANCO / ADAPTADOR") : _("MERCADO PAGO");
+	mMenu.addEntry(std::string(_("PROVEDOR ATIVO: ")) + providerLabel, true,
+		[this] { openProviderManager(); });
 
+	if (mDraft.onlineLicensingEnabled
+		|| mDraft.onlineLicenseId != "CONFIGURE-A-LICENCA")
+	{
+		mMenu.addGroup(_("LICENCA TURBORAMA ONLINE"));
+		mMenu.addEntry(std::string(_("LICENCA: ")) + mDraft.onlineLicenseId, true,
+			[this] { editText(_("NUMERO DA LICENCA CRIADA NO PAINEL"), mDraft.onlineLicenseId, false,
+				[this](const std::string& value) { mDraft.onlineLicenseId = value; }); });
+		mMenu.addEntry(std::string(_("SERVIDOR: ")) + mDraft.onlineBaseUrl, false);
+		const std::string protectionLabel = mDraft.onlineProtectionProfile == "TPM_BOUND"
+			? _("TPM DESTA PLACA-MAE") : _("SEM TPM - PROTECAO ONLINE");
+		mMenu.addEntry(std::string(_("PROTECAO: ")) + protectionLabel, true,
+			[this] { openOnlineProtectionManager(); });
+		mMenu.addEntry(_("O SERVIDOR RECONHECE A MAQUINA; NAO ALTERA PRECO, CONTA OU PDV"), false);
+		mMenu.addEntry(_("SEM SERVIDOR TEMPORARIAMENTE: QUIOSQUE E CREDITOS CONTINUAM FUNCIONANDO"), false);
+		mMenu.addEntry(_("ATIVAR ESTA MAQUINA COM CODIGO DO PAINEL"), true,
+			[this] { activateOnlineMachine(); });
+	}
 	if (mDraft.provider == "adapter")
 	{
 		mMenu.addGroup(_("ADAPTADOR BANCARIO"));
@@ -209,8 +338,7 @@ void GuiPixOwnerSettings::rebuild()
 	mMenu.addGroup(_("CREDENCIAL PROTEGIDA"));
 	mMenu.addEntry(_("ABRIR CONFIGURADOR PIX AGORA"), true,
 		[this] { launchOwnerConfigurator(); });
-	mMenu.addEntry(_("SESSAO OBRIGATORIA: CONTA WINDOWS ARCADE"), false);
-	mMenu.addEntry(_("ABRA NORMALMENTE - NAO USE EXECUTAR COMO ADMINISTRADOR"), false);
+	mMenu.addEntry(_("A CREDENCIAL PERTENCE AO PROVEDOR LOCAL DE PAGAMENTO"), false);
 
 	mMenu.addGroup(_("PRECOS PARA O CLIENTE"));
 	for (const int minutes : { 15, 30, 45, 60, 120 })
@@ -219,6 +347,20 @@ void GuiPixOwnerSettings::rebuild()
 		mMenu.addEntry(std::to_string(minutes) + _(" MINUTOS: ") + formatPrice(cents), true,
 			[this, minutes] { editPrice(minutes); });
 	}
+
+	int homeQrMinutes = Settings::getInstance()->getInt("PixHomeQrMinutes");
+	const std::vector<int> homePackages = { 15, 30, 45, 60, 120 };
+	if (std::find(homePackages.begin(), homePackages.end(), homeQrMinutes) == homePackages.end())
+		homeQrMinutes = 15;
+	const long long homeQrCents = mDraft.pricesCents.count(homeQrMinutes)
+		? mDraft.pricesCents[homeQrMinutes] : 0;
+	mMenu.addGroup(_("QR AUTOMATICO DA TELA PRINCIPAL"));
+	mMenu.addEntry(_("GERENCIAR TEMPO E VALOR DO QR"), true,
+		[this] { openHomeQrManager(); });
+	mMenu.addEntry(std::string(_("CONFIGURADO: ")) + std::to_string(homeQrMinutes)
+		+ _(" MINUTOS - ") + formatPrice(homeQrCents), false);
+	mMenu.addEntry(_("O QR E GERADO SOZINHO AO ABRIR O TURBORAMA"), false);
+	mMenu.addEntry(_("A FRASE DA TELA ACOMPANHA O TEMPO E O VALOR ESCOLHIDOS"), false);
 
 	mMenu.addGroup(_("ATIVACAO"));
 	mMenu.addEntry(_("SALVAR, CONFIGURAR E ATIVAR PIX"), true, [this] { saveAndActivate(); });
@@ -238,10 +380,11 @@ void GuiPixOwnerSettings::rebuild()
 void GuiPixOwnerSettings::saveAndActivate()
 {
 	mWindow->pushGui(new GuiMsgBox(mWindow,
-		_("Salvar as alteracoes deste estabelecimento e ativar o PIX?\n\n"
+		_("Salvar os precos locais e ativar o PIX neste quiosque?\n\n"
 			"Para trocar conta, credencial, Loja ou PDV, cancele e use ABRIR CONFIGURADOR PIX AGORA nesta tela."),
 		_("SIM, ATIVAR"), [this] {
 			std::string error;
+			mDraft.enabled = true;
 			if (!PixAgentManager::saveOwnerSettings(mDraft, "", error))
 			{
 				mWindow->pushGui(new GuiMsgBox(mWindow, error, _("OK"), nullptr, ICON_ERROR));
@@ -256,7 +399,7 @@ void GuiPixOwnerSettings::saveAndActivate()
 				return;
 			}
 			mWindow->pushGui(new GuiMsgBox(mWindow,
-				_("DADOS SALVOS.\n\nO EmulationStation preservou a conta e o provedor atuais. Para trocar o proprietario ou validar uma nova credencial, use ABRIR CONFIGURADOR PIX AGORA nesta tela."),
+				_("DADOS SALVOS.\n\nOs precos permanecem neste computador. O EmulationStation preservou a conta e o provedor atuais; a licenca online continua separada."),
 				_("OK"), [this] { rebuild(); }, ICON_INFORMATION));
 		},
 		_("CANCELAR"), nullptr, ICON_QUESTION));

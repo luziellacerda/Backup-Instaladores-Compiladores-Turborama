@@ -1,11 +1,19 @@
-#define UNICODE
+﻿#define UNICODE
 #define _UNICODE
 #define NOMINMAX
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0602
+#endif
 #include <windows.h>
 #include <wincrypt.h>
+#include <wincred.h>
+#include <sddl.h>
 #include <bcrypt.h>
 #include <commdlg.h>
+#include <objbase.h>
 #include <shellapi.h>
+#include <tlhelp32.h>
+#include <userenv.h>
 
 #include <algorithm>
 #include <cctype>
@@ -14,14 +22,20 @@
 #include <ctime>
 #include <cstring>
 #include <cwctype>
+#include <utility>
 #include <string>
 #include <vector>
+
+#include "../../es-app/src/PixBinaryTrust.h"
 
 #pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "bcrypt.lib")
 #pragma comment(lib, "comdlg32.lib")
+#pragma comment(lib, "credui.lib")
+#pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "userenv.lib")
 
 namespace
 {
@@ -40,12 +54,20 @@ namespace
 	constexpr UINT WM_APP_IDENTITY_PREFLIGHT = WM_APP + 41;
 	constexpr int ID_SECURITY_TEXT = 1010;
 	constexpr int ID_DESTINATION = 1011;
+	constexpr int ID_LICENSE = 1012;
+	constexpr int ID_PROFILE = 1013;
+	constexpr int ID_LICENSE_LABEL = 1014;
+	constexpr int ID_PROFILE_LABEL = 1015;
 	const wchar_t* kClassName = L"TurboRamaPixCredentialEditor";
-	const wchar_t* kTitle = L"LZ Games | Central segura de pagamento PIX";
+	const wchar_t* kTitle = L"LZ Games | Reconhecimento TurboRama PIX";
 	const wchar_t* kPublicKeyFile = L"agent-public-key.pem";
 	const wchar_t* kCredentialUpdateFile = L"credential-update.json";
 	const wchar_t* kCredentialUpdateStatusFile = L"credential-update-status.json";
+	const wchar_t* kOwnerSettingsFile = L"owner-settings.json";
+	const wchar_t* kOnlineServer = L"https://pix.lzgames.com.br/";
 	HWND gToken = nullptr;
+	HWND gLicense = nullptr;
+	HWND gProfile = nullptr;
 	HWND gStatus = nullptr;
 	HWND gPaste = nullptr;
 	HWND gImport = nullptr;
@@ -71,6 +93,13 @@ namespace
 		bool exitConfirmed = false;
 		DWORD exitCode = 999;
 		std::string output;
+	};
+
+	struct KioskAccount
+	{
+		std::wstring user;
+		std::wstring domain;
+		std::vector<unsigned char> sid;
 	};
 
 	constexpr COLORREF kBackground = RGB(5, 9, 14);
@@ -118,7 +147,7 @@ namespace
 	std::wstring bridgeDirectory()
 	{
 		wchar_t overridePath[32768]{};
-		const DWORD length = GetEnvironmentVariableW(L"TURBORAMA_PIX_BRIDGE", overridePath, 32768);
+		const DWORD length = GetEnvironmentVariableW(L"TURBORAMA_PIX_BRIDGE_DIRECTORY", overridePath, 32768);
 		if (length > 0 && length < 32768) return overridePath;
 		return L"D:\\emulationstation\\.emulationstation\\pix";
 	}
@@ -410,6 +439,235 @@ namespace
 		return result;
 	}
 
+	bool readRegistryString(HKEY key, const wchar_t* name, std::wstring& value)
+	{
+		value.clear();
+		DWORD size = 0;
+		const LSTATUS measured = RegGetValueW(key, nullptr, name, RRF_RT_REG_SZ, nullptr, nullptr, &size);
+		if (measured != ERROR_SUCCESS || size < sizeof(wchar_t) || size > 4096
+			|| size % sizeof(wchar_t) != 0) return false;
+		std::vector<wchar_t> buffer(size / sizeof(wchar_t), L'\0');
+		DWORD type = 0;
+		if (RegGetValueW(key, nullptr, name, RRF_RT_REG_SZ, &type, buffer.data(), &size) != ERROR_SUCCESS
+			|| type != REG_SZ || buffer.back() != L'\0') return false;
+		value = trim(buffer.data());
+		return value.find_first_of(L"\r\n\0", 0, 3) == std::wstring::npos;
+	}
+
+	bool currentProcessElevated();
+
+	bool currentProcessIsLocalAdminAccount(std::wstring& error)
+	{
+		HANDLE token = nullptr;
+		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+		{
+			error = L"O Windows nao conseguiu confirmar a conta Admin atual.";
+			return false;
+		}
+		DWORD bytes = 0;
+		GetTokenInformation(token, TokenUser, nullptr, 0, &bytes);
+		std::vector<unsigned char> tokenUser(bytes);
+		const bool read = bytes > 0 && bytes <= 64 * 1024
+			&& GetTokenInformation(token, TokenUser, tokenUser.data(), bytes, &bytes) != FALSE;
+		CloseHandle(token);
+		if (!read)
+		{
+			error = L"O SID da conta Admin atual nao pode ser confirmado.";
+			return false;
+		}
+		wchar_t name[257]{}, domain[257]{};
+		DWORD nameSize = 257, domainSize = 257;
+		SID_NAME_USE use = SidTypeUnknown;
+		if (!LookupAccountSidW(nullptr, reinterpret_cast<TOKEN_USER*>(tokenUser.data())->User.Sid,
+			name, &nameSize, domain, &domainSize, &use) || use != SidTypeUser)
+		{
+			error = L"A identidade local da conta Admin nao pode ser resolvida.";
+			return false;
+		}
+		wchar_t machine[MAX_COMPUTERNAME_LENGTH + 1]{};
+		DWORD machineSize = MAX_COMPUTERNAME_LENGTH + 1;
+		if (!GetComputerNameW(machine, &machineSize) || _wcsicmp(name, L"Admin") != 0
+			|| _wcsicmp(domain, machine) != 0)
+		{
+			error = L"Execute este configurador na conta local Admin deste gabinete.";
+			return false;
+		}
+		return true;
+	}
+
+	bool resolveAutomaticKioskAccount(KioskAccount& account, std::wstring& error)
+	{
+		account = {};
+		HKEY winlogon = nullptr;
+		const LSTATUS opened = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+			L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon", 0, KEY_QUERY_VALUE, &winlogon);
+		if (opened != ERROR_SUCCESS)
+		{
+			error = L"A configura\u00E7\u00E3o da conta Windows do TurboRama n\u00E3o est\u00E1 acess\u00EDvel.";
+			return false;
+		}
+		std::wstring autoLogon, configuredUser, configuredDomain;
+		const bool registryOk = readRegistryString(winlogon, L"AutoAdminLogon", autoLogon)
+			&& readRegistryString(winlogon, L"DefaultUserName", configuredUser);
+		readRegistryString(winlogon, L"DefaultDomainName", configuredDomain);
+		RegCloseKey(winlogon);
+		if (!registryOk || autoLogon != L"1" || configuredUser.empty() || configuredUser.size() > 256)
+		{
+			error = L"O AutoLogon do TurboRama n\u00E3o est\u00E1 configurado corretamente.";
+			return false;
+		}
+
+		wchar_t machineBuffer[MAX_COMPUTERNAME_LENGTH + 1]{};
+		DWORD machineLength = MAX_COMPUTERNAME_LENGTH + 1;
+		if (!GetComputerNameW(machineBuffer, &machineLength) || machineLength == 0)
+		{
+			error = L"O nome local deste computador n\u00E3o p\u00F4de ser confirmado.";
+			return false;
+		}
+		const std::wstring machine(machineBuffer, machineLength);
+		std::wstring user = configuredUser;
+		std::wstring domain = configuredDomain;
+		const size_t separator = user.find(L'\\');
+		if (separator != std::wstring::npos)
+		{
+			domain = user.substr(0, separator);
+			user = user.substr(separator + 1);
+		}
+		if (domain.empty() || domain == L".") domain = machine;
+		if (user.empty() || user.find_first_of(L"\\/@\r\n") != std::wstring::npos
+			|| _wcsicmp(domain.c_str(), machine.c_str()) != 0)
+		{
+			error = L"A conta Windows do TurboRama precisa ser uma conta local v\u00E1lida deste computador.";
+			return false;
+		}
+
+		const std::wstring fullAccount = machine + L"\\" + user;
+		DWORD sidSize = 0, resolvedDomainSize = 0;
+		SID_NAME_USE use = SidTypeUnknown;
+		LookupAccountNameW(nullptr, fullAccount.c_str(), nullptr, &sidSize, nullptr, &resolvedDomainSize, &use);
+		if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || sidSize == 0
+			|| sidSize > SECURITY_MAX_SID_SIZE || resolvedDomainSize == 0 || resolvedDomainSize > 1024)
+		{
+			error = L"A conta Windows configurada no TurboRama n\u00E3o p\u00F4de ser resolvida pelo Windows.";
+			return false;
+		}
+		std::vector<unsigned char> sid(sidSize);
+		std::vector<wchar_t> resolvedDomain(resolvedDomainSize, L'\0');
+		if (!LookupAccountNameW(nullptr, fullAccount.c_str(), sid.data(), &sidSize,
+			resolvedDomain.data(), &resolvedDomainSize, &use) || use != SidTypeUser || !IsValidSid(sid.data())
+			|| _wcsicmp(resolvedDomain.data(), machine.c_str()) != 0)
+		{
+			error = L"A conta Windows configurada no TurboRama n\u00E3o \u00E9 um usu\u00E1rio local v\u00E1lido.";
+			return false;
+		}
+		account.user = user;
+		account.domain = machine;
+		account.sid = std::move(sid);
+		return true;
+	}
+
+	bool tokenMatchesKiosk(HANDLE token, const KioskAccount& account, std::wstring& error)
+	{
+		DWORD bytes = 0;
+		GetTokenInformation(token, TokenUser, nullptr, 0, &bytes);
+		if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || bytes == 0 || bytes > 64 * 1024)
+		{
+			error = L"O Windows n\u00E3o conseguiu confirmar o SID da conta Windows do TurboRama.";
+			return false;
+		}
+		std::vector<unsigned char> tokenUser(bytes);
+		if (!GetTokenInformation(token, TokenUser, tokenUser.data(), bytes, &bytes)
+			|| !EqualSid(reinterpret_cast<TOKEN_USER*>(tokenUser.data())->User.Sid,
+				const_cast<unsigned char*>(account.sid.data())))
+		{
+			error = L"A credencial informada n\u00E3o pertence \u00E0 conta Windows configurada no TurboRama.";
+			return false;
+		}
+		return true;
+	}
+
+	void clearKioskSessionOverrides()
+	{
+		// A conta Windows do TurboRama pode ter herdado variaveis usadas somente em
+		// laboratorios. A ativacao comercial sempre usa os caminhos e o runtime
+		// fechados do produto, nunca valores controlados pelo ambiente.
+		const wchar_t* names[] = {
+			L"TURBORAMA_PIX_BRIDGE_DIRECTORY",
+			L"TURBORAMA_PIX_PROVIDER",
+			L"TURBORAMA_PIX_ADAPTER_BASE_URL",
+			L"TURBORAMA_PIX_ADAPTER_PROVIDER_ID",
+			L"TURBORAMA_PIX_MANAGER_TOKEN",
+			L"TURBORAMA_PIX_NOMINATIM_BASE_URL",
+			L"DOTNET_STARTUP_HOOKS",
+			L"DOTNET_ADDITIONAL_DEPS",
+			L"DOTNET_SHARED_STORE",
+			L"DOTNET_HOST_PATH",
+			L"CORECLR_ENABLE_PROFILING",
+			L"CORECLR_PROFILER",
+			L"CORECLR_PROFILER_PATH",
+			L"CORECLR_PROFILER_PATH_32",
+			L"CORECLR_PROFILER_PATH_64",
+			L"COMPLUS_ProfAPI_ProfilerCompatibilitySetting"
+		};
+		for (const wchar_t* name : names) SetEnvironmentVariableW(name, nullptr);
+	}
+
+	bool currentProcessMatchesKiosk(const KioskAccount& account, std::wstring& error)
+	{
+		HANDLE token = nullptr;
+		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+		{
+			error = L"O Windows n\u00E3o conseguiu confirmar o usu\u00E1rio deste processo.";
+			return false;
+		}
+		const bool matches = tokenMatchesKiosk(token, account, error);
+		CloseHandle(token);
+		return matches;
+	}
+
+	bool currentProcessElevated()
+	{
+		HANDLE token = nullptr;
+		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+		TOKEN_ELEVATION elevation{};
+		DWORD bytes = 0;
+		const bool elevated = GetTokenInformation(token, TokenElevation, &elevation,
+			sizeof(elevation), &bytes) != FALSE && elevation.TokenIsElevated != 0;
+		CloseHandle(token);
+		return elevated;
+	}
+
+	bool launchElevatedEditor(std::wstring& error)
+	{
+		wchar_t module[32768]{};
+		const DWORD moduleLength = GetModuleFileNameW(nullptr, module, 32768);
+		if (moduleLength == 0 || moduleLength >= 32768 || !fileExists(module))
+		{
+			error = L"O executavel deste configurador nao pode ser localizado para autorizacao administrativa.";
+			return false;
+		}
+		const std::wstring workingDirectory = parentOf(module);
+		SHELLEXECUTEINFOW execution{};
+		execution.cbSize = sizeof(execution);
+		execution.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+		execution.lpVerb = L"runas";
+		execution.lpFile = module;
+		execution.lpDirectory = workingDirectory.c_str();
+		execution.nShow = SW_SHOWNORMAL;
+		if (!ShellExecuteExW(&execution))
+		{
+			const DWORD code = GetLastError();
+			error = code == ERROR_CANCELLED
+				? L"A autorizacao administrativa foi cancelada. Nenhum codigo foi enviado ao servidor."
+				: L"O Windows nao conseguiu autorizar o configurador no usuario Admin.";
+			const std::wstring detail = windowsErrorMessage(code);
+			if (code != ERROR_CANCELLED && !detail.empty()) error += L"\n\n" + detail;
+			return false;
+		}
+		if (execution.hProcess) CloseHandle(execution.hProcess);
+		return true;
+	}
+
 	bool resolveAgentCommand(const std::wstring& bridge, const std::wstring& mode, std::wstring& root,
 		std::wstring& executable, std::wstring& command, std::wstring& error)
 	{
@@ -432,11 +690,30 @@ namespace
 		}
 		if (fileExists(dotnet) && fileExists(assembly))
 		{
+			std::string trustError;
+			if (!PixBinaryTrust::verifyCommercialAgentBundle(join(root, L"pix-agent"), trustError)
+				|| !PixBinaryTrust::verifyTrustedRuntime(dotnet, trustError)
+				|| !PixBinaryTrust::verifyVendorBinary(assembly, trustError))
+			{
+				error = wideUtf8(trustError);
+				return false;
+			}
 			executable = dotnet;
 			command = L"\"" + dotnet + L"\" \"" + assembly + L"\" " + mode + L" --bridge \"" + bridge + L"\"";
 		}
+		else if (PixBinaryTrust::required())
+		{
+			error = L"O runtime privado assinado do agente PIX est\u00E1 ausente; o fallback global foi recusado.";
+			return false;
+		}
 		else if (fileExists(appHost))
 		{
+			std::string trustError;
+			if (!PixBinaryTrust::verifyVendorBinary(appHost, trustError))
+			{
+				error = wideUtf8(trustError);
+				return false;
+			}
 			executable = appHost;
 			command = L"\"" + appHost + L"\" " + mode + L" --bridge \"" + bridge + L"\"";
 		}
@@ -499,17 +776,50 @@ namespace
 
 		std::vector<wchar_t> mutableCommand(command.begin(), command.end());
 		mutableCommand.push_back(L'\0');
-		STARTUPINFOW startup{};
-		startup.cb = sizeof(startup);
-		startup.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
-		startup.wShowWindow = SW_HIDE;
-		startup.hStdInput = nullInput;
-		startup.hStdOutput = writePipe;
-		startup.hStdError = writePipe;
+		SIZE_T attributeBytes = 0;
+		InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeBytes);
+		std::vector<unsigned char> attributeStorage(attributeBytes);
+		auto attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributeStorage.data());
+		HANDLE inherited[] = { nullInput, writePipe };
+		const bool attributesReady = attributeBytes != 0
+			&& InitializeProcThreadAttributeList(attributes, 1, 0, &attributeBytes) != FALSE;
+		if (!attributesReady || !UpdateProcThreadAttribute(attributes, 0,
+			PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr))
+		{
+			if (attributesReady) DeleteProcThreadAttributeList(attributes);
+			CloseHandle(writePipe);
+			CloseHandle(readPipe);
+			CloseHandle(nullInput);
+			error = L"O Windows n\u00E3o conseguiu isolar os canais do agente PIX.";
+			return false;
+		}
+		STARTUPINFOEXW startup{};
+		startup.StartupInfo.cb = sizeof(startup);
+		startup.StartupInfo.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+		startup.StartupInfo.wShowWindow = SW_HIDE;
+		startup.StartupInfo.hStdInput = nullInput;
+		startup.StartupInfo.hStdOutput = writePipe;
+		startup.StartupInfo.hStdError = writePipe;
+		startup.lpAttributeList = attributes;
 		PROCESS_INFORMATION process{};
+		std::vector<wchar_t> environment;
+		std::string environmentError;
+		if (!PixBinaryTrust::buildSanitizedDotnetEnvironment(
+			join(root, L"pix-agent\\runtime"), {}, environment, environmentError))
+		{
+			DeleteProcThreadAttributeList(attributes);
+			CloseHandle(writePipe);
+			CloseHandle(readPipe);
+			CloseHandle(nullInput);
+			error = L"O Windows n\u00E3o conseguiu preparar o ambiente protegido do agente PIX.";
+			return false;
+		}
 		const BOOL created = CreateProcessW(executable.c_str(), mutableCommand.data(), nullptr, nullptr, TRUE,
-			CREATE_NO_WINDOW, nullptr, root.c_str(), &startup, &process);
+			CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
+			environment.data(), root.c_str(), &startup.StartupInfo, &process);
 		const DWORD creationError = created ? ERROR_SUCCESS : GetLastError();
+		SecureZeroMemory(environment.data(), environment.size() * sizeof(wchar_t));
+		DeleteProcThreadAttributeList(attributes);
 		CloseHandle(writePipe);
 		CloseHandle(nullInput);
 		if (!created)
@@ -562,7 +872,7 @@ namespace
 	bool mapKioskIdentityResult(const AgentCommandResult& result, std::wstring& error)
 	{
 		if (result.launched && result.exitConfirmed && !result.timedOut && result.exitCode == 0) return true;
-		error = L"Este programa s\u00F3 pode proteger a credencial no usu\u00E1rio autom\u00E1tico do quiosque configurado no Launcher.";
+		error = L"Este programa s\u00F3 pode proteger a credencial na conta Windows configurada no TurboRama.";
 		if (result.timedOut)
 			error += L" O teste de identidade ultrapassou o tempo de seguran\u00E7a e foi encerrado.";
 		appendAgentFailureDetail(error, result);
@@ -598,7 +908,7 @@ namespace
 			if (fileExists(join(bridge, kPublicKeyFile))) return true;
 			Sleep(200);
 		}
-		error = L"O agente PIX foi iniciado, mas n\u00E3o publicou a chave segura para este usu\u00E1rio do quiosque.";
+		error = L"O agente PIX foi iniciado, mas n\u00E3o publicou a chave segura para a conta Windows configurada no TurboRama.";
 		appendAgentFailureDetail(error, result);
 		return false;
 	}
@@ -659,6 +969,280 @@ namespace
 			return false;
 		}
 		return waitForCredentialAcceptance(bridge, requestId, error);
+	}
+
+	bool validOnlineIdentifier(const std::wstring& value)
+	{
+		if (value.size() < 6 || value.size() > 64) return false;
+		return std::all_of(value.begin(), value.end(), [](wchar_t character) {
+			return (character >= L'a' && character <= L'z') || (character >= L'A' && character <= L'Z')
+				|| (character >= L'0' && character <= L'9') || character == L'-' || character == L'_';
+		});
+	}
+
+	bool validActivationCode(const std::wstring& value)
+	{
+		if (value.size() < 16 || value.size() > 128) return false;
+		return std::all_of(value.begin(), value.end(), [](wchar_t character) {
+			return character >= 0x21 && character <= 0x7e;
+		});
+	}
+
+	std::string jsonString(const std::string& value)
+	{
+		std::string result = "\"";
+		for (const unsigned char character : value)
+		{
+			if (character == '"' || character == '\\') result.push_back('\\');
+			if (character >= 0x20) result.push_back(static_cast<char>(character));
+		}
+		result.push_back('"');
+		return result;
+	}
+
+	std::string extractJsonString(const std::string& json, const std::string& name)
+	{
+		const std::string marker = "\"" + name + "\"";
+		size_t position = json.find(marker);
+		if (position == std::string::npos) return {};
+		position = json.find(':', position + marker.size());
+		if (position == std::string::npos) return {};
+		position = json.find('"', position + 1);
+		if (position == std::string::npos) return {};
+		std::string result;
+		for (++position; position < json.size(); ++position)
+		{
+			if (json[position] == '"') return result;
+			if (json[position] == '\\' || static_cast<unsigned char>(json[position]) < 0x20) return {};
+			result.push_back(json[position]);
+		}
+		return {};
+	}
+
+	std::string onlineConfigurationJson(const std::wstring& license, const std::wstring& profile)
+	{
+		return "{\"schemaVersion\":1,\"baseUrl\":\"https://pix.lzgames.com.br/\",\"licenseId\":"
+			+ jsonString(utf8(license)) + ",\"protectionProfile\":" + jsonString(utf8(profile))
+			+ "}";
+	}
+
+	bool replaceAtomically(const std::wstring& destination, const std::string& text, std::wstring& error)
+	{
+		const std::wstring temporary = destination + L"." + std::to_wstring(GetCurrentProcessId()) + L".restore";
+		DeleteFileW(temporary.c_str());
+		if (!writeAll(temporary, text))
+		{
+			error = L"O Windows nao conseguiu gravar a restauracao temporaria.";
+			return false;
+		}
+		if (!MoveFileExW(temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+		{
+			DeleteFileW(temporary.c_str());
+			error = L"O Windows nao conseguiu restaurar o cadastro anterior.";
+			return false;
+		}
+		return true;
+	}
+
+	bool runAgentSecretCommand(const std::wstring& bridge, const std::wstring& mode,
+		const std::string& secret, DWORD timeoutMs, AgentCommandResult& result, std::wstring& error)
+	{
+		result = {};
+		std::wstring root, executable, command;
+		if (!resolveAgentCommand(bridge, mode, root, executable, command, error)) return false;
+		SECURITY_ATTRIBUTES security{ sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
+		HANDLE stdinRead = nullptr, stdinWrite = nullptr, stdoutRead = nullptr, stdoutWrite = nullptr;
+		auto closeOne = [](HANDLE& handle) { if (handle) CloseHandle(handle); handle = nullptr; };
+		auto closeAll = [&]() { closeOne(stdinRead); closeOne(stdinWrite); closeOne(stdoutRead); closeOne(stdoutWrite); };
+		if (!CreatePipe(&stdinRead, &stdinWrite, &security, 0)
+			|| !CreatePipe(&stdoutRead, &stdoutWrite, &security, 0)
+			|| !SetHandleInformation(stdinWrite, HANDLE_FLAG_INHERIT, 0)
+			|| !SetHandleInformation(stdoutRead, HANDLE_FLAG_INHERIT, 0))
+		{
+			closeAll();
+			error = L"O Windows nao conseguiu criar o canal protegido do codigo unico.";
+			return false;
+		}
+		SIZE_T bytes = 0;
+		InitializeProcThreadAttributeList(nullptr, 1, 0, &bytes);
+		std::vector<unsigned char> storage(bytes);
+		auto attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
+		HANDLE inherited[] = { stdinRead, stdoutWrite };
+		const bool initialized = bytes != 0
+			&& InitializeProcThreadAttributeList(attributes, 1, 0, &bytes) != FALSE;
+		if (!initialized || !UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+			inherited, sizeof(inherited), nullptr, nullptr))
+		{
+			if (initialized) DeleteProcThreadAttributeList(attributes);
+			closeAll();
+			error = L"O Windows nao conseguiu isolar o canal protegido do codigo unico.";
+			return false;
+		}
+		std::vector<wchar_t> mutableCommand(command.begin(), command.end());
+		mutableCommand.push_back(L'\0');
+		STARTUPINFOEXW startup{};
+		startup.StartupInfo.cb = sizeof(startup);
+		startup.StartupInfo.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+		startup.StartupInfo.wShowWindow = SW_HIDE;
+		startup.StartupInfo.hStdInput = stdinRead;
+		startup.StartupInfo.hStdOutput = stdoutWrite;
+		startup.StartupInfo.hStdError = stdoutWrite;
+		startup.lpAttributeList = attributes;
+		PROCESS_INFORMATION process{};
+		std::vector<wchar_t> environment;
+		std::string environmentError;
+		if (!PixBinaryTrust::buildSanitizedDotnetEnvironment(join(root, L"pix-agent\\runtime"),
+			{}, environment, environmentError))
+		{
+			DeleteProcThreadAttributeList(attributes);
+			closeAll();
+			error = L"O Windows nao conseguiu preparar o ambiente protegido do agente PIX.";
+			return false;
+		}
+		const BOOL created = CreateProcessW(executable.c_str(), mutableCommand.data(), nullptr, nullptr, TRUE,
+			CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
+			environment.data(), root.c_str(), &startup.StartupInfo, &process);
+		const DWORD creationError = created ? ERROR_SUCCESS : GetLastError();
+		SecureZeroMemory(environment.data(), environment.size() * sizeof(wchar_t));
+		DeleteProcThreadAttributeList(attributes);
+		closeOne(stdinRead);
+		closeOne(stdoutWrite);
+		if (!created)
+		{
+			closeOne(stdinWrite);
+			closeOne(stdoutRead);
+			error = L"Nao foi possivel iniciar o agente PIX";
+			const std::wstring detail = windowsErrorMessage(creationError);
+			if (!detail.empty()) error += L": " + detail;
+			return false;
+		}
+		result.launched = true;
+		CloseHandle(process.hThread);
+		std::string secretLine = secret + "\r\n";
+		DWORD written = 0;
+		const bool delivered = WriteFile(stdinWrite, secretLine.data(), static_cast<DWORD>(secretLine.size()),
+			&written, nullptr) != FALSE && written == secretLine.size();
+		SecureZeroMemory(secretLine.data(), secretLine.size());
+		closeOne(stdinWrite);
+		if (!delivered) TerminateProcess(process.hProcess, 24);
+		const ULONGLONG started = GetTickCount64();
+		for (;;)
+		{
+			drainAgentOutput(stdoutRead, result.output);
+			const DWORD wait = WaitForSingleObject(process.hProcess, 50);
+			if (wait == WAIT_OBJECT_0) { result.exitConfirmed = true; break; }
+			if (wait == WAIT_FAILED) break;
+			if (GetTickCount64() - started < timeoutMs) continue;
+			result.timedOut = true;
+			const bool terminated = TerminateProcess(process.hProcess, 25) != FALSE;
+			result.exitConfirmed = terminated && WaitForSingleObject(process.hProcess, 5000) == WAIT_OBJECT_0;
+			break;
+		}
+		drainAgentOutput(stdoutRead, result.output);
+		if (result.exitConfirmed) GetExitCodeProcess(process.hProcess, &result.exitCode);
+		CloseHandle(process.hProcess);
+		closeOne(stdoutRead);
+		if (!delivered)
+		{
+			error = L"O codigo unico nao foi entregue ao agente PIX.";
+			return false;
+		}
+		if (!result.exitConfirmed && !result.timedOut)
+		{
+			error = L"O Windows nao confirmou a saida do agente PIX.";
+			return false;
+		}
+		return true;
+	}
+
+	bool activateOnlineMachineLocal(const std::wstring& license, const std::wstring& profile,
+		std::string& activationCode, std::wstring& error, bool& indeterminate)
+	{
+		indeterminate = false;
+		const std::wstring bridge = bridgeDirectory();
+		AgentCommandResult identity;
+		if (!runAgentCommand(bridge, L"--check-kiosk-identity", kIdentityPreflightTimeoutMs, identity, error)
+			|| identity.timedOut || !identity.exitConfirmed || identity.exitCode != 0)
+		{
+			if (error.empty())
+				error = L"Abra este programa diretamente na conta Windows configurada no TurboRama. Neste gabinete a conta correta e Admin.";
+			appendAgentFailureDetail(error, identity);
+			return false;
+		}
+		if (!ensureDirectory(bridge))
+		{
+			error = L"Nao foi possivel acessar a pasta protegida do PIX.";
+			return false;
+		}
+		const std::wstring settingsPath = join(bridge, kOwnerSettingsFile);
+		const bool previousExisted = fileExists(settingsPath);
+		std::string previous;
+		if (previousExisted && !readAll(settingsPath, previous))
+		{
+			error = L"O cadastro PIX anterior nao pode ser lido com seguranca.";
+			return false;
+		}
+		const std::string configuration = onlineConfigurationJson(license, profile);
+		const std::wstring request = join(bridge,
+			L"online-activation-" + std::to_wstring(GetCurrentProcessId()) + L".json");
+		DeleteFileW(request.c_str());
+		if (!writeAll(request, configuration))
+		{
+			error = L"Nao foi possivel preparar o cadastro on-line temporario.";
+			return false;
+		}
+		AgentCommandResult configured;
+		const bool configureRan = runAgentCommand(bridge, L"--online-configure \"" + request + L"\"",
+			kAgentAdministrativeTimeoutMs, configured, error);
+		DeleteFileW(request.c_str());
+		if (!configureRan || configured.timedOut || !configured.exitConfirmed || configured.exitCode != 0)
+		{
+			if (error.empty())
+				error = configured.exitCode == 12
+					? L"Feche o EmulationStation e aguarde o servico PIX encerrar antes de ativar."
+					: L"O agente PIX recusou o cadastro on-line.";
+			appendAgentFailureDetail(error, configured);
+			return false;
+		}
+		AgentCommandResult activated;
+		const bool activationRan = runAgentSecretCommand(bridge, L"--online-activate", activationCode,
+			180000, activated, error);
+		SecureZeroMemory(activationCode.data(), activationCode.size());
+		activationCode.clear();
+		if (activationRan && !activated.timedOut && activated.exitConfirmed && activated.exitCode == 0)
+			return true;
+		const bool mayHaveCompleted = !activationRan || activated.timedOut || !activated.exitConfirmed
+			|| activated.exitCode == 25;
+		if (mayHaveCompleted)
+		{
+			indeterminate = true;
+			error = L"A resposta final nao foi confirmada. O cadastro foi preservado para conferencia no painel. Nao gere outro codigo ainda.";
+			appendAgentFailureDetail(error, activated);
+			return false;
+		}
+		std::wstring restoreError;
+		const bool restored = previousExisted
+			? replaceAtomically(settingsPath, previous, restoreError)
+			: (DeleteFileW(settingsPath.c_str()) != FALSE || GetLastError() == ERROR_FILE_NOT_FOUND);
+		error = L"O servidor recusou a ativacao desta maquina.";
+		appendAgentFailureDetail(error, activated);
+		if (!restored) error += L"\n\nATENCAO: " + restoreError;
+		return false;
+	}
+
+	bool activateOnlineMachine(const std::wstring& license, const std::wstring& profile,
+		std::string& activationCode, std::wstring& error, bool& indeterminate)
+	{
+		KioskAccount account;
+		if (!resolveAutomaticKioskAccount(account, error)) return false;
+		std::wstring identityError;
+		if (currentProcessMatchesKiosk(account, identityError))
+			return activateOnlineMachineLocal(license, profile, activationCode, error, indeterminate);
+		error = L"Este configurador precisa ser executado diretamente na conta Windows configurada no TurboRama: "
+			+ account.domain + L"\\" + account.user + L".\n\n"
+			L"Regra atual deste gabinete: use somente Admin nesta ativacao.";
+		if (!identityError.empty()) error += L"\n\nDetalhe: " + identityError;
+		return false;
 	}
 
 	HFONT makeFont(int height, int weight)
@@ -759,9 +1343,9 @@ namespace
 		RECT brand{ 134, 22, client.right - 270, 44 };
 		text(device, gBrandFont, kGreen, L"LZ GAMES  /  TURBORAMA", brand, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 		RECT titleArea{ 132, 45, client.right - 250, 86 };
-		text(device, gTitleFont, kText, L"Central segura de pagamento PIX", titleArea, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+		text(device, gTitleFont, kText, L"Reconhecer esta m\u00E1quina no PIX", titleArea, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 		RECT subtitle{ 134, 88, client.right - 40, 118 };
-		text(device, gFont, kMuted, L"Conecte sua conta Mercado Pago ao sistema de cr\u00E9ditos da m\u00E1quina.", subtitle,
+		text(device, gFont, kMuted, L"Use a licen\u00E7a permanente e o c\u00F3digo \u00FAnico criado no painel TurboRama.", subtitle,
 			DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 
 		RECT modeBadge{ client.right - 286, 26, client.right - 34, 58 };
@@ -775,48 +1359,49 @@ namespace
 		SelectObject(device, previousBrush);
 		DeleteObject(modeBrush);
 		RECT modeText{ modeBadge.left + 32, modeBadge.top, modeBadge.right - 10, modeBadge.bottom };
-		text(device, gSmallFont, RGB(147, 236, 230), L"CREDENCIAL DE PRODU\u00C7\u00C3O", modeText,
+		text(device, gSmallFont, RGB(147, 236, 230), L"ATIVA\u00C7\u00C3O ONLINE", modeText,
 			DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 
-		RECT tokenCard{ 32, 160, client.right - 32, 356 };
+		RECT tokenCard{ 32, 160, client.right - 32, 458 };
 		roundedBox(device, tokenCard, kCard, kBorder, 20);
-		RECT tokenAccent{ 32, 180, 37, 336 };
+		RECT tokenAccent{ 32, 180, 37, 438 };
 		verticalGradient(device, tokenAccent, kGreen, kCyan);
-		RECT stepBadge{ client.right - 176, 176, client.right - 52, 204 };
-		roundedBox(device, stepBadge, RGB(27, 34, 37), RGB(91, 80, 43), 14);
-		text(device, gSmallFont, kGold, L"ETAPA \u00DANICA", stepBadge, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
 
-		RECT tokenHint{ 52, 204, client.right - 200, 226 };
-		text(device, gSmallFont, kMuted, L"Cole o Access Token completo. Ele ser\u00E1 protegido antes de sair desta tela.", tokenHint,
+		RECT tokenHint{ 52, 422, client.right - 52, 448 };
+		text(device, gSmallFont, kMuted, L"Servidor fixo: https://pix.lzgames.com.br/  \u2022  Os pre\u00E7os atuais ser\u00E3o preservados.", tokenHint,
 			DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-		RECT inputFrame{ 52, 228, client.right - 52, 282 };
-		roundedBox(device, inputFrame, kEdit, RGB(62, 84, 99), 12, 2);
+		RECT licenseFrame{ 52, 210, client.right - 274, 254 };
+		roundedBox(device, licenseFrame, kEdit, RGB(62, 84, 99), 12, 2);
+		RECT profileFrame{ 52, 294, client.right - 52, 338 };
+		roundedBox(device, profileFrame, kEdit, RGB(62, 84, 99), 12, 2);
+		RECT codeFrame{ 52, 378, client.right - 410, 422 };
+		roundedBox(device, codeFrame, kEdit, RGB(62, 84, 99), 12, 2);
 
-		RECT securityCard{ 32, 372, client.right - 32, 530 };
+		RECT securityCard{ 32, 476, client.right - 32, 638 };
 		roundedBox(device, securityCard, RGB(12, 21, 29), kBorder, 20);
-		RECT shieldCircle{ 52, 390, 90, 428 };
+		RECT shieldCircle{ 52, 494, 90, 532 };
 		roundedBox(device, shieldCircle, RGB(20, 53, 40), RGB(77, 137, 87), 38, 2);
-		RECT shieldText{ 52, 390, 90, 428 };
+		RECT shieldText{ 52, 494, 90, 532 };
 		text(device, gButtonFont, kGreen, L"\u2713", shieldText, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
 
-		RECT statusLabel{ 56, 462, client.right - 56, 480 };
-		text(device, gSmallFont, RGB(111, 137, 153), L"STATUS DA CONEX\u00C3O", statusLabel,
+		RECT statusLabel{ 56, 570, client.right - 56, 588 };
+		text(device, gSmallFont, RGB(111, 137, 153), L"STATUS DO RECONHECIMENTO", statusLabel,
 			DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-		RECT statusStrip{ 52, 484, client.right - 52, 518 };
+		RECT statusStrip{ 52, 592, client.right - 52, 628 };
 		roundedBox(device, statusStrip, RGB(10, 17, 23), RGB(35, 49, 61), 12);
 		HBRUSH statusBrush = CreateSolidBrush(gStatusColor);
 		HGDIOBJ oldBrush = SelectObject(device, statusBrush);
 		HGDIOBJ oldPen = SelectObject(device, GetStockObject(NULL_PEN));
-		Ellipse(device, 66, 496, 76, 506);
+		Ellipse(device, 66, 605, 76, 615);
 		SelectObject(device, oldPen);
 		SelectObject(device, oldBrush);
 		DeleteObject(statusBrush);
 
-		RECT footerLine{ 32, 618, client.right - 32, 619 };
+		RECT footerLine{ 32, 724, client.right - 32, 725 };
 		fill(device, footerLine, RGB(26, 39, 49));
-		RECT footer{ 32, 624, client.right - 32, 648 };
+		RECT footer{ 32, 730, client.right - 32, 754 };
 		text(device, gSmallFont, RGB(103, 121, 134),
-			L"LZ GAMES  \u2022  CREDENCIAL PROTEGIDA PELO WINDOWS  \u2022  AMBIENTE COMERCIAL", footer,
+			L"C\u00D3DIGO \u00DANICO N\u00C3O GRAVADO  \u2022  EMULATIONSTATION N\u00C3O ALTERADO", footer,
 			DT_CENTER | DT_SINGLELINE | DT_VCENTER);
 	}
 
@@ -906,14 +1491,14 @@ namespace
 		return trim(value);
 	}
 
-	void pasteClipboard(HWND owner)
+	void pasteClipboard(HWND owner, HWND destination, const wchar_t* confirmation)
 	{
 		if (!OpenClipboard(owner)) { setStatus(L"N\u00E3o foi poss\u00EDvel abrir a \u00E1rea de transfer\u00EAncia."); return; }
 		HANDLE data = GetClipboardData(CF_UNICODETEXT);
 		if (data)
 		{
 			const wchar_t* text = static_cast<const wchar_t*>(GlobalLock(data));
-			if (text) { SetWindowTextW(gToken, trim(text).c_str()); GlobalUnlock(data); setStatus(L"Token colado. Confira e clique em CONECTAR CONTA AO PIX."); }
+			if (text) { SetWindowTextW(destination, trim(text).c_str()); GlobalUnlock(data); setStatus(confirmation); }
 		}
 		else setStatus(L"A \u00E1rea de transfer\u00EAncia n\u00E3o cont\u00E9m texto.");
 		CloseClipboard();
@@ -949,6 +1534,24 @@ namespace
 		SetWindowTextW(gToken, token.c_str()); setStatus(L"Token importado. Confira e clique em CONECTAR CONTA AO PIX.");
 	}
 
+	std::wstring selectedProfile()
+	{
+		return SendMessageW(gProfile, CB_GETCURSEL, 0, 0) == 1
+			? L"TPM_BOUND" : L"SOFTWARE_BOUND_ONLINE";
+	}
+
+	void loadExistingOnlineRegistration()
+	{
+		std::string settings;
+		if (!readAll(join(bridgeDirectory(), kOwnerSettingsFile), settings)) return;
+		const std::string license = extractJsonString(settings, "onlineLicenseId");
+		const std::string profile = extractJsonString(settings, "onlineProtectionProfile");
+		if (!license.empty()) SetWindowTextW(gLicense, wideUtf8(license).c_str());
+		SendMessageW(gProfile, CB_SETCURSEL, profile == "TPM_BOUND" ? 1 : 0, 0);
+		if (!license.empty() && license != "CONFIGURE-A-LICENCA")
+			setStatus(L"Cadastro on-line encontrado. O EmulationStation j\u00E1 pode ler esta identifica\u00E7\u00E3o.", kGreen);
+	}
+
 	LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		switch (message)
@@ -970,44 +1573,53 @@ namespace
 					x, y, width, height, window, (HMENU)(INT_PTR)id, GetModuleHandleW(nullptr), nullptr);
 				SendMessageW(handle, WM_SETFONT, (WPARAM)gFont, TRUE); return handle;
 			};
-			HWND tokenLabel = control(L"STATIC", L"ACCESS TOKEN DO MERCADO PAGO", SS_LEFT | SS_NOPREFIX,
-				52, 178, 520, 22, ID_TOKEN_LABEL);
-			SendMessageW(tokenLabel, WM_SETFONT, (WPARAM)gLabelFont, TRUE);
-			gToken = control(L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL | ES_PASSWORD,
-				64, 236, client.right - 128, 38, ID_TOKEN);
-			SendMessageW(gToken, EM_SETPASSWORDCHAR, (WPARAM)L'*', 0);
-			SendMessageW(gToken, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(14, 14));
-			const int buttonWidth = (client.right - 128) / 3;
-			HWND paste = control(L"BUTTON", L"COLAR TOKEN", WS_TABSTOP | BS_OWNERDRAW,
-				52, 294, buttonWidth, 42, ID_PASTE);
-			HWND import = control(L"BUTTON", L"IMPORTAR ARQUIVO", WS_TABSTOP | BS_OWNERDRAW,
-				64 + buttonWidth, 294, buttonWidth, 42, ID_IMPORT);
-			HWND showToken = control(L"BUTTON", L"EXIBIR TOKEN", WS_TABSTOP | BS_OWNERDRAW,
-				76 + buttonWidth * 2, 294, client.right - (128 + buttonWidth * 2), 42, ID_SHOW);
-			SendMessageW(paste, WM_SETFONT, (WPARAM)gButtonFont, TRUE);
-			SendMessageW(import, WM_SETFONT, (WPARAM)gButtonFont, TRUE);
-			SendMessageW(showToken, WM_SETFONT, (WPARAM)gButtonFont, TRUE);
+			HWND licenseLabel = control(L"STATIC", L"LICEN\u00C7A PERMANENTE (EX.: TR-...)", SS_LEFT | SS_NOPREFIX,
+				52, 178, client.right - 104, 22, ID_LICENSE_LABEL);
+			SendMessageW(licenseLabel, WM_SETFONT, (WPARAM)gLabelFont, TRUE);
+			gLicense = control(L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL,
+				64, 216, client.right - 350, 32, ID_LICENSE);
+			SendMessageW(gLicense, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(10, 10));
+			HWND profileLabel = control(L"STATIC", L"PROTE\u00C7\u00C3O DA M\u00C1QUINA", SS_LEFT | SS_NOPREFIX,
+				52, 262, client.right - 104, 22, ID_PROFILE_LABEL);
+			SendMessageW(profileLabel, WM_SETFONT, (WPARAM)gLabelFont, TRUE);
+			gProfile = control(L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+				64, 300, client.right - 128, 150, ID_PROFILE);
+			SendMessageW(gProfile, CB_ADDSTRING, 0, (LPARAM)L"SEM TPM - PROTE\u00C7\u00C3O ONLINE");
+			SendMessageW(gProfile, CB_ADDSTRING, 0, (LPARAM)L"TPM DESTA PLACA-M\u00C3E");
+			SendMessageW(gProfile, CB_SETCURSEL, 0, 0);
 
-			HWND securityTitle = control(L"STATIC", L"PROTE\u00C7\u00C3O DE CREDENCIAIS ATIVA", SS_LEFT | SS_NOPREFIX,
-				104, 388, client.right - 156, 26, ID_SECURITY_TITLE);
+			HWND codeLabel = control(L"STATIC", L"C\u00D3DIGO \u00DANICO DE ATIVA\u00C7\u00C3O", SS_LEFT | SS_NOPREFIX,
+				52, 346, client.right - 104, 22, ID_TOKEN_LABEL);
+			SendMessageW(codeLabel, WM_SETFONT, (WPARAM)gLabelFont, TRUE);
+			gToken = control(L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL | ES_PASSWORD,
+				64, 384, client.right - 486, 32, ID_TOKEN);
+			SendMessageW(gToken, EM_SETPASSWORDCHAR, (WPARAM)L'*', 0);
+			SendMessageW(gToken, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(10, 10));
+			HWND pasteCode = control(L"BUTTON", L"COLAR C\u00D3DIGO", WS_TABSTOP | BS_OWNERDRAW,
+				client.right - 396, 378, 174, 44, ID_PASTE);
+			HWND showCode = control(L"BUTTON", L"EXIBIR", WS_TABSTOP | BS_OWNERDRAW,
+				client.right - 208, 378, 156, 44, ID_SHOW);
+			HWND pasteLicenseVisible = control(L"BUTTON", L"COLAR LICEN\u00C7A", WS_TABSTOP | BS_OWNERDRAW,
+				client.right - 258, 210, 206, 44, ID_IMPORT);
+			for (HWND button : { pasteCode, showCode, pasteLicenseVisible })
+				SendMessageW(button, WM_SETFONT, (WPARAM)gButtonFont, TRUE);
+
+			HWND securityTitle = control(L"STATIC", L"RECONHECIMENTO SEGURO DA INSTALA\u00C7\u00C3O", SS_LEFT | SS_NOPREFIX,
+				104, 490, client.right - 156, 28, ID_SECURITY_TITLE);
 			SendMessageW(securityTitle, WM_SETFONT, (WPARAM)gSecurityTitleFont, TRUE);
 			control(L"STATIC",
-				L"Sem senha adicional: o token \u00E9 cifrado para esta m\u00E1quina e nunca \u00E9 salvo como texto comum.",
-				SS_LEFT | SS_NOPREFIX, 104, 418, client.right - 156, 24, ID_SECURITY_TEXT);
-			control(L"STATIC",
-				L"Destino seguro  \u2022  Servi\u00E7o PIX em D:\\emulationstation  \u2022  Confirma\u00E7\u00E3o autom\u00E1tica",
-				SS_LEFT | SS_NOPREFIX, 104, 440, client.right - 156, 22, ID_DESTINATION);
-			gStatus = control(L"STATIC", fileExists(join(bridgeDirectory(), kPublicKeyFile)) ?
-				L"Servi\u00E7o PIX pronto. Cole ou importe o Access Token de produ\u00E7\u00E3o." :
-				L"Aguardando o servi\u00E7o PIX preparar a conex\u00E3o segura.",
-				SS_LEFT | SS_NOPREFIX | SS_CENTERIMAGE, 82, 488, client.right - 164, 26, ID_STATUS);
-			HWND save = control(L"BUTTON", L"CONECTAR CONTA AO SERVI\u00C7O PIX", WS_TABSTOP | BS_OWNERDRAW,
-				32, 548, 600, 56, ID_SAVE);
+				L"A chave privada permanece nesta m\u00E1quina. O c\u00F3digo \u00FAnico \u00E9 usado uma vez e apagado da mem\u00F3ria.",
+				SS_LEFT | SS_NOPREFIX, 104, 522, client.right - 156, 42, ID_SECURITY_TEXT);
+			gStatus = control(L"STATIC", L"Informe a licen\u00E7a permanente e o c\u00F3digo \u00FAnico criado no painel.",
+				SS_LEFT | SS_NOPREFIX | SS_CENTERIMAGE | SS_ENDELLIPSIS, 82, 596, client.right - 164, 28, ID_STATUS);
+			gSave = control(L"BUTTON", L"RECONHECER E ATIVAR ESTA M\u00C1QUINA", WS_TABSTOP | BS_OWNERDRAW,
+				32, 654, client.right - 350, 56, ID_SAVE);
 			HWND close = control(L"BUTTON", L"FECHAR", WS_TABSTOP | BS_OWNERDRAW,
-				648, 548, client.right - 680, 56, ID_CLOSE);
-			SendMessageW(save, WM_SETFONT, (WPARAM)gButtonFont, TRUE);
+				client.right - 302, 654, 270, 56, ID_CLOSE);
+			SendMessageW(gSave, WM_SETFONT, (WPARAM)gButtonFont, TRUE);
 			SendMessageW(close, WM_SETFONT, (WPARAM)gButtonFont, TRUE);
-			SetFocus(gToken);
+			loadExistingOnlineRegistration();
+			SetFocus(gLicense);
 			return 0;
 		}
 		case WM_PAINT:
@@ -1026,8 +1638,12 @@ namespace
 		case WM_COMMAND:
 			switch (LOWORD(wParam))
 			{
-			case ID_PASTE: pasteClipboard(window); return 0;
-			case ID_IMPORT: importFile(window); return 0;
+			case ID_PASTE:
+				pasteClipboard(window, gToken, L"C\u00F3digo \u00FAnico colado. Ele ser\u00E1 apagado depois da tentativa.");
+				return 0;
+			case ID_IMPORT:
+				pasteClipboard(window, gLicense, L"Licen\u00E7a permanente colada. Confira antes de ativar.");
+				return 0;
 			case ID_SHOW:
 			{
 				gTokenVisible = !gTokenVisible;
@@ -1038,15 +1654,49 @@ namespace
 			}
 			case ID_SAVE:
 			{
-				std::wstring value = editText(gToken); std::string token = utf8(value); std::wstring error;
-				const bool accepted = submitTokenToAgent(bridgeDirectory(), token, error);
-				SecureZeroMemory(token.data(), token.size());
-				SecureZeroMemory(value.data(), value.size() * sizeof(wchar_t));
-				if (!accepted) { setStatus(error); MessageBoxW(window, error.c_str(), kTitle, MB_OK | MB_ICONERROR); return 0; }
+				std::wstring license = editText(gLicense);
+				std::wstring codeWide = editText(gToken);
+				if (!validOnlineIdentifier(license))
+				{
+					const std::wstring error = L"Informe a licen\u00E7a permanente exibida no painel (ex.: TR-...).";
+					setStatus(error); MessageBoxW(window, error.c_str(), kTitle, MB_OK | MB_ICONWARNING);
+					SetFocus(gLicense); return 0;
+				}
+				if (!validActivationCode(codeWide))
+				{
+					const std::wstring error = L"Informe o c\u00F3digo \u00FAnico de ativa\u00E7\u00E3o criado para esta licen\u00E7a.";
+					setStatus(error); MessageBoxW(window, error.c_str(), kTitle, MB_OK | MB_ICONWARNING);
+					SetFocus(gToken); return 0;
+				}
+
+				const std::wstring profile = selectedProfile();
+				std::string activationCode = utf8(codeWide);
+				if (!codeWide.empty()) SecureZeroMemory(codeWide.data(), codeWide.size() * sizeof(wchar_t));
+				codeWide.clear();
 				SetWindowTextW(gToken, L"");
-				setStatus(L"Access Token confirmado pelo agente PIX e protegido pelo Windows.");
+				EnableWindow(gSave, FALSE);
+				SetCursor(LoadCursorW(nullptr, IDC_WAIT));
+				setStatus(L"Conferindo a licen\u00E7a e registrando a identidade desta m\u00E1quina...", kGold);
+				std::wstring error;
+				bool indeterminate = false;
+				const bool accepted = activateOnlineMachine(license, profile, activationCode, error, indeterminate);
+				if (!activationCode.empty())
+				{
+					SecureZeroMemory(activationCode.data(), activationCode.size());
+					activationCode.clear();
+				}
+				EnableWindow(gSave, TRUE);
+				SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+				if (!accepted)
+				{
+					setStatus(error, indeterminate ? kGold : kDanger);
+					MessageBoxW(window, error.c_str(), kTitle,
+						MB_OK | (indeterminate ? MB_ICONWARNING : MB_ICONERROR));
+					return 0;
+				}
+				setStatus(L"M\u00E1quina reconhecida. O EmulationStation j\u00E1 pode usar este cadastro.", kGreen);
 				MessageBoxW(window,
-					L"Access Token confirmado pelo servi\u00E7o PIX.\n\nAgora o EmulationStation tentar\u00E1 validar a conta, a loja e o caixa automaticamente.",
+					L"Ativa\u00E7\u00E3o confirmada.\n\nAgora abra o EmulationStation normalmente. Ele ler\u00E1 o cadastro existente sem pedir novamente a licen\u00E7a ou o c\u00F3digo \u00FAnico.",
 					kTitle, MB_OK | MB_ICONINFORMATION);
 				return 0;
 			}
@@ -1060,16 +1710,24 @@ namespace
 			SetBkMode(device, TRANSPARENT);
 			switch (GetDlgCtrlID(control))
 			{
-			case ID_TOKEN_LABEL: SetTextColor(device, kGreen); break;
+			case ID_TOKEN_LABEL:
+			case ID_LICENSE_LABEL:
+			case ID_PROFILE_LABEL: SetTextColor(device, kGreen); break;
 			case ID_SECURITY_TITLE: SetTextColor(device, kText); break;
 			case ID_SECURITY_TEXT: SetTextColor(device, RGB(192, 204, 213)); break;
-			case ID_DESTINATION: SetTextColor(device, kMuted); break;
 			case ID_STATUS: SetTextColor(device, gStatusColor); break;
 			default: SetTextColor(device, kText); break;
 			}
 			return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
 		}
 		case WM_CTLCOLOREDIT:
+		{
+			HDC device = reinterpret_cast<HDC>(wParam);
+			SetTextColor(device, kText);
+			SetBkColor(device, kEdit);
+			return reinterpret_cast<LRESULT>(gEditBrush);
+		}
+		case WM_CTLCOLORLISTBOX:
 		{
 			HDC device = reinterpret_cast<HDC>(wParam);
 			SetTextColor(device, kText);
@@ -1097,50 +1755,21 @@ namespace
 
 	bool credentialProtocolSelfTest()
 	{
-		std::string token = "APP_USR-" + std::string(80, 'T');
-		std::string payload = token;
-		HCRYPTPROV provider = 0; HCRYPTKEY privateKey = 0; HCRYPTKEY publicKey = 0;
-		auto cleanup = [&]() {
-			if (publicKey) CryptDestroyKey(publicKey);
-			if (privateKey) CryptDestroyKey(privateKey);
-			if (provider) CryptReleaseContext(provider, 0);
-			SecureZeroMemory(token.data(), token.size());
-			SecureZeroMemory(payload.data(), payload.size());
-		};
-		std::wstring error;
-		if (!validToken(token, error)) { cleanup(); return false; }
-		if (!CryptAcquireContextW(&provider, nullptr, MS_ENH_RSA_AES_PROV_W, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) { cleanup(); return false; }
-		if (!CryptGenKey(provider, AT_KEYEXCHANGE, (4096u << 16) | CRYPT_EXPORTABLE, &privateKey)) { cleanup(); return false; }
-		DWORD infoSize = 0;
-		if (!CryptExportPublicKeyInfo(provider, AT_KEYEXCHANGE, X509_ASN_ENCODING, nullptr, &infoSize) || infoSize == 0) { cleanup(); return false; }
-		std::vector<BYTE> der(infoSize);
-		auto* information = reinterpret_cast<CERT_PUBLIC_KEY_INFO*>(der.data());
-		if (!CryptExportPublicKeyInfo(provider, AT_KEYEXCHANGE, X509_ASN_ENCODING, information, &infoSize)
-			|| sha256Fingerprint(der).size() != 64 || !CryptImportPublicKeyInfo(provider, X509_ASN_ENCODING, information, &publicKey))
-		{ cleanup(); return false; }
-		DWORD keyBits = 0, keyBitsSize = sizeof(keyBits);
-		if (!CryptGetKeyParam(publicKey, KP_KEYLEN, reinterpret_cast<BYTE*>(&keyBits), &keyBitsSize, 0)
-			|| keyBits != 4096 || payload.size() > keyBits / 8 - 42)
-		{ cleanup(); return false; }
-		std::vector<BYTE> encrypted(keyBits / 8);
-		std::memcpy(encrypted.data(), payload.data(), payload.size());
-		DWORD encryptedSize = (DWORD)payload.size();
-		const bool encryptedOk = CryptEncrypt(publicKey, 0, TRUE, CRYPT_OAEP, encrypted.data(), &encryptedSize, (DWORD)encrypted.size()) != FALSE;
-		if (encryptedOk) std::reverse(encrypted.begin(), encrypted.begin() + encryptedSize); // transporte para .NET: big-endian
-		const std::string transport = encryptedOk ? base64(encrypted.data(), encryptedSize) : std::string{};
-		std::vector<BYTE> returned;
-		const bool decodedOk = !transport.empty() && decodeBase64(transport, returned) && returned.size() == encryptedSize;
-		if (decodedOk) std::reverse(returned.begin(), returned.end()); // retorno CAPI: little-endian
-		DWORD decryptedSize = encryptedSize;
-		const bool decryptedOk = decodedOk && CryptDecrypt(privateKey, 0, TRUE, CRYPT_OAEP, returned.data(), &decryptedSize) != FALSE;
-		const bool payloadOk = decryptedOk && decryptedSize == payload.size()
-			&& std::memcmp(returned.data(), payload.data(), payload.size()) == 0;
-		SecureZeroMemory(encrypted.data(), encrypted.size());
-		if (!returned.empty()) SecureZeroMemory(returned.data(), returned.size());
-		const std::string schema = "{\"schemaVersion\":3,\"encryptedPayload\":\"teste\"}";
-		const bool schemaOk = schema.find("\"schemaVersion\":3") != std::string::npos && schema.find("encryptedPayload") != std::string::npos;
-		cleanup();
-		return payloadOk && schemaOk;
+		const std::wstring license = L"TR-SELFTEST-001";
+		std::wstring code = L"ACTIVATION-CODE-SELFTEST-001";
+		const std::string configuration = onlineConfigurationJson(
+			license, L"SOFTWARE_BOUND_ONLINE");
+		const bool valid = validOnlineIdentifier(license) && validActivationCode(code)
+			&& !validOnlineIdentifier(L"TR COM ESPACO")
+			&& !validActivationCode(L"curto")
+			&& configuration.find("\"schemaVersion\":1") != std::string::npos
+			&& configuration.find("\"baseUrl\":\"https://pix.lzgames.com.br/\"") != std::string::npos
+			&& configuration.find("\"licenseId\":\"TR-SELFTEST-001\"") != std::string::npos
+			&& configuration.find("\"protectionProfile\":\"SOFTWARE_BOUND_ONLINE\"") != std::string::npos
+			&& configuration.find("packagePricesCents") == std::string::npos
+			&& configuration.find(utf8(code)) == std::string::npos;
+		SecureZeroMemory(code.data(), code.size() * sizeof(wchar_t));
+		return valid;
 	}
 }
 
@@ -1154,7 +1783,31 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		const bool success = credentialProtocolSelfTest(); LocalFree(arguments);
 		return success ? 0 : 20;
 	}
+	if (arguments && argumentCount > 1)
+	{
+		LocalFree(arguments);
+		return 21;
+	}
 	if (arguments) LocalFree(arguments);
+
+	KioskAccount kioskAccount;
+	std::wstring identityError;
+	if (!resolveAutomaticKioskAccount(kioskAccount, identityError))
+	{
+		MessageBoxW(nullptr, identityError.c_str(), kTitle, MB_OK | MB_ICONERROR);
+		return 19;
+	}
+	const bool correctIdentity = currentProcessMatchesKiosk(kioskAccount, identityError);
+	if (!correctIdentity)
+	{
+		std::wstring message = L"Este configurador precisa ser aberto diretamente na conta Windows configurada no TurboRama: "
+			+ kioskAccount.domain + L"\\" + kioskAccount.user + L".\n\n"
+			L"Regra atual deste gabinete: use somente Admin nesta ativacao.";
+		if (!identityError.empty()) message += L"\n\nDetalhe: " + identityError;
+		MessageBoxW(nullptr, message.c_str(), kTitle, MB_OK | MB_ICONERROR);
+		return 19;
+	}
+	clearKioskSessionOverrides();
 	gApplicationIcon = reinterpret_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON,
 		64, 64, LR_DEFAULTCOLOR));
 	WNDCLASSEXW type{}; type.cbSize = sizeof(type); type.hInstance = instance; type.lpfnWndProc = windowProcedure;
@@ -1162,7 +1815,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	type.hIconSm = gApplicationIcon; type.hbrBackground = nullptr;
 	if (!RegisterClassExW(&type)) return 1;
 	HWND window = CreateWindowExW(0, kClassName, kTitle, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-		CW_USEDEFAULT, CW_USEDEFAULT, 980, 710, nullptr, nullptr, instance, nullptr);
+		CW_USEDEFAULT, CW_USEDEFAULT, 1000, 810, nullptr, nullptr, instance, nullptr);
 	if (!window) return 2;
 	RECT area{};
 	if (GetWindowRect(window, &area))

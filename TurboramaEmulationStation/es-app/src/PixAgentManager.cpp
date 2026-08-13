@@ -1,4 +1,5 @@
 #include "PixAgentManager.h"
+#include "PixBinaryTrust.h"
 
 #include "Log.h"
 #include "Paths.h"
@@ -12,6 +13,7 @@
 #include <iomanip>
 #include <limits>
 #include <sstream>
+#include <thread>
 #include <vector>
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
@@ -74,9 +76,90 @@ namespace
 
 	bool agentIsInstalled()
 	{
-		if (Utils::FileSystem::exists(privateDotnet()))
-			return Utils::FileSystem::exists(agentAssembly());
+		if (PixBinaryTrust::required())
+			return Utils::FileSystem::exists(privateDotnet())
+				&& Utils::FileSystem::exists(agentAssembly());
+		if (Utils::FileSystem::exists(privateDotnet())) return Utils::FileSystem::exists(agentAssembly());
 		return Utils::FileSystem::exists(agentAppHost());
+	}
+
+	bool agentTrustValid(std::string& error)
+	{
+		if (!agentIsInstalled())
+		{
+			error = "Agente PIX nao foi instalado.";
+			return false;
+		}
+#ifdef _WIN32
+		if (!PixBinaryTrust::verifyCommercialAgentBundle(
+			Utils::String::convertToWideString(agentDirectory()), error)) return false;
+		if (Utils::FileSystem::exists(privateDotnet()))
+		{
+			if (!PixBinaryTrust::verifyTrustedRuntime(
+				Utils::String::convertToWideString(privateDotnet()), error)) return false;
+			if (!PixBinaryTrust::verifyVendorBinary(
+				Utils::String::convertToWideString(agentAssembly()), error)) return false;
+
+			const std::string agentRoot = Utils::FileSystem::getParent(agentAssembly());
+			for (const std::string& vendorDependency : {
+				Utils::FileSystem::combine(agentRoot, "QRCoder.dll") })
+			{
+				if (!Utils::FileSystem::exists(vendorDependency)
+					|| !PixBinaryTrust::verifyVendorBinary(
+						Utils::String::convertToWideString(vendorDependency), error)) return false;
+			}
+			for (const std::string& microsoftDependency : {
+				Utils::FileSystem::combine(agentRoot, "Microsoft.Win32.SystemEvents.dll"),
+				Utils::FileSystem::combine(agentRoot, "System.Drawing.Common.dll") })
+			{
+				if (!Utils::FileSystem::exists(microsoftDependency)
+					|| !PixBinaryTrust::verifyTrustedRuntime(
+						Utils::String::convertToWideString(microsoftDependency), error)) return false;
+			}
+
+			auto onlyVersionDirectory = [&](const std::string& parent, std::string& selected) {
+				selected.clear();
+				if (!Utils::FileSystem::isDirectory(parent)) return false;
+				for (const std::string& entry : Utils::FileSystem::getDirContent(parent, false, true))
+				{
+					if (!Utils::FileSystem::isDirectory(entry)) continue;
+					if (!selected.empty()) return false;
+					selected = entry;
+				}
+				return !selected.empty();
+			};
+			const std::string runtimeRoot = Utils::FileSystem::combine(agentRoot, "runtime");
+			std::string fxrVersion;
+			std::string sharedVersion;
+			if (!onlyVersionDirectory(Utils::FileSystem::combine(runtimeRoot, "host/fxr"), fxrVersion)
+				|| !onlyVersionDirectory(Utils::FileSystem::combine(runtimeRoot,
+					"shared/Microsoft.NETCore.App"), sharedVersion))
+			{
+				error = "Runtime PIX recusado: versao privada ausente ou ambigua.";
+				return false;
+			}
+			for (const std::string& runtimeBinary : {
+				Utils::FileSystem::combine(fxrVersion, "hostfxr.dll"),
+				Utils::FileSystem::combine(sharedVersion, "hostpolicy.dll"),
+				Utils::FileSystem::combine(sharedVersion, "coreclr.dll"),
+				Utils::FileSystem::combine(sharedVersion, "clrjit.dll"),
+				Utils::FileSystem::combine(sharedVersion, "System.Private.CoreLib.dll") })
+			{
+				if (!Utils::FileSystem::exists(runtimeBinary)
+					|| !PixBinaryTrust::verifyTrustedRuntime(
+						Utils::String::convertToWideString(runtimeBinary), error)) return false;
+			}
+			return true;
+		}
+		if (PixBinaryTrust::required())
+		{
+			error = "Runtime privado PIX obrigatorio ausente; o fallback global foi recusado.";
+			return false;
+		}
+		return PixBinaryTrust::verifyVendorBinary(Utils::String::convertToWideString(agentAppHost()), error);
+#else
+		return !PixBinaryTrust::required();
+#endif
 	}
 
 	std::string jsonString(const rapidjson::Value& object, const char* name, const std::string& fallback = {})
@@ -95,25 +178,6 @@ namespace
 	{
 		if (!object.IsObject() || !object.HasMember(name) || !object[name].IsInt64()) return fallback;
 		return object[name].GetInt64();
-	}
-
-	std::string base64Encode(const unsigned char* data, size_t size)
-	{
-		static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-		std::string output;
-		output.reserve(((size + 2) / 3) * 4);
-		for (size_t i = 0; i < size; i += 3)
-		{
-			const unsigned int first = data[i];
-			const unsigned int second = i + 1 < size ? data[i + 1] : 0;
-			const unsigned int third = i + 2 < size ? data[i + 2] : 0;
-			const unsigned int value = (first << 16) | (second << 8) | third;
-			output.push_back(alphabet[(value >> 18) & 63]);
-			output.push_back(alphabet[(value >> 12) & 63]);
-			output.push_back(i + 1 < size ? alphabet[(value >> 6) & 63] : '=');
-			output.push_back(i + 2 < size ? alphabet[value & 63] : '=');
-		}
-		return output;
 	}
 
 	bool writeAtomically(const std::string& destination, const std::string& contents, std::string& error)
@@ -240,6 +304,7 @@ namespace
 	// Primeira inicializacao pode criar chaves/ACLs sob HDD e antivirus lentos.
 	// O PID continua retido e autenticado durante toda a espera.
 	const DWORD agentIdentityStartupTimeoutMs = 90000;
+	const DWORD onlineActivationReconciliationTimeoutMs = 30000;
 	const wchar_t* managerTokenEnvironment = L"TURBORAMA_PIX_MANAGER_TOKEN";
 	const wchar_t* daemonSingletonMutex = L"Local\\TurboRamaPixAgent-Daemon-v1";
 	DWORD expectedDaemonPid = 0;
@@ -370,29 +435,161 @@ namespace
 
 	bool buildDaemonEnvironment(const std::string& token, std::vector<wchar_t>& environment)
 	{
-		environment.clear();
-		LPWCH inherited = GetEnvironmentStringsW();
-		if (inherited == nullptr) return false;
-		const std::wstring prefix = std::wstring(managerTokenEnvironment) + L"=";
-		std::vector<std::wstring> entries;
-		for (const wchar_t* current = inherited; *current != L'\0'; current += wcslen(current) + 1)
+		std::string ignoredError;
+		return PixBinaryTrust::buildSanitizedDotnetEnvironment(
+			Utils::String::convertToWideString(Utils::FileSystem::combine(agentDirectory(), "runtime")),
+			{ { managerTokenEnvironment, Utils::String::convertToWideString(token) } },
+			environment, ignoredError);
+	}
+
+	std::string safeAgentOutput(const std::string& output)
+	{
+		std::string last;
+		std::istringstream lines(output);
+		for (std::string line; std::getline(lines, line); )
 		{
-			const size_t length = wcslen(current);
-			if (length >= prefix.size() && _wcsnicmp(current, prefix.c_str(), prefix.size()) == 0)
-				continue;
-			entries.emplace_back(current, length);
+			line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+			while (!line.empty() && std::isspace((unsigned char)line.front())) line.erase(line.begin());
+			while (!line.empty() && std::isspace((unsigned char)line.back())) line.pop_back();
+			if (!line.empty() && line.rfind("Digite o codigo", 0) != 0) last = line;
 		}
-		FreeEnvironmentStringsW(inherited);
-		entries.push_back(prefix + Utils::String::convertToWideString(token));
-		std::sort(entries.begin(), entries.end(), [](const std::wstring& left, const std::wstring& right) {
-			return _wcsicmp(left.c_str(), right.c_str()) < 0;
+		if (last.size() > 1024) last.resize(1024);
+		return last;
+	}
+
+	bool runOnlineActivationProcess(const std::string& activationCode, bool& processStarted,
+		DWORD& exitCode, std::string& output, std::string& error)
+	{
+		processStarted = false;
+		exitCode = STILL_ACTIVE;
+		output.clear();
+		std::string trustError;
+		if (!agentTrustValid(trustError)) { error = trustError; return false; }
+
+		SECURITY_ATTRIBUTES attributes{ sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
+		HANDLE stdinRead = nullptr, stdinWrite = nullptr, stdoutRead = nullptr, stdoutWrite = nullptr;
+		auto closeOne = [](HANDLE& handle) { if (handle != nullptr) CloseHandle(handle); handle = nullptr; };
+		auto closePipes = [&]() { closeOne(stdinRead); closeOne(stdinWrite); closeOne(stdoutRead); closeOne(stdoutWrite); };
+		if (!CreatePipe(&stdinRead, &stdinWrite, &attributes, 0)
+			|| !CreatePipe(&stdoutRead, &stdoutWrite, &attributes, 0)
+			|| !SetHandleInformation(stdinWrite, HANDLE_FLAG_INHERIT, 0)
+			|| !SetHandleInformation(stdoutRead, HANDLE_FLAG_INHERIT, 0))
+		{
+			closePipes();
+			error = "O Windows nao conseguiu criar o canal protegido de ativacao.";
+			return false;
+		}
+
+		SIZE_T attributeBytes = 0;
+		InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeBytes);
+		std::vector<unsigned char> attributeStorage(attributeBytes);
+		auto attributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributeStorage.data());
+		HANDLE inheritedHandles[] = { stdinRead, stdoutWrite };
+		const bool attributeListInitialized = attributeBytes != 0
+			&& InitializeProcThreadAttributeList(attributeList, 1, 0, &attributeBytes) != FALSE;
+		if (!attributeListInitialized
+			|| !UpdateProcThreadAttribute(attributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+				inheritedHandles, sizeof(inheritedHandles), nullptr, nullptr))
+		{
+			if (attributeListInitialized) DeleteProcThreadAttributeList(attributeList);
+			closePipes();
+			error = "O Windows nao conseguiu isolar os handles da ativacao PIX.";
+			return false;
+		}
+
+		const std::wstring executable = Utils::String::convertToWideString(PixAgentManager::agentExecutable());
+		std::wstring command = L"\"" + executable + L"\"";
+		if (Utils::FileSystem::exists(privateDotnet()))
+			command += L" \"" + Utils::String::convertToWideString(agentAssembly()) + L"\"";
+		command += L" --online-activate --bridge \""
+			+ Utils::String::convertToWideString(PixAgentManager::bridgeDirectory()) + L"\"";
+		std::vector<wchar_t> mutableCommand(command.begin(), command.end());
+		mutableCommand.push_back(L'\0');
+		std::vector<wchar_t> environment;
+		std::string environmentError;
+		if (!PixBinaryTrust::buildSanitizedDotnetEnvironment(
+			Utils::String::convertToWideString(Utils::FileSystem::combine(agentDirectory(), "runtime")),
+			{}, environment, environmentError))
+		{
+			DeleteProcThreadAttributeList(attributeList);
+			closePipes();
+			error = "O Windows nao conseguiu preparar o ambiente protegido da ativacao PIX.";
+			return false;
+		}
+
+		STARTUPINFOEXW startup{};
+		startup.StartupInfo.cb = sizeof(startup);
+		startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+		startup.StartupInfo.hStdInput = stdinRead;
+		startup.StartupInfo.hStdOutput = stdoutWrite;
+		startup.StartupInfo.hStdError = stdoutWrite;
+		startup.StartupInfo.wShowWindow = SW_HIDE;
+		startup.lpAttributeList = attributeList;
+		PROCESS_INFORMATION process{};
+		const std::wstring working = Utils::String::convertToWideString(agentDirectory());
+		const BOOL created = CreateProcessW(executable.c_str(), mutableCommand.data(), nullptr, nullptr, TRUE,
+			CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
+			environment.data(), working.c_str(), &startup.StartupInfo, &process);
+		const DWORD createError = created ? ERROR_SUCCESS : GetLastError();
+		SecureZeroMemory(environment.data(), environment.size() * sizeof(wchar_t));
+		DeleteProcThreadAttributeList(attributeList);
+		closeOne(stdinRead);
+		closeOne(stdoutWrite);
+		if (!created)
+		{
+			closeOne(stdinWrite);
+			closeOne(stdoutRead);
+			error = "Nao foi possivel iniciar a ativacao PIX (Windows " + std::to_string(createError) + ").";
+			return false;
+		}
+		processStarted = true;
+
+		std::thread reader([&]() {
+			char buffer[4096];
+			DWORD received = 0;
+			while (ReadFile(stdoutRead, buffer, sizeof(buffer), &received, nullptr) && received != 0)
+			{
+				const size_t available = output.size() < 65536 ? 65536 - output.size() : 0;
+				output.append(buffer, buffer + std::min<size_t>(available, received));
+			}
 		});
-		for (const auto& entry : entries)
+
+		std::string secretLine = activationCode + "\r\n";
+		DWORD written = 0;
+		const bool inputDelivered = WriteFile(stdinWrite, secretLine.data(), (DWORD)secretLine.size(), &written, nullptr) != FALSE
+			&& written == secretLine.size();
+		SecureZeroMemory(secretLine.data(), secretLine.size());
+		closeOne(stdinWrite);
+		if (!inputDelivered) TerminateProcess(process.hProcess, 24);
+
+		DWORD wait = WaitForSingleObject(process.hProcess, 180000);
+		if (wait != WAIT_OBJECT_0)
 		{
-			environment.insert(environment.end(), entry.begin(), entry.end());
-			environment.push_back(L'\0');
+			TerminateProcess(process.hProcess, 24);
+			wait = WaitForSingleObject(process.hProcess, 5000);
 		}
-		environment.push_back(L'\0');
+		const bool exitConfirmed = wait == WAIT_OBJECT_0
+			&& GetExitCodeProcess(process.hProcess, &exitCode) != FALSE;
+		if (!exitConfirmed)
+		{
+			CancelSynchronousIo(reader.native_handle());
+			closeOne(stdoutRead);
+		}
+		closeOne(process.hThread);
+		closeOne(process.hProcess);
+		reader.join();
+		closeOne(stdoutRead);
+
+		if (!inputDelivered)
+		{
+			error = "O codigo nao foi entregue ao agente PIX; a ativacao foi cancelada.";
+			return false;
+		}
+		if (!exitConfirmed)
+		{
+			error = "A ativacao ultrapassou o prazo e o encerramento do agente nao foi confirmado.";
+			return false;
+		}
 		return true;
 	}
 
@@ -591,6 +788,24 @@ namespace
 		return DaemonLookupResult::Unknown;
 	}
 
+	bool waitForOnlineAgentReady(DWORD timeoutMs)
+	{
+		const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+		while (GetTickCount64() < deadline)
+		{
+			AgentStatus status;
+			if (lookupDaemon(status) == DaemonLookupResult::Found)
+			{
+				const long long now = (long long)std::time(nullptr);
+				if (status.ready && status.state == "online"
+					&& status.updatedAt >= now - 30 && status.updatedAt <= now + 120)
+					return true;
+			}
+			Sleep(100);
+		}
+		return false;
+	}
+
 	long long processAgeSeconds(ULONGLONG creationFileTime)
 	{
 		FILETIME nowFile{};
@@ -611,6 +826,7 @@ std::string PixAgentManager::bridgeDirectory()
 std::string PixAgentManager::agentExecutable()
 {
 #ifdef _WIN32
+	if (PixBinaryTrust::required()) return privateDotnet();
 	return Utils::FileSystem::exists(privateDotnet()) ? privateDotnet() : agentAppHost();
 #else
 	return {};
@@ -627,7 +843,10 @@ PixOwnerSettings PixAgentManager::loadOwnerSettings()
 		rapidjson::Document document;
 		if (document.Parse(text.c_str()).HasParseError() || !document.IsObject()) return settings;
 		settings.enabled = jsonBool(document, "enabled");
+		settings.setupState = jsonString(document, "setupState", settings.setupState);
 		settings.provider = jsonString(document, "provider", settings.provider);
+		settings.mercadoPagoEnvironment = jsonString(document, "mercadoPagoEnvironment",
+			settings.mercadoPagoEnvironment);
 		settings.accountId = jsonString(document, "accountId");
 		settings.storeExternalId = jsonString(document, "storeExternalId", settings.storeExternalId);
 		settings.storeName = jsonString(document, "storeName", settings.storeName);
@@ -638,6 +857,17 @@ PixOwnerSettings PixAgentManager::loadOwnerSettings()
 		settings.reference = jsonString(document, "reference", settings.reference);
 		settings.adapterBaseUrl = jsonString(document, "adapterBaseUrl", settings.adapterBaseUrl);
 		settings.adapterProviderId = jsonString(document, "adapterProviderId", settings.adapterProviderId);
+		settings.onlineLicensingEnabled = jsonBool(document, "onlineLicensingEnabled",
+			settings.onlineLicensingEnabled);
+		settings.onlineBaseUrl = jsonString(document, "onlineBaseUrl", settings.onlineBaseUrl);
+		settings.onlineLicenseId = jsonString(document, "onlineLicenseId", settings.onlineLicenseId);
+		settings.onlineProtectionProfile = jsonString(document, "onlineProtectionProfile",
+			settings.onlineProtectionProfile);
+		settings.pixEnabled = jsonBool(document, "pixEnabled", settings.pixEnabled);
+		settings.onlineConfigurationVersion = jsonLong(document, "onlineConfigurationVersion",
+			settings.onlineConfigurationVersion);
+		settings.onlineConfigurationPending = jsonBool(document, "onlineConfigurationPending",
+			settings.onlineConfigurationPending);
 		if (document.HasMember("packagePricesCents") && document["packagePricesCents"].IsObject())
 		{
 			for (const int minutes : { 15, 30, 45, 60, 120 })
@@ -647,6 +877,24 @@ PixOwnerSettings PixAgentManager::loadOwnerSettings()
 					settings.pricesCents[minutes] = document["packagePricesCents"][key.c_str()].GetInt64();
 			}
 		}
+		std::string normalizedProvider = settings.provider;
+		std::transform(normalizedProvider.begin(), normalizedProvider.end(), normalizedProvider.begin(),
+			[](unsigned char ch) { return (char)std::tolower(ch); });
+		if (normalizedProvider == "online")
+		{
+			// Migracao da versao que confundia licenca com provedor PIX.
+			// Preserva o cadastro local se estiver completo; caso contrario,
+			// mantem a licenca e pede apenas a configuracao local do pagamento.
+			settings.provider = "mercadopago";
+			settings.onlineLicensingEnabled = true;
+			settings.onlineConfigurationPending = false;
+			std::string cep;
+			for (unsigned char ch : settings.postalCode) if (std::isdigit(ch)) cep.push_back((char)ch);
+			const bool completePayment = !settings.accountId.empty()
+				&& !settings.posExternalId.empty() && cep.size() == 8
+				&& !settings.streetNumber.empty();
+			if (!completePayment) { settings.enabled = false; settings.setupState = "pending"; }
+		}
 	}
 	catch (...) { return PixOwnerSettings{}; }
 	return settings;
@@ -654,6 +902,27 @@ PixOwnerSettings PixAgentManager::loadOwnerSettings()
 
 bool PixAgentManager::validateOwnerSettings(const PixOwnerSettings& settings, std::string& error)
 {
+	if (settings.onlineLicensingEnabled)
+	{
+		std::string lowerUrl = settings.onlineBaseUrl;
+		std::transform(lowerUrl.begin(), lowerUrl.end(), lowerUrl.begin(), [](unsigned char ch) {
+			return (char)std::tolower(ch);
+		});
+		const bool validLicense = settings.onlineLicenseId.size() >= 6 && settings.onlineLicenseId.size() <= 64
+			&& std::all_of(settings.onlineLicenseId.begin(), settings.onlineLicenseId.end(), [](unsigned char ch) {
+				return std::isalnum(ch) != 0 || ch == '-' || ch == '_';
+			});
+		if (lowerUrl.rfind("https://", 0) != 0 || !validAdapterBaseUrl(settings.onlineBaseUrl))
+			error = "O servidor de licenca TurboRama deve usar um endereco HTTPS valido.";
+		else if (!validLicense || settings.onlineLicenseId == "CONFIGURE-A-LICENCA")
+			error = "A licenca TurboRama Online ainda nao foi configurada.";
+		else if (settings.onlineProtectionProfile != "TPM_BOUND"
+			&& settings.onlineProtectionProfile != "SOFTWARE_BOUND_ONLINE"
+			&& settings.onlineProtectionProfile != "USB_TOKEN_BOUND")
+			error = "O perfil de protecao TurboRama Online e invalido.";
+		if (!error.empty()) return false;
+	}
+	if (!settings.enabled) return true;
 	for (const int minutes : { 15, 30, 45, 60, 120 })
 	{
 		auto found = settings.pricesCents.find(minutes);
@@ -665,6 +934,11 @@ bool PixAgentManager::validateOwnerSettings(const PixOwnerSettings& settings, st
 	}
 	std::string provider = settings.provider;
 	std::transform(provider.begin(), provider.end(), provider.begin(), [](unsigned char ch) { return (char)std::tolower(ch); });
+	std::string setupState = settings.setupState;
+	std::transform(setupState.begin(), setupState.end(), setupState.begin(), [](unsigned char ch) { return (char)std::tolower(ch); });
+	std::string mercadoPagoEnvironment = settings.mercadoPagoEnvironment;
+	std::transform(mercadoPagoEnvironment.begin(), mercadoPagoEnvironment.end(), mercadoPagoEnvironment.begin(),
+		[](unsigned char ch) { return (char)std::tolower(ch); });
 	if (provider != "mercadopago" && provider != "adapter")
 		error = "Selecione Mercado Pago ou Adaptador bancario.";
 	else if (provider == "adapter")
@@ -678,8 +952,14 @@ bool PixAgentManager::validateOwnerSettings(const PixOwnerSettings& settings, st
 			error = "O adaptador deve usar HTTPS ou HTTP local neste computador.";
 		return error.empty();
 	}
-	else if (settings.accountId.size() < 5 || settings.accountId.size() > 24
-		|| !std::all_of(settings.accountId.begin(), settings.accountId.end(), [](unsigned char ch) { return std::isdigit(ch) != 0; }))
+	else if (setupState != "pending" && setupState != "ready" && setupState != "needs_address_confirmation")
+		error = "O estado do cadastro Mercado Pago e invalido.";
+	else if (mercadoPagoEnvironment != "production" && mercadoPagoEnvironment != "sandbox")
+		error = "O ambiente Mercado Pago deve ser producao ou sandbox.";
+	else if ((setupState == "ready" || !settings.accountId.empty())
+		&& (settings.accountId.size() < 5 || settings.accountId.size() > 24
+			|| !std::all_of(settings.accountId.begin(), settings.accountId.end(),
+				[](unsigned char ch) { return std::isdigit(ch) != 0; })))
 		error = "Informe o User ID numerico da conta Mercado Pago.";
 	else if (!onlyLettersAndNumbers(settings.storeExternalId, 60))
 		error = "O identificador da loja deve ter somente letras e numeros.";
@@ -703,6 +983,10 @@ bool PixAgentManager::validateOwnerSettings(const PixOwnerSettings& settings, st
 bool PixAgentManager::runSelfTest(std::string& error)
 {
 	PixOwnerSettings base;
+	// O teste precisa atravessar a validacao completa do provedor. Com o PIX
+	// desativado, validateOwnerSettings encerra corretamente antes de avaliar
+	// campos que nao serao usados, o que tornava este teste de URL ineficaz.
+	base.enabled = true;
 	base.provider = "adapter";
 	base.adapterProviderId = "banco-teste";
 	auto accepted = [&](const std::string& url) {
@@ -732,6 +1016,36 @@ bool PixAgentManager::runSelfTest(std::string& error)
 			return false;
 		}
 	}
+	PixOwnerSettings pending;
+	pending.enabled = true;
+	pending.provider = "mercadopago";
+	pending.setupState = "pending";
+	pending.mercadoPagoEnvironment = "sandbox";
+	pending.accountId.clear();
+	pending.postalCode = "57084648";
+	pending.streetNumber = "52";
+	std::string settingsError;
+	if (!validateOwnerSettings(pending, settingsError))
+	{
+		error = "Cadastro Mercado Pago pendente valido foi recusado: " + settingsError;
+		return false;
+	}
+	PixOwnerSettings invalidEnvironment = pending;
+	invalidEnvironment.mercadoPagoEnvironment = "unknown";
+	settingsError.clear();
+	if (validateOwnerSettings(invalidEnvironment, settingsError))
+	{
+		error = "Ambiente Mercado Pago desconhecido foi aceito.";
+		return false;
+	}
+	PixOwnerSettings readyWithoutAccount = pending;
+	readyWithoutAccount.setupState = "ready";
+	settingsError.clear();
+	if (validateOwnerSettings(readyWithoutAccount, settingsError))
+	{
+		error = "Cadastro Mercado Pago pronto sem User ID foi aceito.";
+		return false;
+	}
 #ifdef _WIN32
 	std::string token;
 	struct TokenClearGuard
@@ -749,6 +1063,40 @@ bool PixAgentManager::runSelfTest(std::string& error)
 		|| sha256Hex(token).size() != 64)
 	{
 		error = "Nao foi possivel gerar a identidade criptografica do daemon.";
+		return false;
+	}
+	std::vector<wchar_t> safeEnvironment;
+	if (!buildDaemonEnvironment(token, safeEnvironment) || safeEnvironment.size() < 2)
+	{
+		error = "Nao foi possivel criar o ambiente isolado do runtime PIX.";
+		return false;
+	}
+	bool managerTokenFound = false;
+	bool diagnosticsDisabled = false;
+	for (const wchar_t* current = safeEnvironment.data(); *current != L'\0'; current += wcslen(current) + 1)
+	{
+		std::wstring entry(current);
+		std::wstring upper = entry;
+		std::transform(upper.begin(), upper.end(), upper.begin(), ::towupper);
+		if (upper.rfind(L"TURBORAMA_PIX_MANAGER_TOKEN=", 0) == 0)
+			managerTokenFound = entry.substr(entry.find(L'=') + 1)
+				== Utils::String::convertToWideString(token);
+		if (upper == L"DOTNET_ENABLEDIAGNOSTICS=0") diagnosticsDisabled = true;
+		for (const wchar_t* forbidden : { L"DOTNET_STARTUP_HOOKS=", L"DOTNET_ADDITIONAL_DEPS=",
+			L"DOTNET_SHARED_STORE=", L"CORECLR_ENABLE_PROFILING=", L"COR_ENABLE_PROFILING=" })
+		{
+			if (upper.rfind(forbidden, 0) == 0)
+			{
+				SecureZeroMemory(safeEnvironment.data(), safeEnvironment.size() * sizeof(wchar_t));
+				error = "O ambiente isolado preservou uma variavel de injecao .NET.";
+				return false;
+			}
+		}
+	}
+	SecureZeroMemory(safeEnvironment.data(), safeEnvironment.size() * sizeof(wchar_t));
+	if (!managerTokenFound || !diagnosticsDisabled)
+	{
+		error = "O ambiente isolado nao fixou a identidade ou o bloqueio de diagnostico do agente.";
 		return false;
 	}
 	HANDLE current = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
@@ -773,46 +1121,20 @@ bool PixAgentManager::runSelfTest(std::string& error)
 #endif
 }
 
+bool PixAgentManager::runTrustSelfTest(std::string& error)
+{
+	return agentTrustValid(error);
+}
+
 bool PixAgentManager::hasProtectedToken()
 {
 	const std::string token = Utils::FileSystem::readAllText(secretFile());
 	return token.size() >= 40 && token.size() <= 4096;
 }
 
-bool PixAgentManager::protectAndSaveToken(const std::string& token, std::string& error)
-{
-#ifdef _WIN32
-	if (token.size() < 40 || token.size() > 512 || token.rfind("APP_USR-", 0) != 0
-		|| std::any_of(token.begin(), token.end(), [](unsigned char ch) { return std::isspace(ch) != 0; }))
-	{
-		error = "Access Token invalido. Use o token completo iniciado por APP_USR-.";
-		return false;
-	}
-	const std::string entropyText = "TurboRamaPixAgent-v1";
-	DATA_BLOB input{ (DWORD)token.size(), (BYTE*)token.data() };
-	DATA_BLOB entropy{ (DWORD)entropyText.size(), (BYTE*)entropyText.data() };
-	DATA_BLOB output{};
-	if (!CryptProtectData(&input, L"TurboRama PIX", &entropy, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &output))
-	{
-		error = "O Windows nao conseguiu proteger o Access Token.";
-		return false;
-	}
-	const std::string encoded = base64Encode(output.pbData, output.cbData);
-	LocalFree(output.pbData);
-	if (!writeAtomically(secretFile(), encoded, error)) return false;
-	SetFileAttributesW(Utils::String::convertToWideString(secretFile()).c_str(), FILE_ATTRIBUTE_HIDDEN);
-	return true;
-#else
-	(void)token;
-	error = "Configuracao PIX disponivel somente no Windows.";
-	return false;
-#endif
-}
-
 bool PixAgentManager::saveOwnerSettings(const PixOwnerSettings& requested, const std::string& newAccessToken, std::string& error)
 {
 	PixOwnerSettings settings = requested;
-	settings.enabled = true;
 	settings.postalCode.erase(std::remove_if(settings.postalCode.begin(), settings.postalCode.end(), [](unsigned char ch) {
 		return std::isdigit(ch) == 0;
 	}), settings.postalCode.end());
@@ -827,9 +1149,11 @@ bool PixAgentManager::saveOwnerSettings(const PixOwnerSettings& requested, const
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 	writer.StartObject();
 	writer.Key("schemaVersion"); writer.Int(1);
-	writer.Key("enabled"); writer.Bool(true);
+	writer.Key("enabled"); writer.Bool(settings.enabled);
 	auto write = [&writer](const char* name, const std::string& value) { writer.Key(name); writer.String(value.c_str()); };
+	write("setupState", settings.setupState);
 	write("provider", settings.provider);
+	write("mercadoPagoEnvironment", settings.mercadoPagoEnvironment);
 	write("accountId", settings.accountId);
 	write("storeExternalId", settings.storeExternalId);
 	write("storeName", settings.storeName);
@@ -840,6 +1164,13 @@ bool PixAgentManager::saveOwnerSettings(const PixOwnerSettings& requested, const
 	write("reference", settings.reference);
 	write("adapterBaseUrl", settings.adapterBaseUrl);
 	write("adapterProviderId", settings.adapterProviderId);
+	writer.Key("onlineLicensingEnabled"); writer.Bool(settings.onlineLicensingEnabled);
+	write("onlineBaseUrl", settings.onlineBaseUrl);
+	write("onlineLicenseId", settings.onlineLicenseId);
+	write("onlineProtectionProfile", settings.onlineProtectionProfile);
+	writer.Key("pixEnabled"); writer.Bool(settings.pixEnabled);
+	writer.Key("onlineConfigurationVersion"); writer.Int64(settings.onlineConfigurationVersion);
+	writer.Key("onlineConfigurationPending"); writer.Bool(false);
 	writer.Key("packagePricesCents"); writer.StartObject();
 	for (const auto& price : settings.pricesCents) { writer.Key(std::to_string(price.first).c_str()); writer.Int64(price.second); }
 	writer.EndObject();
@@ -847,12 +1178,113 @@ bool PixAgentManager::saveOwnerSettings(const PixOwnerSettings& requested, const
 	return writeAtomically(settingsFile(), buffer.GetString(), error);
 }
 
+bool PixAgentManager::activateOnline(const PixOwnerSettings& requested,
+	const std::string& activationCode, std::string& error)
+{
+	PixOwnerSettings settings = requested;
+	settings.onlineLicensingEnabled = true;
+	settings.onlineBaseUrl = "https://pix.lzgames.com.br/";
+	if (!validateOwnerSettings(settings, error)) return false;
+	if (activationCode.size() < 16 || activationCode.size() > 256
+		|| !std::all_of(activationCode.begin(), activationCode.end(), [](unsigned char ch) {
+			return ch >= 0x21 && ch <= 0x7e;
+		}))
+	{
+		error = "O codigo de ativacao e invalido. Gere um novo codigo no painel TurboRama.";
+		return false;
+	}
+#ifdef _WIN32
+	const bool previousExisted = Utils::FileSystem::exists(settingsFile());
+	const std::string previousContents = previousExisted
+		? Utils::FileSystem::readAllText(settingsFile()) : std::string();
+	const PixOwnerSettings previousSettings = loadOwnerSettings();
+	if (!stopExpectedAgent())
+	{
+		error = "A identidade do agente PIX em execucao nao pode ser confirmada; a ativacao foi cancelada.";
+		return false;
+	}
+	if (!saveOwnerSettings(settings, "", error))
+	{
+		if (previousSettings.enabled) { std::string ignored; startIfConfigured(&ignored); }
+		return false;
+	}
+
+	bool processStarted = false;
+	DWORD exitCode = STILL_ACTIVE;
+	std::string output;
+	const bool processCompleted = runOnlineActivationProcess(
+		activationCode, processStarted, exitCode, output, error);
+	if (!processCompleted || exitCode != 0)
+	{
+		const std::string agentMessage = safeAgentOutput(output);
+		const bool activationMayHaveCompleted = processStarted
+			&& (!processCompleted || exitCode == 25);
+		std::string reconciliationError;
+		if (activationMayHaveCompleted)
+		{
+			const bool candidateStarted = startIfConfigured(&reconciliationError);
+			if (candidateStarted
+				&& waitForOnlineAgentReady(onlineActivationReconciliationTimeoutMs))
+			{
+				LOG(LogWarning) << "[PIX] A resposta da ativacao foi perdida, mas a sessao autenticada confirmou o cadastro.";
+				return true;
+			}
+			if (candidateStarted && !stopExpectedAgent())
+			{
+				error = "A ativacao ficou inconclusiva e o servico PIX iniciado para conferencia nao pode ser encerrado com seguranca. "
+					"A configuracao on-line foi preservada; nao gere outro codigo ate verificar esta maquina no painel.";
+				return false;
+			}
+		}
+		bool restored = false;
+		std::string restoreError;
+		if (previousExisted)
+			restored = !previousContents.empty()
+				&& writeAtomically(settingsFile(), previousContents, restoreError);
+		else
+			restored = Utils::FileSystem::removeFile(settingsFile()) || !Utils::FileSystem::exists(settingsFile());
+		if (restored && previousSettings.enabled)
+		{
+			std::string restartError;
+			if (!startIfConfigured(&restartError))
+			{
+				restored = false;
+				restoreError = restartError;
+			}
+		}
+		if (processCompleted && exitCode != 0)
+			error = agentMessage.empty()
+				? "O servidor recusou a ativacao desta maquina (codigo " + std::to_string(exitCode) + ")."
+				: agentMessage;
+		else if (activationMayHaveCompleted)
+			error = "Nao foi possivel confirmar a resposta final nem abrir uma sessao autenticada; o cadastro anterior foi restaurado.";
+		if (activationMayHaveCompleted && !reconciliationError.empty())
+			error += "\n\nConferencia on-line: " + reconciliationError;
+		if (!restored)
+			error += "\n\nATENCAO: o cadastro anterior nao foi restaurado por completo. " + restoreError;
+		return false;
+	}
+
+	if (!settings.enabled) return true;
+	if (!startIfConfigured(&error))
+	{
+		error = "A maquina foi ativada no servidor, mas o servico PIX nao iniciou: " + error;
+		return false;
+	}
+	return true;
+#else
+	error = "A ativacao TurboRama Online esta disponivel somente no Windows.";
+	return false;
+#endif
+}
+
 bool PixAgentManager::startIfConfigured(std::string* error)
 {
 	const PixOwnerSettings settings = loadOwnerSettings();
 	if (!settings.enabled) { if (error) *error = "PIX ainda nao foi configurado pelo proprietario."; return false; }
+	std::string trustError;
+	if (!agentTrustValid(trustError)) { if (error) *error = trustError; return false; }
 	const std::string executable = agentExecutable();
-	if (!agentIsInstalled()) { if (error) *error = "Agente PIX nao foi instalado."; return false; }
 #ifdef _WIN32
 	AgentStatus existingStatus;
 	const DaemonLookupResult existing = lookupDaemon(existingStatus);
@@ -961,6 +1393,12 @@ bool PixAgentManager::superviseIfConfigured(std::string* error)
 	if (!agentIsInstalled())
 	{
 		if (error) *error = "Agente PIX nao foi instalado.";
+		return false;
+	}
+	std::string trustError;
+	if (!agentTrustValid(trustError))
+	{
+		if (error) *error = trustError;
 		return false;
 	}
 #ifdef _WIN32
@@ -1089,6 +1527,7 @@ std::string PixAgentManager::statusText()
 	const long long now = (long long)std::time(nullptr);
 	if (status.updatedAt < now - 30 || status.updatedAt > now + 120) return "AGENTE SEM RESPOSTA";
 	if (status.state == "online") return status.ready ? "ATIVO E PRONTO" : "AGENTE AINDA NAO PRONTO";
+	if (status.state == "license_denied") return "LICENCA DA MAQUINA RECUSADA PELO SERVIDOR";
 	if (status.state == "starting") return "INICIANDO...";
 	if (status.state == "provider_unavailable") return "MERCADO PAGO INDISPONIVEL";
 	return status.state;

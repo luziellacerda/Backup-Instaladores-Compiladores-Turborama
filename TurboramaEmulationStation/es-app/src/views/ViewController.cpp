@@ -33,6 +33,7 @@
 #include "guis/GuiNetPlay.h"
 #include "Gamelist.h"
 #include "CreditManager.h"
+#include "CreditWarningOverlay.h"
 #include "PixBridge.h"
 #include "PixAgentManager.h"
 #include "guis/GuiPixPurchase.h"
@@ -983,11 +984,12 @@ void ViewController::update(int deltaTime)
 		PixAgentManager::superviseIfConfigured(nullptr);
 	}
 
-	// Baloes de aviso do sistema (GuiInfoPopup) quando o tempo esta acabando
+	// A mesma camada nativa sempre no topo e usada no menu e durante os jogos.
+	CreditWarningOverlay::update();
 	{
 		const std::string warn = CreditManager::getInstance().pollLowCreditWarning();
-		if (!warn.empty() && mWindow != nullptr)
-			mWindow->displayNotificationMessage(warn, 6);
+		if (!warn.empty())
+			CreditWarningOverlay::show(warn);
 	}
 
 	// Compact clock-like HUD (~2 Hz for smoother second display)

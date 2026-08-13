@@ -25,6 +25,7 @@
 **/venv/
 **/TestResults/
 **/publish/
+/work/
 **/.dotnet-cli/
 **/.dotnet-home/
 **/.nuget-packages/
@@ -120,6 +121,9 @@ DIST-INSTALL-STABLE/
 
 # --- Lista antiga de ficheiros >100MB (redundante com regras acima) ---
 LARGE-FILES-SKIPPED-GITHUB.txt
+
+# Pacotes locais gerados pelos compiladores (nunca enviar como fonte)
+/outputs/
 
 # Snapshots de sistema / live (nao sao codigo)
 **/TurboRama-Live/

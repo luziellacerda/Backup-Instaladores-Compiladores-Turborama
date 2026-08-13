@@ -41,3 +41,12 @@ IDI_ES_LOGO ICON DISCARDABLE "es_icon.ico"
 #error TURBORAMA_EMBEDDED_THEME_BIN must point to the generated theme payload
 #endif
 101 RCDATA TURBORAMA_EMBEDDED_THEME_BIN
+
+// AES-256-GCM protected system decorations. They are decrypted only in memory.
+201 RCDATA "protected-decorations\\pc.trd"
+202 RCDATA "protected-decorations\\ps3.trd"
+203 RCDATA "protected-decorations\\ps4.trd"
+204 RCDATA "protected-decorations\\ps5.trd"
+205 RCDATA "protected-decorations\\switch.trd"
+206 RCDATA "protected-decorations\\windows.trd"
+207 RCDATA "protected-decorations\\xboxone.trd"

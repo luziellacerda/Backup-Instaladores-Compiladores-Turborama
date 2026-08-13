@@ -355,6 +355,11 @@ namespace
 		std::string signature;
 	};
 
+	// Este contrato aceita somente provedores locais de pagamento publicados pelo
+	// agente. O TurboRama Online licencia a maquina, mas nunca cria a cobranca nem
+	// aparece como provedor em um credito assinado.
+	constexpr const char* kSupportedProviderPattern = "mercadopago|mock|adapter";
+
 	bool validBeneficiary(const std::string& type, const std::string& id)
 	{
 		return (type == "player" || type == "guest")
@@ -376,7 +381,7 @@ namespace
 		if (!extractLong(json, "minutes", minutes) || minutes < 1 || minutes > 480) return false;
 		credit.minutes = (int)minutes;
 		if (!extractLong(json, "amountCents", credit.amountCents) || credit.amountCents < 1 || credit.amountCents > 100000000) return false;
-		if (!extractString(json, "provider", "mercadopago|mock|adapter", credit.provider)) return false;
+		if (!extractString(json, "provider", kSupportedProviderPattern, credit.provider)) return false;
 		if (!extractString(json, "providerOrderId", "[A-Za-z0-9_-]{1,128}", credit.providerOrderId)) return false;
 		if (!extractLong(json, "requestExpiresAtUnixSeconds", credit.requestExpiresAt)) return false;
 		if (!extractString(json, "beneficiaryType", "player|guest", credit.beneficiaryType)) return false;
@@ -401,7 +406,7 @@ namespace
 		credit.minutes = (int)minutes;
 		if (!extractLong(json, "amountCents", credit.amountCents)
 			|| credit.amountCents < 1 || credit.amountCents > 100000000) return false;
-		if (!extractString(json, "provider", "mercadopago|mock|adapter", credit.provider)) return false;
+		if (!extractString(json, "provider", kSupportedProviderPattern, credit.provider)) return false;
 		if (!extractString(json, "providerOrderId", "[A-Za-z0-9_-]{1,128}", credit.providerOrderId)) return false;
 		if (!extractLong(json, "approvedAtUnixSeconds", credit.approvedAt)) return false;
 		if (!extractString(json, "signature", "[A-Fa-f0-9]{64}", credit.signature)) return false;
@@ -454,6 +459,13 @@ namespace
 
 	bool purchaseModeGuardSelfTest()
 	{
+		std::string parsedProvider;
+		if (!extractString("{\"provider\":\"adapter\"}", "provider",
+			kSupportedProviderPattern, parsedProvider) || parsedProvider != "adapter") return false;
+		parsedProvider.clear();
+		if (extractString("{\"provider\":\"desconhecido\"}", "provider",
+			kSupportedProviderPattern, parsedProvider)) return false;
+
 		std::string error;
 		PixPublicOptions options;
 		options.provider = "mercadopago";
@@ -502,7 +514,7 @@ bool PixBridge::loadPublicOptions(PixPublicOptions& options, std::string& error)
 	long long schema = 0;
 	long long expiration = 0;
 	if (!extractLong(json, "schemaVersion", schema) || schema != 1
-		|| !extractString(json, "provider", "mercadopago|mock|adapter", options.provider)
+		|| !extractString(json, "provider", kSupportedProviderPattern, options.provider)
 		|| !extractBool(json, "ready", options.ready)
 		|| !extractBool(json, "productionEnabled", options.productionEnabled)
 		|| !extractLong(json, "paymentExpirationMinutes", expiration)

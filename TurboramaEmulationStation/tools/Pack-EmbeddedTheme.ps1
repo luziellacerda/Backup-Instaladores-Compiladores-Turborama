@@ -163,10 +163,26 @@ namespace TurboRama.Build
 }
 '@
 
-Add-Type -TypeDefinition $packerSource -Language CSharp -ReferencedAssemblies @(
-    'System.IO.Compression.dll',
-    'System.IO.Compression.FileSystem.dll'
-)
+$originalLib = $env:LIB
+try {
+    # Alguns ambientes do Visual Studio anunciam diretórios opcionais (por
+    # exemplo, ATL/MFC) mesmo quando o componente não está instalado. O
+    # compilador usado por Add-Type converte esse aviso em erro. Mantenha no
+    # LIB somente diretórios que realmente existem durante esta compilação.
+    if ($env:LIB) {
+        $env:LIB = (($env:LIB -split ';' | Where-Object {
+            $_ -and (Test-Path -LiteralPath $_ -PathType Container)
+        }) -join ';')
+    }
+
+    Add-Type -TypeDefinition $packerSource -Language CSharp -ReferencedAssemblies @(
+        'System.IO.Compression.dll',
+        'System.IO.Compression.FileSystem.dll'
+    )
+}
+finally {
+    $env:LIB = $originalLib
+}
 
 $result = [TurboRama.Build.EmbeddedThemePacker]::Pack($Source, $Output).Split('|')
 Write-Host "Tema empacotado de forma deterministica: $($result[2]) arquivos, $($result[1]) bytes."

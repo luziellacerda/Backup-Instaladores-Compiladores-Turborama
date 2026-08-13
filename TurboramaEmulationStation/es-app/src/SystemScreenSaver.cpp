@@ -26,6 +26,7 @@
 #include "utils/Randomizer.h"
 #include "Paths.h"
 #include "ApiSystem.h"
+#include "resources/ProtectedDecorations.h"
 
 #define FADE_TIME					(500)
 #define DATE_TIME_UPDATE_INTERVAL	(100)
@@ -907,6 +908,20 @@ void GameScreenSaverBase::setSystemDecoration(const std::string& systemName, con
 				}
 				if (!directBezel.empty())
 					break;
+			}
+
+			// Keep every existing disk override. If no file exists, use the AES-GCM
+			// protected copy stored inside emulationstation.exe without extracting it.
+			if (directBezel.empty())
+			{
+				for (const auto& key : bezelKeys)
+				{
+					if (ProtectedDecorations::hasSystem(key))
+					{
+						directBezel = ProtectedDecorations::resourcePathForSystem(key);
+						break;
+					}
+				}
 			}
 
 			LOG(LogError) << "[SS-BEZEL] folder='" << sysLow << "' bezel='"

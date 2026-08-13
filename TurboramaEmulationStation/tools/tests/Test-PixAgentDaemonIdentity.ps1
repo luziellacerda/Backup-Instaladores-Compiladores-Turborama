@@ -32,6 +32,25 @@ function Assert-ThrowsLike {
     if (-not $failed) { throw $Message }
 }
 
+function Get-BracedBlock {
+    param([string]$Text, [string]$Anchor)
+    $anchorIndex = $Text.IndexOf($Anchor, [StringComparison]::Ordinal)
+    if ($anchorIndex -lt 0) { throw "Bloco ausente: $Anchor" }
+    $openIndex = $Text.IndexOf('{', $anchorIndex)
+    if ($openIndex -lt 0) { throw "Abertura do bloco ausente: $Anchor" }
+    $depth = 0
+    for ($index = $openIndex; $index -lt $Text.Length; $index++) {
+        if ($Text[$index] -eq '{') { $depth++ }
+        elseif ($Text[$index] -eq '}') {
+            $depth--
+            if ($depth -eq 0) {
+                return $Text.Substring($anchorIndex, $index - $anchorIndex + 1)
+            }
+        }
+    }
+    throw "Fechamento do bloco ausente: $Anchor"
+}
+
 function Invoke-GuardedLegacyProcess {
     param(
         [Parameter(Mandatory = $true)] [string]$Path,
@@ -94,7 +113,15 @@ $agent = Get-Content -LiteralPath $agentFile -Raw -Encoding UTF8
 
 # O manager nunca pode voltar a descobrir ou encerrar todos os dotnet.exe pelo caminho.
 Assert-DoesNotMatch $manager 'CreateToolhelp32Snapshot|Process32(First|Next)|findProcessByExactPath|findExpectedProcess' 'O manager voltou a enumerar processos pelo caminho.'
-Assert-DoesNotMatch $editor 'CreateToolhelp32Snapshot|Process32(First|Next)|stopExact\s*\(' 'O editor voltou a possuir a rota que encerrava todo dotnet do runtime privado.'
+Assert-DoesNotMatch $editor 'stopExact\s*\(' 'O editor voltou a possuir a rota que encerrava todo dotnet do runtime privado.'
+
+# O editor administrativo pode enumerar processos somente para localizar uma
+# sessao ja autenticada do kioskUser e duplicar o token correspondente. Esse
+# fluxo nao pode adquirir direito de termino nem encerrar o processo descoberto.
+$sessionLookup = Get-BracedBlock $editor 'bool duplicateLoggedKioskToken('
+Assert-Matches $sessionLookup 'CreateToolhelp32Snapshot\(TH32CS_SNAPPROCESS' 'O editor nao localiza a sessao autenticada do kioskUser.'
+Assert-Matches $sessionLookup 'OpenProcess\(PROCESS_QUERY_LIMITED_INFORMATION' 'A descoberta da sessao nao usa acesso somente de consulta.'
+Assert-DoesNotMatch $sessionLookup 'PROCESS_TERMINATE|PROCESS_ALL_ACCESS|TerminateProcess\s*\(\s*candidateProcess' 'A descoberta da sessao recebeu poder para encerrar o processo consultado.'
 
 foreach ($check in @(
     @('daemonSingletonMutex\s*=\s*L"Local\\\\TurboRamaPixAgent-Daemon-v1"', 'Mutex singleton ausente no manager.'),

@@ -16,6 +16,14 @@ option(ENABLE_PULSE "Set to ON to enable pulse audio (versus alsa)" OFF)
 option(ENABLE_TTS "Set to ON to enable text to speech" OFF)
 option(USE_SYSTEM_PUGIXML "Set to ON to use system-wide pugixml library" OFF)
 
+# Opt-in profile used only by the commercial release orchestrator. Keeping the
+# defaults OFF preserves developer and legacy builds that do not own a signing
+# certificate. The thumbprint is public metadata; no private key enters CMake.
+option(TURBORAMA_COMMERCIAL_HARDENING "Enable hardened TurboRama commercial Release flags" OFF)
+option(TURBORAMA_REQUIRE_SIGNED_PIX "Require signed TurboRama PIX components at runtime" OFF)
+set(TURBORAMA_PIX_SIGNER_THUMBPRINT "" CACHE STRING "Pinned SHA-1 thumbprint for signed TurboRama PIX components")
+set(TURBORAMA_PIX_BUNDLE_SHA256 "" CACHE STRING "Pinned SHA-256 digest of the complete commercial PIX agent bundle")
+
 # Win32 default platform & directory detection
 if(WIN32)
 
@@ -265,6 +273,38 @@ if(MSVC)
     add_definitions(-DNOMINMAX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP") #multi-processor compilation
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP") #multi-processor compilation
+
+    if(TURBORAMA_COMMERCIAL_HARDENING)
+        string(APPEND CMAKE_CXX_FLAGS_RELEASE " /O2 /GL /guard:cf /GS /Gy /Gw /Brepro")
+        string(APPEND CMAKE_C_FLAGS_RELEASE " /O2 /GL /guard:cf /GS /Gy /Gw /Brepro")
+        string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE
+            " /LTCG /GUARD:CF /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /CETCOMPAT /OPT:REF /OPT:ICF /INCREMENTAL:NO /Brepro")
+    endif()
+
+    if(TURBORAMA_REQUIRE_SIGNED_PIX)
+        string(LENGTH "${TURBORAMA_PIX_SIGNER_THUMBPRINT}" TURBORAMA_PIX_SIGNER_THUMBPRINT_LENGTH)
+        if(NOT TURBORAMA_PIX_SIGNER_THUMBPRINT_LENGTH EQUAL 40 OR
+            TURBORAMA_PIX_SIGNER_THUMBPRINT MATCHES "[^0-9A-Fa-f]")
+            message(FATAL_ERROR "Commercial PIX signing thumbprint must contain exactly 40 hexadecimal characters")
+        endif()
+        string(TOUPPER "${TURBORAMA_PIX_SIGNER_THUMBPRINT}" TURBORAMA_PIX_SIGNER_THUMBPRINT_NORMALIZED)
+		string(LENGTH "${TURBORAMA_PIX_BUNDLE_SHA256}" TURBORAMA_PIX_BUNDLE_SHA256_LENGTH)
+		if(NOT TURBORAMA_PIX_BUNDLE_SHA256_LENGTH EQUAL 64 OR
+			TURBORAMA_PIX_BUNDLE_SHA256 MATCHES "[^0-9A-Fa-f]")
+			message(FATAL_ERROR "Commercial PIX bundle digest must contain exactly 64 hexadecimal characters")
+		endif()
+		string(TOUPPER "${TURBORAMA_PIX_BUNDLE_SHA256}" TURBORAMA_PIX_BUNDLE_SHA256_NORMALIZED)
+        add_definitions(-DTURBORAMA_REQUIRE_SIGNED_PIX=1)
+        # PixBinaryTrust stringizes this public thumbprint at compile time.
+        # Keep the macro as bare hexadecimal text so quotes do not become
+        # part of the value being compared with the signing certificate.
+        add_definitions(-DTURBORAMA_PIX_SIGNER_THUMBPRINT=${TURBORAMA_PIX_SIGNER_THUMBPRINT_NORMALIZED})
+		add_definitions(-DTURBORAMA_PIX_BUNDLE_SHA256=${TURBORAMA_PIX_BUNDLE_SHA256_NORMALIZED})
+    elseif(NOT "${TURBORAMA_PIX_SIGNER_THUMBPRINT}" STREQUAL "")
+        message(FATAL_ERROR "A PIX signer thumbprint was supplied without TURBORAMA_REQUIRE_SIGNED_PIX")
+	elseif(NOT "${TURBORAMA_PIX_BUNDLE_SHA256}" STREQUAL "")
+		message(FATAL_ERROR "A PIX bundle digest was supplied without TURBORAMA_REQUIRE_SIGNED_PIX")
+    endif()
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX)

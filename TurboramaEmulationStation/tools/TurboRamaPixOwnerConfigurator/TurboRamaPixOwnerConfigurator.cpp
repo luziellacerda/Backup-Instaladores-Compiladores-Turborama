@@ -5,6 +5,7 @@
 #include <commctrl.h>
 #include <shellapi.h>
 #include <winhttp.h>
+#include "../../es-app/src/PixBinaryTrust.h"
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -737,13 +738,19 @@ namespace
 		const auto runtime = join(candidate, L"pix-agent\\runtime\\dotnet.exe");
 		const auto dll = join(candidate, L"pix-agent\\TurboRamaPixAgent.dll");
 		const auto app = join(candidate, L"pix-agent\\TurboRamaPixAgent.exe");
+		std::string trustError;
 		if (exists(runtime) && exists(dll))
 		{
+			if (!PixBinaryTrust::verifyCommercialAgentBundle(join(candidate, L"pix-agent"), trustError)
+				|| !PixBinaryTrust::verifyTrustedRuntime(runtime, trustError)
+				|| !PixBinaryTrust::verifyVendorBinary(dll, trustError)) return false;
 			root = candidate; executable = runtime; assembly = dll;
 			bridge = join(candidate, L".emulationstation\\pix"); return true;
 		}
+		if (PixBinaryTrust::required()) return false;
 		if (exists(app))
 		{
+			if (!PixBinaryTrust::verifyVendorBinary(app, trustError)) return false;
 			root = candidate; executable = app; assembly.clear();
 			bridge = join(candidate, L".emulationstation\\pix"); return true;
 		}
@@ -1015,6 +1022,11 @@ namespace
 			&& std::all_of(value.begin(), value.end(), [](wchar_t ch) { return ch >= L'0' && ch <= L'9'; });
 	}
 
+	bool isLegacyTestPosId(const std::wstring& value)
+	{
+		return _wcsicmp(value.c_str(), L"LZPIXCOMP") == 0;
+	}
+
 	bool collect(FormData& data, std::wstring& error)
 	{
 		data.adapter = SendMessageW(gProvider, CB_GETCURSEL, 0, 0) == 1;
@@ -1035,6 +1047,7 @@ namespace
 			{ error = L"Os IDs externos aceitam somente letras e numeros (Loja ate 60; PDV ate 40)."; return false; }
 			if (looksLikeMercadoPagoNumericId(data.storeExternalId)) data.storeExternalId.clear();
 			if (looksLikeMercadoPagoNumericId(data.posExternalId)) data.posExternalId.clear();
+			if (isLegacyTestPosId(data.posExternalId)) data.posExternalId.clear();
 			if (data.cep.size() != 8 || data.number.empty()) { error = L"Informe CEP com 8 números e o número do estabelecimento."; return false; }
 		}
 		else if (data.adapterUrl.empty() || data.adapterId.size() < 2)
@@ -1090,8 +1103,19 @@ namespace
 		STARTUPINFOW startup{}; startup.cb = sizeof(startup); startup.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
 		startup.hStdInput = stdinRead; startup.hStdOutput = stdoutWrite; startup.hStdError = stdoutWrite; startup.wShowWindow = SW_HIDE;
 		PROCESS_INFORMATION process{}; std::vector<wchar_t> mutableCommand(command.begin(), command.end()); mutableCommand.push_back(L'\0');
-		const BOOL created = CreateProcessW(executable.c_str(), mutableCommand.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
-			nullptr, working.c_str(), &startup, &process);
+		std::vector<wchar_t> environment;
+		std::string environmentError;
+		if (!PixBinaryTrust::buildSanitizedDotnetEnvironment(
+			join(working, L"pix-agent\\runtime"), {}, environment, environmentError))
+		{
+			closePipes();
+			error = L"O Windows n\u00E3o conseguiu preparar o ambiente protegido do agente PIX.";
+			return false;
+		}
+		const BOOL created = CreateProcessW(executable.c_str(), mutableCommand.data(), nullptr, nullptr, TRUE,
+			CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+			environment.data(), working.c_str(), &startup, &process);
+		SecureZeroMemory(environment.data(), environment.size() * sizeof(wchar_t));
 		CloseHandle(stdinRead); CloseHandle(stdoutWrite);
 		if (!created)
 		{
@@ -1154,31 +1178,12 @@ namespace
 		return token.size() == 64;
 	}
 
-	bool daemonEnvironment(const std::string& token, std::vector<wchar_t>& environment)
+	bool daemonEnvironment(const std::wstring& root, const std::string& token, std::vector<wchar_t>& environment)
 	{
-		LPWCH inherited = GetEnvironmentStringsW();
-		if (!inherited) return false;
-		const std::wstring prefix = std::wstring(kManagerTokenEnvironment) + L"=";
-		std::vector<std::wstring> entries;
-		for (const wchar_t* current = inherited; *current; current += wcslen(current) + 1)
-		{
-			const size_t length = wcslen(current);
-			if (length >= prefix.size() && _wcsnicmp(current, prefix.c_str(), prefix.size()) == 0) continue;
-			entries.emplace_back(current, length);
-		}
-		FreeEnvironmentStringsW(inherited);
-		entries.push_back(prefix + wide(token));
-		std::sort(entries.begin(), entries.end(), [](const std::wstring& left, const std::wstring& right) {
-			return _wcsicmp(left.c_str(), right.c_str()) < 0;
-		});
-		environment.clear();
-		for (const auto& entry : entries)
-		{
-			environment.insert(environment.end(), entry.begin(), entry.end());
-			environment.push_back(L'\0');
-		}
-		environment.push_back(L'\0');
-		return true;
+		std::string ignoredError;
+		return PixBinaryTrust::buildSanitizedDotnetEnvironment(
+			join(root, L"pix-agent\\runtime"),
+			{ { kManagerTokenEnvironment, wide(token) } }, environment, ignoredError);
 	}
 
 	bool restartAgent(const std::wstring& root, const std::wstring& executable, const std::wstring& assembly,
@@ -1191,7 +1196,7 @@ namespace
 		{ error = L"O Windows n\u00E3o conseguiu gerar a identidade do daemon PIX."; return false; }
 		const std::string tokenHash = sha256Hex(token);
 		std::vector<wchar_t> environment;
-		if (tokenHash.size() != 64 || !daemonEnvironment(token, environment))
+		if (tokenHash.size() != 64 || !daemonEnvironment(root, token, environment))
 		{
 			SecureZeroMemory(token.data(), token.size());
 			if (!environment.empty()) SecureZeroMemory(environment.data(), environment.size() * sizeof(wchar_t));
@@ -1359,7 +1364,9 @@ namespace
 		SetWindowTextW(gStore, wide(jsonString(json, "storeName", "TurboRamaX")).c_str());
 		SetWindowTextW(gPos, wide(jsonString(json, "posName", "TurboRama Kiosk")).c_str());
 		SetWindowTextW(gStoreExternal, wide(jsonString(json, "storeExternalId")).c_str());
-		SetWindowTextW(gPosExternal, wide(jsonString(json, "posExternalId")).c_str());
+		auto savedPosExternal = wide(jsonString(json, "posExternalId"));
+		if (isLegacyTestPosId(savedPosExternal)) savedPosExternal.clear();
+		SetWindowTextW(gPosExternal, savedPosExternal.c_str());
 		SetWindowTextW(gCep, wide(jsonString(json, "postalCode")).c_str());
 		SetWindowTextW(gNumber, wide(jsonString(json, "streetNumber")).c_str());
 		SetWindowTextW(gReference, wide(jsonString(json, "reference", "TurboRama")).c_str());
@@ -1749,7 +1756,7 @@ namespace
 			&& productionJson.find("\"posExternalId\": \"LZPIX01\"")!=std::string::npos
 			&& validExternalId(std::wstring(60,L'A'),60) && !validExternalId(std::wstring(61,L'A'),60)
 			&& validExternalId(std::wstring(40,L'9'),40) && !validExternalId(L"LZ-PIX",40)
-			&& looksLikeMercadoPagoNumericId(L"6920573186571272") && !looksLikeMercadoPagoNumericId(L"LZPIXF50555198F64")
+			&& looksLikeMercadoPagoNumericId(L"1234567890123456") && !looksLikeMercadoPagoNumericId(L"LZPIXF50555198F64")
 			&& strictUnsigned("{\"processId\":123}", "processId", parsedPid) && parsedPid == 123
 			&& jsonString(saved,"provider")=="adapter" && jsonString(saved,"storeName")=="LZ \"Games\""
 			&& jsonInteger(saved,"15",0)==750 && priceText(750)==L"7,50";

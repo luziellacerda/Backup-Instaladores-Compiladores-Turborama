@@ -19,6 +19,7 @@
 #include "HttpApi.h"
 #include "Settings.h"
 #include "ApiSystem.h"
+#include "resources/ProtectedDecorations.h"
 
 #include "ThreadedHasher.h"
 #include "scrapers/ThreadedScraper.h"
@@ -772,6 +773,12 @@ void HttpServerThread::run()
 			return;
 
 		std::string url = req.matches[1];
+		if (ProtectedDecorations::isResourcePath(":/" + url))
+		{
+			res.set_content("404 not found", "text/html");
+			res.status = 404;
+			return;
+		}
 		auto data = ResourceManager::getInstance()->getFileData(":/" + url);
 		if (data.ptr)
 			res.set_content((char*)data.ptr.get(), data.length, getMimeType(url).c_str());

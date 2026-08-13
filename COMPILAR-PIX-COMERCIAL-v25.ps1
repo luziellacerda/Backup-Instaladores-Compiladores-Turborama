@@ -4,10 +4,11 @@
 Builds the internal TurboRama PIX Commercial v25 validation candidate.
 
 .DESCRIPTION
-The candidate is not cleared for sale. The embedded theme is always generated
-inside the clean CMake build by the local PowerShell/.NET packer; Python is not
-required. Authenticode signing is optional and is enabled only when a real
-certificate thumbprint is supplied.
+The candidate is not cleared for sale until the real kiosk validation passes.
+The embedded theme is always generated inside the clean CMake build by the
+local PowerShell/.NET packer; Python is not required. This commercial entry
+point always requires Authenticode signing, RFC 3161 timestamping, the hardened
+profile and the isolated installer smoke test.
 
 .PARAMETER CertificadoThumbprint
 SHA-1 thumbprint of a code-signing certificate with private key in the Windows
@@ -18,23 +19,52 @@ TURBORAMA_SIGN_CERT_THUMBPRINT.
 RFC 3161 timestamp URL. No server is assumed automatically; provide the URL
 approved by the certificate issuer or TURBORAMA_SIGN_TIMESTAMP_URL.
 
+.PARAMETER CertificadoEmissorLicencaThumbprint
+SHA-1 thumbprint of the separate certificate whose private key is authorized
+to issue offline kiosk licenses. It must differ from the Authenticode key and
+should be non-exportable in a token or HSM. It can also be supplied through
+TURBORAMA_LICENSE_CERT_THUMBPRINT.
+
 .PARAMETER ExigirAssinatura
 Fails before packaging when no usable signing certificate was provided.
+
+.PARAMETER ProtecaoComercial
+Enables the fail-closed commercial build profile. This profile requires a
+usable code-signing certificate, enables the native release mitigations and
+refuses to package debug symbols, source files or test material. It also
+embeds only the public certificate used to verify offline TPM-bound licenses.
 #>
 param(
     [switch]$Limpar,
     [switch]$TestarInstalador,
     [switch]$SemPausa,
     [string]$CertificadoThumbprint = $env:TURBORAMA_SIGN_CERT_THUMBPRINT,
+    [string]$CertificadoEmissorLicencaThumbprint = $env:TURBORAMA_LICENSE_CERT_THUMBPRINT,
     [string]$ServidorCarimboDoTempo = $env:TURBORAMA_SIGN_TIMESTAMP_URL,
     [ValidateSet('CurrentUser','LocalMachine')]
     [string]$LocalCertificado = 'CurrentUser',
-    [switch]$ExigirAssinatura
+    [ValidateSet('CurrentUser','LocalMachine')]
+    [string]$LocalCertificadoEmissorLicenca = 'CurrentUser',
+    [switch]$ExigirAssinatura,
+    [switch]$ProtecaoComercial
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
+
+# Este script publica um artefato chamado COMERCIAL/FINAL. Ele nunca pode
+# degradar silenciosamente para um build de desenvolvimento com o mesmo nome.
+if (-not $ProtecaoComercial) {
+    throw 'Este compilador publica somente o perfil comercial protegido. Use -ProtecaoComercial.'
+}
+if (-not $TestarInstalador) {
+    throw 'O perfil comercial exige -TestarInstalador antes de qualquer compilacao.'
+}
+if ([string]::IsNullOrWhiteSpace($ServidorCarimboDoTempo)) {
+    throw 'O perfil comercial exige -ServidorCarimboDoTempo com URL RFC 3161 aprovada.'
+}
+$ExigirAssinatura = $true
 
 $RepoRoot = [IO.Path]::GetFullPath($PSScriptRoot)
 $WorkspaceRoot = Split-Path (Split-Path $RepoRoot -Parent) -Parent
@@ -51,6 +81,9 @@ $BuildLockFile = Join-Path $BuildTempRoot 'build-v25.lock'
 $script:BuildLockStream = $null
 $script:InstallerCppSourcePin = $null
 $script:BuildScriptSourcePin = $null
+$script:NormalizedSigningThumbprint = ''
+$script:LicenseIssuerCertificateBase64 = ''
+$script:AgentBundleSha256 = ''
 # Keep the installer smoke test on a deliberately short, explicit path. The
 # payload carries the .NET runtime, whose valid nested files can exceed the
 # legacy MAX_PATH limit when the test is rooted under the long workspace path.
@@ -68,6 +101,7 @@ $CandidateOutputRoot = Join-Path $CandidateContainerRoot 'GERADO-v25'
 $ReleaseHistoryRoot = Join-Path $WorkspaceRoot 'release-backups'
 $OutputRoot = $CandidateOutputRoot
 $AgentProject = Join-Path $ProjectRoot 'tools\TurboRamaPixAgent\TurboRamaPixAgent.csproj'
+$LicenseIssuerProject = Join-Path $ProjectRoot 'tools\TurboRamaPixLicenseIssuer\TurboRamaPixLicenseIssuer.csproj'
 $InstallerSource = Join-Path $ProjectRoot 'tools\TurboRamaCommercialInstaller'
 $PackScript = Join-Path $InstallerSource 'Build-TurboRamaPackage.ps1'
 $ThemePacker = Join-Path $ProjectRoot 'tools\Pack-EmbeddedTheme.ps1'
@@ -282,6 +316,34 @@ function Assert-AnchoredRegularDirectoryPath([string]$Path, [string]$Boundary, [
     return $full
 }
 
+function Assert-ReleaseAuthenticode([string]$Root) {
+    if (-not $ProtecaoComercial) { return }
+    $expectedThumbprint = ($CertificadoThumbprint -replace '\s','').ToUpperInvariant()
+    if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+        throw 'A release comercial nao possui thumbprint Authenticode valido para revalidacao.'
+    }
+    foreach ($name in @(
+        $InstallerFileName,
+        'CONFIGURAR-USER-TOKEN-PIX.exe',
+        'CONFIGURAR-ACCESS-TOKEN-PIX.exe')) {
+        $path = Join-Path $Root $name
+        Assert-RegularSingleLinkFilePath $path "Binario assinado da release ($name)" | Out-Null
+        $signature = Get-AuthenticodeSignature -LiteralPath $path
+        if (($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) -or
+            (-not $signature.SignerCertificate) -or
+            ($signature.SignerCertificate.Thumbprint.ToUpperInvariant() -ne $expectedThumbprint) -or
+            (-not $signature.TimeStamperCertificate)) {
+            throw "Release recusada: assinatura, editor ou carimbo RFC 3161 invalido em $name."
+        }
+    }
+    $sevenZipPath = Join-Path $Root '7za.exe'
+    Assert-RegularSingleLinkFilePath $sevenZipPath '7za.exe pinado da release' | Out-Null
+    $sevenZipHash = (Get-FileHash -LiteralPath $sevenZipPath -Algorithm SHA256).Hash.ToUpperInvariant()
+    if ($sevenZipHash -ne '223B873C50380FE9A39F1A22B6ABF8D46DB506E1C08D08312902F6F3CD1F7AC3') {
+        throw 'Release recusada: 7za.exe diverge do binario 24.09 aprovado.'
+    }
+}
+
 function Test-ReleaseDirectory([string]$Root, [string[]]$ArtifactNames) {
     $rootFull = Assert-RegularDirectoryPath $Root 'Diretorio de release'
     $allowedNames = @($ArtifactNames + $ChecksumFileName)
@@ -324,6 +386,7 @@ function Test-ReleaseDirectory([string]$Root, [string[]]$ArtifactNames) {
     foreach ($name in $ArtifactNames) {
         if (-not $seen.ContainsKey($name)) { throw "Manifesto SHA-256 nao cobre o artefato: $name" }
     }
+	Assert-ReleaseAuthenticode $rootFull
     return $true
 }
 
@@ -383,6 +446,72 @@ function Assert-ArchiveEntries(
         if ($listing | Where-Object { $_ -match $expression }) {
             throw "Payload comercial contem arquivo proibido: $entry"
         }
+    }
+}
+
+function Test-ForbiddenCommercialPayloadPath([string]$RelativePath) {
+    $normalized = ($RelativePath -replace '/', '\').TrimStart('\')
+    if ([string]::IsNullOrWhiteSpace($normalized)) { return $false }
+
+    $extension = [IO.Path]::GetExtension($normalized).ToLowerInvariant()
+    if ($extension -in @(
+        '.pdb', '.cs', '.csproj', '.sln', '.c', '.cc', '.cpp', '.cxx',
+        '.h', '.hh', '.hpp', '.hxx', '.vcxproj', '.vcxproj.filters',
+        '.inl', '.ipp', '.asm', '.rc', '.resx', '.props', '.targets', '.filters',
+		'.ps1', '.psm1', '.psd1', '.cmd', '.bat',
+		'.pfx', '.p12', '.pem', '.key', '.snk', '.pvk', '.cer', '.crt', '.csr', '.jks')) {
+        return $true
+    }
+
+    $leaf = [IO.Path]::GetFileName($normalized)
+	if ($leaf -match '(?i)(TurboRamaPixLicenseIssuer|license[-_.]?issuer|emissor[-_.]?licen)') { return $true }
+    if ($leaf -in @('CMakeLists.txt', 'Makefile', 'packages.lock.json')) { return $true }
+    if ($leaf -match '(?i)(^|[._-])(test|tests|testing)([._-]|$)') { return $true }
+    return $normalized -match '(?i)(^|\\)(test|tests|testing|samples?|examples?|obj)(\\|$)'
+}
+
+function Assert-CommercialPayloadTree([string]$Root, [string]$Label) {
+    if (-not $ProtecaoComercial) { return }
+    Require-Directory $Root $Label
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    $forbidden = @(
+        Get-ChildItem -LiteralPath $rootFull -Recurse -File -Force -ErrorAction Stop |
+            Where-Object {
+                $relative = $_.FullName.Substring($rootFull.Length).TrimStart('\')
+                Test-ForbiddenCommercialPayloadPath $relative
+            }
+    )
+    if ($forbidden.Count -gt 0) {
+        $relativeNames = @($forbidden | ForEach-Object {
+            $_.FullName.Substring($rootFull.Length).TrimStart('\')
+        })
+        throw "$Label contem artefatos proibidos no modo comercial: $($relativeNames -join ', ')"
+    }
+}
+
+function Assert-CommercialArchiveHygiene([string]$SevenZip, [string]$Archive) {
+    if (-not $ProtecaoComercial) { return }
+    Require-File $SevenZip '7-Zip para auditoria comercial'
+    Require-File $Archive 'Payload para auditoria comercial'
+    $previousErrorAction = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $listing = & $SevenZip l -slt $Archive 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+    if ($exitCode -ne 0) { throw "Nao foi possivel auditar o payload comercial (codigo $exitCode)." }
+
+    $forbidden = @(
+        $listing |
+            Where-Object { $_ -is [string] -and $_ -match '^Path = (.+)$' } |
+            ForEach-Object { $Matches[1] } |
+            Where-Object { Test-ForbiddenCommercialPayloadPath $_ }
+    )
+    if ($forbidden.Count -gt 0) {
+        throw "Payload comercial compactado contem artefatos proibidos: $($forbidden -join ', ')"
     }
 }
 
@@ -1560,7 +1689,13 @@ function Reset-GeneratedDirectory(
 }
 
 function Run([string]$File, [string[]]$Arguments, [string]$Directory = $ProjectRoot) {
-    Add-Content -LiteralPath $LogFile -Value ("Executando: " + (Split-Path -Leaf $File) + ' ' + ($Arguments -join ' ')) -Encoding UTF8
+    $loggedArguments = @($Arguments | ForEach-Object {
+        if ($_ -like '-p:CommercialLicenseIssuerCertificateBase64=*') {
+            '-p:CommercialLicenseIssuerCertificateBase64=[CERTIFICADO_PUBLICO_INCORPORADO]'
+        }
+        else { $_ }
+    })
+    Add-Content -LiteralPath $LogFile -Value ("Executando: " + (Split-Path -Leaf $File) + ' ' + ($loggedArguments -join ' ')) -Encoding UTF8
     Push-Location $Directory
     $previousErrorAction = $ErrorActionPreference
     try {
@@ -1644,13 +1779,26 @@ function Resolve-SignTool {
     throw 'signtool.exe nao foi localizado no Windows SDK.'
 }
 
+function Assert-MicrosoftSignedBuildTool([string]$Path, [string]$Label) {
+	Require-File $Path $Label
+	$signature = Get-AuthenticodeSignature -LiteralPath $Path
+	if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+		-not $signature.SignerCertificate -or
+		$signature.SignerCertificate.Subject -notmatch '(?i)(^|,\s*)O=Microsoft Corporation(,|$)') {
+		throw "Ferramenta de build recusada: $Label nao possui assinatura valida da Microsoft ($Path)."
+	}
+}
+
 function Initialize-CodeSigning {
     $script:SignTool = $null
     $script:SignCertificate = $null
     $script:SigningEnabled = $false
+    $script:NormalizedSigningThumbprint = ''
+    $script:LicenseIssuerCertificateBase64 = ''
+	$script:AgentBundleSha256 = ''
     $thumbprint = if ($CertificadoThumbprint) { ($CertificadoThumbprint -replace '\s','').ToUpperInvariant() } else { '' }
     if ([string]::IsNullOrWhiteSpace($thumbprint)) {
-        if ($ExigirAssinatura) {
+        if ($ExigirAssinatura -or $ProtecaoComercial) {
             throw 'Assinatura obrigatoria, mas nenhum CertificadoThumbprint foi informado.'
         }
         Write-Host 'Assinatura Authenticode: desativada (nenhum certificado informado).' -ForegroundColor Yellow
@@ -1667,8 +1815,104 @@ function Initialize-CodeSigning {
     if (-not $certificate -or -not $certificate.HasPrivateKey) {
         throw "Certificado de assinatura com chave privada nao encontrado em $certificatePath."
     }
+    if ($ProtecaoComercial) {
+        $now = Get-Date
+        if ($certificate.NotBefore -gt $now -or $certificate.NotAfter -le $now) {
+            throw 'ProtecaoComercial exige um certificado de assinatura dentro do periodo de validade.'
+        }
+        $codeSigningEku = @($certificate.EnhancedKeyUsageList | Where-Object {
+            $_.ObjectId.Value -eq '1.3.6.1.5.5.7.3.3'
+        })
+        if ($codeSigningEku.Count -eq 0) {
+            throw 'ProtecaoComercial exige certificado com finalidade explicita de assinatura de codigo.'
+        }
+
+        $licenseThumbprint = if ($CertificadoEmissorLicencaThumbprint) {
+            ($CertificadoEmissorLicencaThumbprint -replace '\s','').ToUpperInvariant()
+        } else { '' }
+        if ($licenseThumbprint -notmatch '^[0-9A-F]{40}$') {
+            throw 'ProtecaoComercial exige CertificadoEmissorLicencaThumbprint com 40 digitos hexadecimais.'
+        }
+        if ($licenseThumbprint -eq $thumbprint) {
+            throw 'Use certificados diferentes para Authenticode e emissao de licencas PIX.'
+        }
+        $licenseCertificatePath = "Cert:\$LocalCertificadoEmissorLicenca\My\$licenseThumbprint"
+        $licenseCertificate = Get-Item -LiteralPath $licenseCertificatePath -ErrorAction SilentlyContinue
+        if (-not $licenseCertificate -or -not $licenseCertificate.HasPrivateKey) {
+            throw "Certificado emissor de licencas com chave privada nao encontrado em $licenseCertificatePath."
+        }
+        if ($licenseCertificate.NotBefore -gt $now -or $licenseCertificate.NotAfter -le $now) {
+            throw 'O certificado emissor de licencas esta fora do periodo de validade.'
+        }
+        $licenseRsa = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($licenseCertificate)
+        $licenseEcdsa = [Security.Cryptography.X509Certificates.ECDsaCertificateExtensions]::GetECDsaPrivateKey($licenseCertificate)
+		$licenseCngKey = $null
+		if ($licenseRsa -is [Security.Cryptography.RSACng]) { $licenseCngKey = $licenseRsa.Key }
+		elseif ($licenseEcdsa -is [Security.Cryptography.ECDsaCng]) { $licenseCngKey = $licenseEcdsa.Key }
+		if (-not $licenseCngKey) {
+			throw 'O emissor comercial exige chave CNG nao exportavel em TPM, smart card, token ou HSM.'
+		}
+		$exportFlags = [Security.Cryptography.CngExportPolicies]::AllowExport -bor
+			[Security.Cryptography.CngExportPolicies]::AllowPlaintextExport -bor
+			[Security.Cryptography.CngExportPolicies]::AllowArchiving -bor
+			[Security.Cryptography.CngExportPolicies]::AllowPlaintextArchiving
+		if (($licenseCngKey.ExportPolicy -band $exportFlags) -ne 0) {
+			throw 'A chave privada do emissor de licencas permite exportacao e foi recusada.'
+		}
+		if ($licenseCngKey.Provider.Provider -eq 'Microsoft Software Key Storage Provider') {
+			throw 'A chave do emissor de licencas deve ficar em hardware (TPM, smart card, token ou HSM), nao no provedor de software.'
+		}
+        $licenseChallenge = New-Object byte[] 32
+        $licenseRng = [Security.Cryptography.RandomNumberGenerator]::Create()
+        try { $licenseRng.GetBytes($licenseChallenge) }
+        finally { $licenseRng.Dispose() }
+        $licenseSignature = $null
+        try {
+            if ($licenseRsa) {
+                if ($licenseRsa.KeySize -lt 2048) { throw 'O emissor RSA de licencas exige pelo menos 2048 bits.' }
+                $licenseSignature = $licenseRsa.SignData($licenseChallenge,
+                    [Security.Cryptography.HashAlgorithmName]::SHA256,
+                    [Security.Cryptography.RSASignaturePadding]::Pkcs1)
+                if (-not $licenseRsa.VerifyData($licenseChallenge, $licenseSignature,
+                    [Security.Cryptography.HashAlgorithmName]::SHA256,
+                    [Security.Cryptography.RSASignaturePadding]::Pkcs1)) {
+                    throw 'A chave privada RSA do emissor de licencas falhou no teste de posse.'
+                }
+            }
+            elseif ($licenseEcdsa) {
+                if ($licenseEcdsa.KeySize -notin @(256,384,521)) { throw 'A curva ECDSA do emissor de licencas nao e permitida.' }
+                $licenseSignature = $licenseEcdsa.SignData($licenseChallenge,
+                    [Security.Cryptography.HashAlgorithmName]::SHA256)
+                if (-not $licenseEcdsa.VerifyData($licenseChallenge, $licenseSignature,
+                    [Security.Cryptography.HashAlgorithmName]::SHA256)) {
+                    throw 'A chave privada ECDSA do emissor de licencas falhou no teste de posse.'
+                }
+            }
+            else { throw 'O emissor de licencas deve usar RSA ou ECDSA.' }
+        }
+        finally {
+            if ($licenseSignature) { [Array]::Clear($licenseSignature, 0, $licenseSignature.Length) }
+            if ($licenseChallenge) { [Array]::Clear($licenseChallenge, 0, $licenseChallenge.Length) }
+            if ($licenseRsa) { $licenseRsa.Dispose() }
+            if ($licenseEcdsa) { $licenseEcdsa.Dispose() }
+        }
+
+        $publicCertificate = $licenseCertificate.Export(
+            [Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+        try {
+            if ($publicCertificate.Length -lt 256 -or $publicCertificate.Length -gt 65536) {
+                throw 'O certificado publico do emissor de licenca possui tamanho invalido.'
+            }
+            $script:LicenseIssuerCertificateBase64 = [Convert]::ToBase64String($publicCertificate)
+        }
+        finally {
+            if ($null -ne $publicCertificate) { [Array]::Clear($publicCertificate, 0, $publicCertificate.Length) }
+        }
+    }
     $script:SignTool = Resolve-SignTool
+	Assert-MicrosoftSignedBuildTool $script:SignTool 'SignTool do Windows SDK'
     $script:SignCertificate = $certificate
+    $script:NormalizedSigningThumbprint = $thumbprint
     $script:SigningEnabled = $true
     Write-Host "Assinatura Authenticode: habilitada ($LocalCertificado / $thumbprint)." -ForegroundColor Green
 }
@@ -1711,7 +1955,27 @@ function Compile-Native([string]$SourceDirectory, [string]$BaseName, [string]$Ou
     $object = Join-Path $NativeOutput ($BaseName + '.obj')
     $output = Join-Path $NativeOutput $OutputName
     Run $script:Rc @('/nologo', "/fo$resource", ($BaseName + '.rc')) $SourceDirectory
-    $arguments = @('/nologo','/std:c++17','/utf-8','/EHsc','/O2','/W4',"/Fo:$object","/Fe:$output",($BaseName + '.cpp'),$resource) + $Libraries + @('/link','/SUBSYSTEM:WINDOWS')
+    $compileArguments = @('/nologo','/std:c++17','/utf-8','/EHsc','/O2','/W4')
+    $linkArguments = @('/link','/SUBSYSTEM:WINDOWS')
+    if ($ProtecaoComercial) {
+        if ($script:NormalizedSigningThumbprint -notmatch '^[0-9A-F]{40}$') {
+            throw 'Thumbprint normalizado ausente antes da compilacao nativa comercial.'
+        }
+		if ($script:AgentBundleSha256 -notmatch '^[0-9A-F]{64}$') {
+			throw 'Manifesto SHA-256 do bundle PIX ausente antes da compilacao nativa comercial.'
+		}
+        $compileArguments += @(
+            '/GL', '/guard:cf', '/GS', '/sdl', '/Gy', '/Gw', '/Brepro',
+            '/DTURBORAMA_REQUIRE_SIGNED_PIX=1',
+			('/DTURBORAMA_PIX_SIGNER_THUMBPRINT=' + $script:NormalizedSigningThumbprint),
+			('/DTURBORAMA_PIX_BUNDLE_SHA256=' + $script:AgentBundleSha256)
+        )
+        $linkArguments += @(
+            '/LTCG', '/GUARD:CF', '/DYNAMICBASE', '/NXCOMPAT', '/HIGHENTROPYVA',
+            '/CETCOMPAT', '/OPT:REF', '/OPT:ICF', '/INCREMENTAL:NO', '/Brepro'
+        )
+    }
+    $arguments = $compileArguments + @("/Fo:$object","/Fe:$output",($BaseName + '.cpp'),$resource) + $Libraries + $linkArguments
     Run $script:Cl $arguments $SourceDirectory
     Require-File $output $OutputName
     return $output
@@ -1727,6 +1991,153 @@ function Copy-PrivateDotnet([string]$Dotnet, [string]$Destination) {
     Copy-Item -LiteralPath $Dotnet -Destination (Join-Path $Destination 'dotnet.exe') -Force
     Copy-Tree $fxr (Join-Path $Destination ('host\fxr\' + $runtime.Name))
     Copy-Tree $runtime.FullName (Join-Path $Destination ('shared\Microsoft.NETCore.App\' + $runtime.Name))
+}
+
+function Assert-ExactAgentBuildTree([string]$Root) {
+    $expected = @(
+        'appsettings.json',
+        'Microsoft.Win32.SystemEvents.dll',
+        'QRCoder.dll',
+        'runtimes\unix\lib\net6.0\System.Drawing.Common.dll',
+        'runtimes\win\lib\net6.0\Microsoft.Win32.SystemEvents.dll',
+        'runtimes\win\lib\net6.0\System.Drawing.Common.dll',
+        'System.Drawing.Common.dll',
+        'TurboRamaPixAgent.deps.json',
+        'TurboRamaPixAgent.dll',
+        'TurboRamaPixAgent.runtimeconfig.json'
+    )
+    $rootFull = Assert-RegularDirectoryPath $Root 'Saida fechada do agente PIX'
+    $actual = @(Get-ChildItem -LiteralPath $rootFull -Recurse -File -Force | ForEach-Object {
+        $_.FullName.Substring($rootFull.Length).TrimStart('\')
+    })
+    [Array]::Sort($expected, [StringComparer]::OrdinalIgnoreCase)
+    [Array]::Sort($actual, [StringComparer]::OrdinalIgnoreCase)
+    $difference = @(Compare-Object -ReferenceObject $expected -DifferenceObject $actual -CaseSensitive)
+    if ($difference.Count -ne 0) {
+        throw "A saida do agente PIX diverge da allowlist comercial fechada: $($difference | Out-String)"
+    }
+}
+
+function Assert-TrustedAgentPeFiles([string]$Root) {
+    $rootFull = Assert-RegularDirectoryPath $Root 'Bundle do agente para assinatura'
+    $vendorNames = @('TurboRamaPixAgent.dll','QRCoder.dll')
+    foreach ($file in Get-ChildItem -LiteralPath $rootFull -Recurse -File -Force | Where-Object {
+        $_.Extension.ToLowerInvariant() -in @('.dll','.exe')
+    }) {
+        Assert-RegularSingleLinkFilePath $file.FullName "PE do bundle PIX ($($file.Name))" | Out-Null
+        $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
+        if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+            throw "Componente PE sem assinatura valida no bundle PIX: $($file.FullName)"
+        }
+        if ($vendorNames -contains $file.Name) {
+            if (-not $signature.SignerCertificate -or
+                $signature.SignerCertificate.Thumbprint.ToUpperInvariant() -ne $script:NormalizedSigningThumbprint) {
+                throw "Componente TurboRama assinado por editor diferente do autorizado: $($file.FullName)"
+            }
+        }
+        elseif (-not $signature.SignerCertificate -or
+            $signature.SignerCertificate.Subject -notmatch '(?i)(^|,\s*)O=Microsoft Corporation(,|$)') {
+            throw "Runtime privado nao foi assinado pela Microsoft: $($file.FullName)"
+        }
+    }
+}
+
+function Get-CommercialBundleDigest([string]$Root) {
+    $rootFull = Assert-RegularDirectoryPath $Root 'Bundle para manifesto SHA-256'
+    foreach ($directory in Get-ChildItem -LiteralPath $rootFull -Recurse -Directory -Force) {
+        if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Bundle PIX contem pasta redirecionada: $($directory.FullName)"
+        }
+    }
+    $records = @(Get-ChildItem -LiteralPath $rootFull -Recurse -File -Force | ForEach-Object {
+        Assert-RegularSingleLinkFilePath $_.FullName "Arquivo do manifesto PIX ($($_.Name))" | Out-Null
+        [pscustomobject]@{
+            Relative = $_.FullName.Substring($rootFull.Length).TrimStart('\').Replace('\','/').ToLowerInvariant()
+            FullName = $_.FullName
+        }
+    })
+    if ($records.Count -eq 0) { throw 'O bundle PIX esta vazio.' }
+    $records = @($records | Sort-Object -Property Relative -CaseSensitive)
+    for ($index = 1; $index -lt $records.Count; ++$index) {
+        if ([string]::Equals($records[$index - 1].Relative, $records[$index].Relative, [StringComparison]::Ordinal)) {
+            throw "Bundle PIX possui caminho duplicado: $($records[$index].Relative)"
+        }
+    }
+    $tree = [Security.Cryptography.SHA256]::Create()
+    try {
+        foreach ($record in $records) {
+            $pathBytes = [Text.Encoding]::UTF8.GetBytes($record.Relative)
+            $fileHex = (Get-FileHash -LiteralPath $record.FullName -Algorithm SHA256).Hash
+            $fileBytes = New-Object byte[] 32
+            for ($offset = 0; $offset -lt 32; ++$offset) {
+                $fileBytes[$offset] = [Convert]::ToByte($fileHex.Substring($offset * 2, 2), 16)
+            }
+            $zero = [byte[]]@(0)
+            $newline = [byte[]]@(10)
+            [void]$tree.TransformBlock($pathBytes, 0, $pathBytes.Length, $pathBytes, 0)
+            [void]$tree.TransformBlock($zero, 0, 1, $zero, 0)
+            [void]$tree.TransformBlock($fileBytes, 0, $fileBytes.Length, $fileBytes, 0)
+            [void]$tree.TransformBlock($newline, 0, 1, $newline, 0)
+            [Array]::Clear($fileBytes, 0, $fileBytes.Length)
+        }
+        [void]$tree.TransformFinalBlock((New-Object byte[] 0), 0, 0)
+        return [BitConverter]::ToString($tree.Hash).Replace('-','')
+    }
+    finally { $tree.Dispose() }
+}
+
+function Prepare-CommercialAgentBundle([string]$Dotnet) {
+    $env:DOTNET_CLI_HOME = Join-Path $WorkRoot 'dotnet-home'
+    $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
+    $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+    $offlineNuget = Join-Path $WorkspaceRoot 'NUGET-COMMERCIAL'
+    if (Test-Path -LiteralPath $offlineNuget) { $env:NUGET_PACKAGES = $offlineNuget }
+    Require-File (Join-Path (Split-Path -Parent $AgentProject) 'packages.lock.json') 'Lock de dependencias .NET'
+    Run $Dotnet @('restore',$AgentProject,'--locked-mode','--ignore-failed-sources','-p:NuGetAudit=false')
+    if ([string]::IsNullOrWhiteSpace($script:LicenseIssuerCertificateBase64)) {
+        throw 'O certificado publico do emissor da licenca comercial nao foi preparado.'
+    }
+    $arguments = @(
+        'build',$AgentProject,'-c','Release','--no-restore','-o',$AgentOutput,'-p:NuGetAudit=false',
+        '-p:DebugType=None','-p:DebugSymbols=false','-p:CommercialLicenseRequired=true',
+        ('-p:CommercialLicenseIssuerCertificateBase64=' + $script:LicenseIssuerCertificateBase64)
+    )
+    Run $Dotnet $arguments
+    Assert-CommercialPayloadTree $AgentOutput 'Saida do agente PIX'
+    Run $Dotnet @((Join-Path $AgentOutput 'TurboRamaPixAgent.dll'),'--verify-commercial-build')
+
+    $agentSettingsTemplate = Join-Path (Split-Path -Parent $AgentProject) 'appsettings.example.json'
+    $agentSettingsOutput = Join-Path $AgentOutput 'appsettings.json'
+    Require-File $agentSettingsTemplate 'Template seguro do appsettings PIX'
+    Copy-Item -LiteralPath $agentSettingsTemplate -Destination $agentSettingsOutput -Force
+    if ((Get-FileHash -LiteralPath $agentSettingsTemplate -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath $agentSettingsOutput -Algorithm SHA256).Hash) {
+        throw 'appsettings.json distribuido diverge do template seguro versionado.'
+    }
+    $settingsJson = Get-Content -LiteralPath $agentSettingsOutput -Raw | ConvertFrom-Json
+    if (-not $settingsJson.TurboRamaPix -or $settingsJson.TurboRamaPix.Provider -ne 'mock' -or
+        $settingsJson.TurboRamaPix.ProductionEnabled -ne $false) {
+        throw 'Template appsettings PIX nao esta em estado fail-closed (mock/producao desabilitada).'
+    }
+    $settingsText = Get-Content -LiteralPath $agentSettingsOutput -Raw
+    if ($settingsText -match '(?i)access[_-]?token|client[_-]?secret|authorization\s*[:=]|private[_-]?key|password\s*[:=]') {
+        throw 'Campo sensivel encontrado no appsettings distribuido.'
+    }
+
+    $appHost = Join-Path $AgentOutput 'TurboRamaPixAgent.exe'
+    Assert-RegularSingleLinkFilePath $appHost 'Apphost descartavel do agente PIX' | Out-Null
+    Remove-Item -LiteralPath $appHost -Force
+    Assert-ExactAgentBuildTree $AgentOutput
+    Sign-Binary (Join-Path $AgentOutput 'TurboRamaPixAgent.dll')
+    Sign-Binary (Join-Path $AgentOutput 'QRCoder.dll')
+    Copy-PrivateDotnet $Dotnet (Join-Path $AgentOutput 'runtime')
+    Assert-CommercialPayloadTree $AgentOutput 'Bundle completo do agente PIX'
+    Assert-TrustedAgentPeFiles $AgentOutput
+    Run (Join-Path $AgentOutput 'runtime\dotnet.exe') @(
+        (Join-Path $AgentOutput 'TurboRamaPixAgent.dll'),'--self-test','--bridge',(Join-Path $WorkRoot 'agent-self-test')) $AgentOutput
+    $digest = Get-CommercialBundleDigest $AgentOutput
+    if ($digest -notmatch '^[0-9A-F]{64}$') { throw 'O manifesto completo do agente PIX nao gerou SHA-256 valido.' }
+    return $digest
 }
 
 function Resolve-Pinned7za {
@@ -1745,6 +2156,7 @@ try {
     Recover-InterruptedPromotion $CanonicalOutputRoot $ReleaseHistoryRoot $ReleaseArtifacts
     Require-Directory $ProjectRoot 'Projeto TurboRama'
     Require-File $AgentProject 'Projeto do agente PIX'
+    Require-File $LicenseIssuerProject 'Projeto privado do emissor de licencas PIX'
     Require-File $PackScript 'Empacotador comercial'
     Require-File $ThemePacker 'Empacotador deterministico do tema'
     Require-File $SevenZipLicense 'Licenca oficial do 7-Zip 24.09'
@@ -1784,37 +2196,26 @@ try {
     Import-VsEnvironment $vsDevCmd
     $script:Cl = (Get-Command cl.exe -ErrorAction Stop).Source
     $script:Rc = (Get-Command rc.exe -ErrorAction Stop).Source
-    $sourceCommit = '(git indisponivel)'
-    $sourceDirtyCount = -1
-    $sourceDirtyEntries = @()
+	Assert-MicrosoftSignedBuildTool $dotnet 'dotnet.exe'
+	Assert-MicrosoftSignedBuildTool $cmake 'CMake do Visual Studio'
+	Assert-MicrosoftSignedBuildTool $ninja 'Ninja do Visual Studio'
+	Assert-MicrosoftSignedBuildTool $script:Cl 'compilador C++ do Visual Studio'
+	Assert-MicrosoftSignedBuildTool $script:Rc 'Resource Compiler do Windows SDK'
+    $git = (Get-Command git.exe -ErrorAction Stop).Source
+    $sourceCommit = (& $git -C $RepoRoot rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceCommit)) {
+		throw 'O build comercial exige um commit Git identificavel.'
+	}
+    $sourceDirtyEntries = @(& $git -C $RepoRoot status --porcelain=v1 -uall)
+    if ($LASTEXITCODE -ne 0) { throw 'git status falhou no build comercial.' }
+    $sourceDirtyCount = $sourceDirtyEntries.Count
+    if ($sourceDirtyCount -ne 0) {
+		throw "O build comercial exige arvore Git limpa. Revise e confirme as alteracoes antes de assinar: $($sourceDirtyEntries -join '; ')"
+	}
     $sourceTreeFingerprintAtStart = '(nao identificado)'
-    try {
-        $git = (Get-Command git.exe -ErrorAction Stop).Source
-        $sourceCommit = (& $git -C $RepoRoot rev-parse HEAD).Trim()
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceCommit)) { throw 'HEAD Git indisponivel' }
-        $sourceDirtyEntries = @(& $git -C $RepoRoot status --porcelain=v1 -uall)
-        $sourceDirtyCount = $sourceDirtyEntries.Count
-        if ($LASTEXITCODE -ne 0) { throw 'git status falhou' }
-    }
-    catch {
-        $sourceCommit = '(nao identificado)'
-        $sourceDirtyCount = -1
-        $sourceDirtyEntries = @()
-    }
     $sourceStatusAtStart = $sourceDirtyEntries -join "`n"
     if ($sourceDirtyCount -ge 0) {
         $sourceTreeFingerprintAtStart = Get-GitWorkingTreeFingerprint $git $RepoRoot
-    }
-    if ($sourceDirtyCount -gt 0) {
-        Add-Content -LiteralPath $LogFile -Encoding UTF8 -Value @(
-            'AVISO: ARVORE GIT SUJA; ESTE CANDIDATO NAO E REPRODUZIVEL APENAS PELO COMMIT.',
-            'Entradas registradas por git status --porcelain=v1 -uall:',
-            $sourceDirtyEntries
-        )
-    }
-    elseif ($sourceDirtyCount -lt 0) {
-        Add-Content -LiteralPath $LogFile -Encoding UTF8 -Value `
-            'AVISO: IDENTIDADE GIT NAO COMPROVADA; A REPRODUTIBILIDADE POR COMMIT NAO FOI ESTABELECIDA.'
     }
     # Registre os dois arquivos que governam o instalador antes de qualquer
     # compilacao e mantenha a identidade ate o fechamento da release. Assim o
@@ -1837,46 +2238,47 @@ try {
     $buildScriptHashAtStart = $script:BuildScriptSourcePin.Sha256
     Initialize-CodeSigning
 
-    Stage '2/9 - EMULATIONSTATION'
-    Run $cmake @('-S',$ProjectRoot,'-B',$EsBuild,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',('-DCMAKE_MAKE_PROGRAM=' + ($ninja -replace '\\','/')),('-DCMAKE_C_COMPILER=' + ($script:Cl -replace '\\','/')),('-DCMAKE_CXX_COMPILER=' + ($script:Cl -replace '\\','/')),('-DCMAKE_RC_COMPILER=' + ($script:Rc -replace '\\','/')))
+    Stage '2/9 - AGENTE PIX SELADO E EMULATIONSTATION'
+    $script:AgentBundleSha256 = Prepare-CommercialAgentBundle $dotnet
+    $cmakeArguments = @(
+        '-S',$ProjectRoot,'-B',$EsBuild,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
+        ('-DCMAKE_MAKE_PROGRAM=' + ($ninja -replace '\\','/')),
+        ('-DCMAKE_C_COMPILER=' + ($script:Cl -replace '\\','/')),
+        ('-DCMAKE_CXX_COMPILER=' + ($script:Cl -replace '\\','/')),
+        ('-DCMAKE_RC_COMPILER=' + ($script:Rc -replace '\\','/')),
+        ('-DTURBORAMA_COMMERCIAL_HARDENING=' + $(if ($ProtecaoComercial) { 'ON' } else { 'OFF' })),
+        ('-DTURBORAMA_REQUIRE_SIGNED_PIX=' + $(if ($ProtecaoComercial) { 'ON' } else { 'OFF' })),
+        ('-DTURBORAMA_PIX_SIGNER_THUMBPRINT=' + $(if ($ProtecaoComercial) { $script:NormalizedSigningThumbprint } else { '' })),
+        ('-DTURBORAMA_PIX_BUNDLE_SHA256=' + $(if ($ProtecaoComercial) { $script:AgentBundleSha256 } else { '' }))
+    )
+    Run $cmake $cmakeArguments
     Run $cmake @('--build',$EsBuild,'--target','emulationstation','--parallel',([Math]::Max(1,[Environment]::ProcessorCount).ToString()))
     $esExe = Join-Path $ProjectRoot 'bin\emulationstation.exe'
     Require-File $esExe 'emulationstation.exe'
+    # O frontend comercial verifica a propria assinatura antes de qualquer
+    # argumento ou tela; ele precisa ser assinado antes dos seus autotestes.
+    Sign-Binary $esExe
     Invoke-FrontendSelfTest $esExe
 
-    Stage '3/9 - AGENTE PIX E AUTOTESTES'
-    $env:DOTNET_CLI_HOME = Join-Path $WorkRoot 'dotnet-home'
-    $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
-    $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-    $offlineNuget = Join-Path $WorkspaceRoot 'NUGET-COMMERCIAL'
-    if (Test-Path -LiteralPath $offlineNuget) { $env:NUGET_PACKAGES = $offlineNuget }
-    Require-File (Join-Path (Split-Path -Parent $AgentProject) 'packages.lock.json') 'Lock de dependencias .NET'
-    Run $dotnet @('restore',$AgentProject,'--locked-mode','--ignore-failed-sources','-p:NuGetAudit=false')
-    Run $dotnet @('build',$AgentProject,'-c','Release','--no-restore','-o',$AgentOutput,'-p:NuGetAudit=false')
-    $agentSettingsTemplate = Join-Path (Split-Path -Parent $AgentProject) 'appsettings.example.json'
-    $agentSettingsOutput = Join-Path $AgentOutput 'appsettings.json'
-    Require-File $agentSettingsTemplate 'Template seguro do appsettings PIX'
-    # Nunca preserve appsettings.json local/ignorado. A configuracao distribuida
-    # deve ser sempre o template rastreavel e fail-closed.
-    Copy-Item -LiteralPath $agentSettingsTemplate -Destination $agentSettingsOutput -Force
-    if ((Get-FileHash -LiteralPath $agentSettingsTemplate -Algorithm SHA256).Hash -ne
-        (Get-FileHash -LiteralPath $agentSettingsOutput -Algorithm SHA256).Hash) {
-        throw 'appsettings.json distribuido diverge do template seguro versionado.'
+    Stage '3/9 - EMISSOR PRIVADO E REVALIDACAO DO BUNDLE'
+    if ((Get-CommercialBundleDigest $AgentOutput) -ne $script:AgentBundleSha256) {
+        throw 'O bundle PIX mudou depois de o seu manifesto ser incorporado ao EmulationStation.'
     }
-    $settingsJson = Get-Content -LiteralPath $agentSettingsOutput -Raw | ConvertFrom-Json
-    if (-not $settingsJson.TurboRamaPix -or $settingsJson.TurboRamaPix.Provider -ne 'mock' -or
-        $settingsJson.TurboRamaPix.ProductionEnabled -ne $false) {
-        throw 'Template appsettings PIX nao esta em estado fail-closed (mock/producao desabilitada).'
-    }
-    $settingsText = Get-Content -LiteralPath $agentSettingsOutput -Raw
-    if ($settingsText -match '(?i)access[_-]?token|client[_-]?secret|authorization\s*[:=]|private[_-]?key|password\s*[:=]') {
-        throw 'Campo sensivel encontrado no appsettings distribuido.'
-    }
-    Run $dotnet @((Join-Path $AgentOutput 'TurboRamaPixAgent.dll'),'--self-test','--bridge',(Join-Path $WorkRoot 'agent-self-test'))
+    # Compile e teste a ferramenta privada da fabrica, mas mantenha sua saida
+    # somente na area temporaria do compilador. Ela jamais entra no payload do
+    # cliente, pois contem a capacidade operacional de emitir licencas.
+    $licenseIssuerOutput = Join-Path $NativeOutput 'license-issuer-private'
+    Run $dotnet @('restore',$LicenseIssuerProject,'--ignore-failed-sources','-p:NuGetAudit=false')
+    Run $dotnet @('build',$LicenseIssuerProject,'-c','Release','--no-restore','-o',$licenseIssuerOutput,'-p:NuGetAudit=false','-warnaserror')
+    Run $dotnet @((Join-Path $licenseIssuerOutput 'TurboRamaPixLicenseIssuer.dll'),'--self-test')
+    Run $dotnet @(
+        (Join-Path $licenseIssuerOutput 'TurboRamaPixLicenseIssuer.dll'),
+        '--validate-key',$CertificadoEmissorLicencaThumbprint,
+        '--store',$LocalCertificadoEmissorLicenca)
 
     Stage '4/9 - PROGRAMAS WINDOWS LZ GAMES'
     $ownerConfigurator = Compile-Native (Join-Path $ProjectRoot 'tools\TurboRamaPixOwnerConfigurator') 'TurboRamaPixOwnerConfigurator' 'CONFIGURAR-USER-TOKEN-PIX.exe' @('user32.lib','gdi32.lib','shell32.lib','comctl32.lib','advapi32.lib')
-    $credentialEditor = Compile-Native (Join-Path $ProjectRoot 'tools\TurboRamaPixCredentialEditor') 'TurboRamaPixCredentialEditor' 'CONFIGURAR-ACCESS-TOKEN-PIX.exe' @('user32.lib','gdi32.lib','crypt32.lib','comdlg32.lib','shell32.lib')
+    $credentialEditor = Compile-Native (Join-Path $ProjectRoot 'tools\TurboRamaPixCredentialEditor') 'TurboRamaPixCredentialEditor' 'CONFIGURAR-ACCESS-TOKEN-PIX.exe' @('user32.lib','gdi32.lib','crypt32.lib','comdlg32.lib','shell32.lib','advapi32.lib','bcrypt.lib','credui.lib','ole32.lib','userenv.lib')
     $installer = Compile-Native $InstallerSource 'TurboRamaInstaller' 'TurboRamaInstaller.exe' @('user32.lib','shlwapi.lib','shell32.lib','advapi32.lib')
     $bootstrapper = Compile-Native $InstallerSource 'TurboRamaBootstrapper' 'TurboRamaBootstrapper.exe' @('user32.lib','bcrypt.lib')
     $guiTest = Start-Process -FilePath $ownerConfigurator -ArgumentList '--self-test' -Wait -PassThru
@@ -1891,9 +2293,6 @@ try {
     $bootstrapperSecurityTest = Start-Process -FilePath $bootstrapper -ArgumentList '--self-test' -Wait -PassThru
     if ($bootstrapperSecurityTest.ExitCode -ne 0) { throw "Autoteste do staging do bootstrapper retornou $($bootstrapperSecurityTest.ExitCode)." }
     foreach ($binary in @(
-        $esExe,
-        (Join-Path $AgentOutput 'TurboRamaPixAgent.exe'),
-        (Join-Path $AgentOutput 'TurboRamaPixAgent.dll'),
         $ownerConfigurator,
         $credentialEditor,
         $installer
@@ -1921,12 +2320,15 @@ try {
         (Get-FileHash -LiteralPath (Join-Path $ArchiveRoot 'pix-agent\appsettings.json') -Algorithm SHA256).Hash) {
         throw 'O payload alterou o appsettings seguro do agente PIX.'
     }
-    Copy-PrivateDotnet $dotnet (Join-Path $ArchiveRoot 'pix-agent\runtime')
+	if ((Get-CommercialBundleDigest (Join-Path $ArchiveRoot 'pix-agent')) -ne $script:AgentBundleSha256) {
+		throw 'A copia para o payload alterou o manifesto completo do agente PIX.'
+	}
     $forbidden = Get-ChildItem -LiteralPath $ArchiveRoot -Recurse -File | Where-Object { $_.Name -like 'secret.dat*' -or $_.Name -in @('bridge.key','owner-settings.json','.agent.lock') }
     if ($forbidden) { throw 'Arquivo privado encontrado no pacote. Empacotamento cancelado.' }
     foreach ($required in @('emulationstation.exe','CONFIGURAR-USER-TOKEN-PIX.exe','CONFIGURAR-ACCESS-TOKEN-PIX.exe','pix-agent\TurboRamaPixAgent.dll','pix-agent\runtime\dotnet.exe','THIRD-PARTY-NOTICES\7za.exe','THIRD-PARTY-NOTICES\LICENSE-7ZIP-24.09.txt','THIRD-PARTY-NOTICES\COPYING-LGPL-2.1.txt','THIRD-PARTY-NOTICES\NOTICE-7ZIP-24.09.txt')) {
         Require-File (Join-Path $ArchiveRoot $required) "Conteudo obrigatorio ($required)"
     }
+    Assert-CommercialPayloadTree $ArchiveRoot 'Staging do payload comercial'
     Assert-RetiredRepairAbsent $ArchiveRoot 'Staging do payload'
 
     Stage '6/9 - INSTALADOR UNICO (CANDIDATO)'
@@ -1962,6 +2364,7 @@ try {
         'THIRD-PARTY-NOTICES\COPYING-LGPL-2.1.txt',
         'THIRD-PARTY-NOTICES\NOTICE-7ZIP-24.09.txt'
     ) @($RetiredRepairFileName)
+    Assert-CommercialArchiveHygiene $sevenZip $payload
     Assert-RetiredRepairAbsent $OutputRoot 'Entrega candidata'
     $instructions = @'
 TURBORAMA / LZ GAMES - CONFIGURAÇÃO COMERCIAL PIX v25
@@ -1974,15 +2377,32 @@ STATUS DESTA ENTREGA
 INSTALAÇÃO
 1. Entre no modo manutenção pelo fluxo oficial do TurboRama.
 2. Execute INSTALAR-TURBORAMA-PIX-COMERCIAL-v25-ULTRA-FINAL.exe.
-3. Entre na sessão Windows do quiosque Arcade e, sem elevar para outra conta,
-   abra o CONFIGURAR-USER-TOKEN-PIX.exe no layout selecionado:
+3. Ative a licença comercial vinculada ao TPM conforme a seção abaixo.
+4. Entre na conta Windows configurada no turborama.json e no AutoLogon
+   do gabinete. No gabinete atual essa conta é Admin. Abra o
+   CONFIGURAR-USER-TOKEN-PIX.exe no layout selecionado:
    - flat: D:\emulationstation\CONFIGURAR-USER-TOKEN-PIX.exe
    - clássico: D:\Turborama\emulationstation\CONFIGURAR-USER-TOKEN-PIX.exe
-4. Escolha Mercado Pago ou Outro banco / Adaptador.
-5. Para Mercado Pago, cole somente o Access Token. Não use Public Key,
+5. Escolha Mercado Pago ou Outro banco / Adaptador.
+6. Para Mercado Pago, cole somente o Access Token. Não use Public Key,
    Client ID, Client Secret nem ID da aplicação no lugar do Access Token.
-6. Informe estabelecimento, caixa, CEP, número, referência e preços.
-7. Clique em VALIDAR E ATIVAR PIX.
+7. Informe estabelecimento, caixa, CEP, número, referência e preços.
+8. Clique em VALIDAR E ATIVAR PIX.
+
+ATIVAÇÃO COMERCIAL VINCULADA AO TPM
+- Feche o EmulationStation e execute o agente na própria conta Windows do
+  quiosque com --license-request CAMINHO\pedido.json. Use o dotnet.exe privado
+  e TurboRamaPixAgent.dll da pasta pix-agent instalada.
+- No computador privado de compilação, emita a licença com o projeto
+  tools\TurboRamaPixLicenseIssuer. Ele exige o certificado exclusivo do emissor
+  de licenças, diferente do Authenticode, com chave privada no token ou HSM;
+  a chave nunca é exportada.
+- De volta ao quiosque, execute o agente com
+  --install-license CAMINHO\quiosque.license e confirme com --license-status.
+- O pedido de ativação contém somente a chave pública/fingerprint do TPM. Não
+  contém Access Token, Client Secret, senha ou qualquer credencial do cliente.
+- Copiar executáveis, secret.dat e a licença para outro computador não libera
+  novas cobranças: a prova da chave TPM original é refeita antes de cobrar.
 
 ESCOPO WINDOWS IOT E MODO MANUTENÇÃO
 - Este atualizador interno exige uma pasta .emulationstation\pix preexistente e
@@ -2000,10 +2420,11 @@ ESCOPO WINDOWS IOT E MODO MANUTENÇÃO
   parar o Launcher e estabelecer o bloqueio operacional correto.
 
 IDENTIDADE WINDOWS / DPAPI
-- O token deve ser cadastrado pelo mesmo SID Arcade que executa o agente.
-- Se a instalação antiga tiver secret.dat criado por Admin ou o agente pedir
-  recadastro, entre como Arcade e informe novamente o Access Token; nunca copie
-  nem tente descriptografar o segredo anterior.
+- O token deve ser cadastrado pelo mesmo SID configurado no turborama.json e
+  no AutoLogon. No gabinete atual esse SID é da conta Admin.
+- Se a instalação antiga tiver secret.dat criado por outra identidade ou o
+  agente pedir recadastro, use a conta configurada do gabinete e informe
+  novamente o Access Token; nunca copie nem tente descriptografar o segredo anterior.
 
 CEP E ENDEREÇO
 - O proprietário informa somente CEP e número/complemento.
@@ -2025,10 +2446,19 @@ CONTA, LOJA E PDV
 
 SEGURANÇA
 - O Access Token é protegido pelo Windows e não entra no instalador ou JSON.
+- No perfil -ProtecaoComercial, o cofre usa DPAPI, AES-256-GCM e embrulha a
+  chave de dados por RSA-OAEP-SHA256 na chave privada não exportável do TPM.
+  Cada nova cobrança também exige licença offline assinada para a máquina.
+- Todos os arquivos do agente/runtime, inclusive deps.json, runtimeconfig.json
+  e dependências RID, entram em um manifesto SHA-256 incorporado nos programas
+  nativos assinados. Arquivo alterado, extra ou ausente bloqueia o agente.
+- O runtime privado inicia com ambiente reduzido; startup hooks, dependências
+  adicionais, stores externos, profiler e fallback para .NET global são recusados.
+- Fontes, projetos, testes, scripts e PDBs são recusados no pacote comercial.
 - Os autotestes são locais e simulados; não criam cobrança nem movimentam dinheiro.
 - Credenciais que já foram publicadas devem ser revogadas e substituídas.
 - Consulte ASSINATURA-AUTHENTICODE.txt. Builds oficiais devem usar
-  -ExigirAssinatura com certificado real de assinatura de código.
+  -ProtecaoComercial com certificado real de assinatura de código.
 
 DOCUMENTAÇÃO OFICIAL CONSULTADA
 https://www.mercadopago.com.br/developers/pt/docs/qr-code/create-store-and-pos
@@ -2502,6 +2932,7 @@ https://operations.osmfoundation.org/policies/nominatim/
 		if ($installedCredentialTest.ExitCode -ne 0) { throw 'Autoteste do editor de credencial instalado falhou.' }
 		$installedBridge = Join-Path $smoke '.emulationstation\pix\self-test-isolado'
 		Run (Join-Path $smoke 'pix-agent\runtime\dotnet.exe') @((Join-Path $smoke 'pix-agent\TurboRamaPixAgent.dll'),'--self-test','--bridge',$installedBridge) $smoke
+		Run (Join-Path $smoke 'emulationstation.exe') @('--pix-agent-trust-self-test') $smoke
 		Assert-SmokeOutOfScopeUnchanged 'Autotestes dos componentes instalados'
 		Assert-SmokeMaintenanceLockUnchanged 'Autotestes dos componentes instalados'
     }
@@ -2514,11 +2945,12 @@ https://operations.osmfoundation.org/policies/nominatim/
     $signatureReportFile = Join-Path $OutputRoot 'ASSINATURA-AUTHENTICODE.txt'
     $signatureReport = @(
         'TURBORAMA PIX COMERCIAL v25 - ASSINATURA AUTHENTICODE',
+        ('Perfil de protecao comercial: ' + $(if ($ProtecaoComercial) { 'ATIVO' } else { 'DESATIVADO' })),
         ('Status: ' + $(if ($script:SigningEnabled) { 'ASSINADO E VERIFICADO' } else { 'NAO ASSINADO - CERTIFICADO NAO FORNECIDO' })),
         ('Certificado: ' + $(if ($script:SigningEnabled) { $script:SignCertificate.Thumbprint } else { '(nenhum)' })),
         ('Armazenamento: ' + $(if ($script:SigningEnabled) { $LocalCertificado + '\My' } else { '(nao aplicavel)' })),
         ('Carimbo do tempo: ' + $(if ($ServidorCarimboDoTempo) { $ServidorCarimboDoTempo } else { '(nao configurado)' })),
-        'Para exigir assinatura no build, use -ExigirAssinatura e -CertificadoThumbprint.',
+        'Para o perfil comercial completo, use -ProtecaoComercial e -CertificadoThumbprint.',
         'Nenhum certificado ou senha privada e armazenado no repositorio ou no pacote.'
     )
     Set-Content -LiteralPath $signatureReportFile -Value $signatureReport -Encoding UTF8
@@ -2589,6 +3021,16 @@ https://operations.osmfoundation.org/policies/nominatim/
         '7-Zip 24.09 pinado: SHA256 223B873C50380FE9A39F1A22B6ABF8D46DB506E1C08D08312902F6F3CD1F7AC3',
         '7-Zip 24.09, NOTICE, licenca oficial e GNU LGPL 2.1 incluidos no payload, na entrega e no manifesto SHA-256',
         'Dependencias .NET: packages.lock.json validado por restore --locked-mode',
+        ('Protecao comercial de compilacao: ' + $(if ($ProtecaoComercial) { 'ATIVA; assinatura obrigatoria, mitigacoes nativas e payload sem simbolos/fontes/testes' } else { 'DESATIVADA' })),
+		"Manifesto fechado do bundle PIX: SHA256 $($script:AgentBundleSha256); cobre todos os caminhos, DLLs, JSONs, runtimeTargets e runtime privado; extras e ausencias sao recusados",
+		'Inicializacao do .NET: ambiente allowlist; startup hooks, additional deps, shared stores, profiler e fallback para runtime global recusados',
+		'Proveniencia da release: Git obrigatoriamente disponivel e limpo antes da assinatura comercial',
+        'Cofre de credencial comercial: DPAPI + AES-256-GCM; chave de dados embrulhada por RSA-OAEP-SHA256 na chave privada nao exportavel do TPM',
+        ('Licenca comercial por maquina: ' + $(if ($ProtecaoComercial) { 'OBRIGATORIA; emissor publico incorporado na DLL assinada e vinculo TPM revalidado antes de nova cobranca' } else { 'DESATIVADA NO BUILD DE DESENVOLVIMENTO' })),
+        'Chave privada do emissor de licenca incluida: NAO',
+        'Separacao de chaves: certificado emissor de licencas diferente do certificado Authenticode',
+        'Emissor de licencas de fabrica incluido no pacote do cliente: NAO',
+        'Emissor privado de licencas: compilado e aprovado no autoteste da fabrica',
         ('Assinatura Authenticode: ' + $(if ($script:SigningEnabled) { 'ASSINADA E VERIFICADA' } else { 'NAO APLICADA; certificado nao fornecido' }))
     )
     Set-Content -LiteralPath (Join-Path $OutputRoot 'RELATORIO-COMPILACAO-v25.txt') -Value $report -Encoding UTF8

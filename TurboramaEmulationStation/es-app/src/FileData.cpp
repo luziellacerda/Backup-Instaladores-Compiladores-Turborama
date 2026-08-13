@@ -35,9 +35,307 @@
 #include "resources/TextureData.h"
 #include "views/gamelist/GameNameFormatter.h"
 #include "CreditManager.h"
+#include "CreditWarningOverlay.h"
 #include <chrono>
 
 using namespace Utils::Platform;
+
+namespace
+{
+#ifdef WIN32
+	// Native, non-activating warning used while an external emulator owns the
+	// screen. The regular EmulationStation notification cannot be rendered while
+	// ProcessStartInfo::run() is supervising a running game.
+	class GameCreditWarningOverlay
+	{
+	public:
+		GameCreditWarningOverlay() = default;
+		~GameCreditWarningOverlay()
+		{
+			if (mWindow != nullptr)
+				DestroyWindow(mWindow);
+		}
+
+		void show(const std::string& text)
+		{
+			if (!ensureWindow())
+				return;
+
+			mText = utf8ToWide(text);
+			mShownAt = GetTickCount64();
+			mHideAt = mShownAt + 8000;
+			mLastPulse = -1;
+
+			HMONITOR monitor = MonitorFromWindow(GetForegroundWindow(), MONITOR_DEFAULTTOPRIMARY);
+			MONITORINFO info = {};
+			info.cbSize = sizeof(info);
+			if (!GetMonitorInfoW(monitor, &info))
+			{
+				info.rcMonitor.left = 0;
+				info.rcMonitor.top = 0;
+				info.rcMonitor.right = GetSystemMetrics(SM_CXSCREEN);
+				info.rcMonitor.bottom = GetSystemMetrics(SM_CYSCREEN);
+			}
+
+			const int screenWidth = info.rcMonitor.right - info.rcMonitor.left;
+			const int screenHeight = info.rcMonitor.bottom - info.rcMonitor.top;
+			// Compact consumer-facing card, centered without covering too much gameplay.
+			const int width = std::min(980,
+				std::max(620, static_cast<int>(screenWidth * 0.48f)));
+			const int height = std::min(220,
+				std::max(155, static_cast<int>(screenHeight * 0.16f)));
+			const int x = info.rcMonitor.left + (screenWidth - width) / 2;
+			const int y = info.rcMonitor.top + (screenHeight - height) / 2;
+
+			SetWindowPos(mWindow, HWND_TOPMOST, x, y, width, height,
+				SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+			HRGN roundedRegion = CreateRoundRectRgn(0, 0, width + 1, height + 1,
+				std::max(24, height / 5), std::max(24, height / 5));
+			if (SetWindowRgn(mWindow, roundedRegion, FALSE) == 0)
+				DeleteObject(roundedRegion);
+
+			SetLayeredWindowAttributes(mWindow, 0, 0, LWA_ALPHA);
+			ShowWindow(mWindow, SW_SHOWNOACTIVATE);
+			InvalidateRect(mWindow, nullptr, TRUE);
+			UpdateWindow(mWindow);
+			mVisible = true;
+			fadeOpacity(0, 244, 12, 12);
+			pumpMessages();
+		}
+
+		void tick()
+		{
+			pumpMessages();
+			if (!mVisible || mWindow == nullptr)
+				return;
+
+			const ULONGLONG now = GetTickCount64();
+			if (now >= mHideAt)
+			{
+				fadeOpacity(244, 0, 10, 10);
+				ShowWindow(mWindow, SW_HIDE);
+				mVisible = false;
+				return;
+			}
+
+			// A restrained glow draws attention without flashing aggressively.
+			const int pulse = static_cast<int>((now - mShownAt) / 650ULL) % 2;
+			if (pulse != mLastPulse)
+			{
+				mLastPulse = pulse;
+				InvalidateRect(mWindow, nullptr, FALSE);
+				UpdateWindow(mWindow);
+			}
+
+			// Some emulators periodically move themselves back to the front. Restore
+			// the warning's top-most position without stealing controller/keyboard focus.
+			SetWindowPos(mWindow, HWND_TOPMOST, 0, 0, 0, 0,
+				SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+		}
+
+		bool isVisible() const
+		{
+			return mWindow != nullptr && mVisible && IsWindowVisible(mWindow) != FALSE;
+		}
+
+	private:
+		static const wchar_t* className()
+		{
+			return L"TurboRamaGameCreditWarning";
+		}
+
+		static std::wstring utf8ToWide(const std::string& text)
+		{
+			if (text.empty())
+				return std::wstring();
+			const int length = MultiByteToWideChar(CP_UTF8, 0, text.c_str(),
+				static_cast<int>(text.size()), nullptr, 0);
+			if (length <= 0)
+				return std::wstring(text.begin(), text.end());
+			std::wstring result(static_cast<size_t>(length), L'\0');
+			MultiByteToWideChar(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()),
+				&result[0], length);
+			return result;
+		}
+
+		static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+		{
+			GameCreditWarningOverlay* self = reinterpret_cast<GameCreditWarningOverlay*>(
+				GetWindowLongPtrW(window, GWLP_USERDATA));
+			if (message == WM_NCCREATE)
+			{
+				CREATESTRUCTW* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
+				self = static_cast<GameCreditWarningOverlay*>(create->lpCreateParams);
+				SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+			}
+
+			switch (message)
+			{
+			case WM_PAINT:
+				if (self != nullptr)
+				{
+					self->paint();
+					return 0;
+				}
+				break;
+			case WM_ERASEBKGND:
+				return 1;
+			case WM_NCHITTEST:
+				return HTTRANSPARENT;
+			case WM_MOUSEACTIVATE:
+				return MA_NOACTIVATE;
+			}
+			return DefWindowProcW(window, message, wParam, lParam);
+		}
+
+		bool ensureWindow()
+		{
+			if (mWindow != nullptr)
+				return true;
+
+			WNDCLASSEXW windowClass = {};
+			windowClass.cbSize = sizeof(windowClass);
+			windowClass.style = CS_HREDRAW | CS_VREDRAW;
+			windowClass.lpfnWndProc = &GameCreditWarningOverlay::windowProc;
+			windowClass.hInstance = GetModuleHandleW(nullptr);
+			windowClass.hCursor = LoadCursor(nullptr, IDC_ARROW);
+			windowClass.lpszClassName = className();
+			if (RegisterClassExW(&windowClass) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+				return false;
+
+			mWindow = CreateWindowExW(
+				WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
+				className(), L"TurboRama - aviso de credito", WS_POPUP,
+				0, 0, 0, 0, nullptr, nullptr, GetModuleHandleW(nullptr), this);
+			if (mWindow == nullptr)
+				return false;
+
+			SetLayeredWindowAttributes(mWindow, 0, 244, LWA_ALPHA);
+			return true;
+		}
+
+		void fadeOpacity(BYTE from, BYTE to, int steps, DWORD delayMs)
+		{
+			if (mWindow == nullptr || steps <= 0)
+				return;
+			for (int step = 1; step <= steps; ++step)
+			{
+				const int value = static_cast<int>(from) +
+					(static_cast<int>(to) - static_cast<int>(from)) * step / steps;
+				SetLayeredWindowAttributes(mWindow, 0, static_cast<BYTE>(value), LWA_ALPHA);
+				pumpMessages();
+				Sleep(delayMs);
+			}
+		}
+
+		void paint()
+		{
+			PAINTSTRUCT paintInfo = {};
+			HDC dc = BeginPaint(mWindow, &paintInfo);
+			RECT client = {};
+			GetClientRect(mWindow, &client);
+			const int width = client.right - client.left;
+			const int height = client.bottom - client.top;
+
+			HBRUSH background = CreateSolidBrush(RGB(13, 18, 26));
+			FillRect(dc, &client, background);
+			DeleteObject(background);
+
+			const bool brightPulse = mLastPulse == 0;
+			const COLORREF borderColor = brightPulse ? RGB(255, 204, 48) : RGB(218, 155, 20);
+			HPEN border = CreatePen(PS_SOLID, std::max(3, height / 46), borderColor);
+			HGDIOBJ oldPen = SelectObject(dc, border);
+			HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+			RoundRect(dc, 3, 3, width - 3, height - 3, height / 5, height / 5);
+			SelectObject(dc, oldBrush);
+			SelectObject(dc, oldPen);
+			DeleteObject(border);
+
+			// Small visual accent keeps the card premium and easy to identify.
+			HBRUSH accent = CreateSolidBrush(borderColor);
+			RECT accentRect = { width / 2 - width / 12, height / 11,
+				width / 2 + width / 12, height / 11 + std::max(3, height / 45) };
+			FillRect(dc, &accentRect, accent);
+			DeleteObject(accent);
+
+			SetBkMode(dc, TRANSPARENT);
+			SetTextColor(dc, RGB(255, 207, 64));
+			HFONT titleFont = CreateFontW(-std::max(22, height / 6), 0, 0, 0, FW_BLACK,
+				FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+				CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI Black");
+			HGDIOBJ oldFont = SelectObject(dc, titleFont);
+			RECT titleRect = { height / 5, height / 8, width - height / 5, height * 5 / 12 };
+			DrawTextW(dc, L"AVISO DE TEMPO", -1, &titleRect,
+				DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+			SetTextColor(dc, RGB(246, 248, 252));
+			HFONT bodyFont = CreateFontW(-std::max(21, height / 7), 0, 0, 0, FW_SEMIBOLD,
+				FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+				CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+			SelectObject(dc, bodyFont);
+			RECT bodyRect = { height / 5, height * 5 / 12, width - height / 5, height - height / 8 };
+			DrawTextW(dc, mText.c_str(), -1, &bodyRect,
+				DT_CENTER | DT_VCENTER | DT_WORDBREAK | DT_NOPREFIX);
+
+			SelectObject(dc, oldFont);
+			DeleteObject(bodyFont);
+			DeleteObject(titleFont);
+			EndPaint(mWindow, &paintInfo);
+		}
+
+		void pumpMessages()
+		{
+			if (mWindow == nullptr)
+				return;
+			MSG message = {};
+			while (PeekMessageW(&message, mWindow, 0, 0, PM_REMOVE))
+			{
+				TranslateMessage(&message);
+				DispatchMessageW(&message);
+			}
+		}
+
+		HWND mWindow = nullptr;
+		std::wstring mText;
+		ULONGLONG mShownAt = 0;
+		ULONGLONG mHideAt = 0;
+		int mLastPulse = -1;
+		bool mVisible = false;
+	};
+#else
+	class GameCreditWarningOverlay
+	{
+	public:
+		void show(const std::string&) {}
+		void tick() {}
+		bool isVisible() const { return false; }
+	};
+#endif
+}
+
+namespace CreditWarningOverlay
+{
+	static GameCreditWarningOverlay& instance()
+	{
+		static GameCreditWarningOverlay overlay;
+		return overlay;
+	}
+
+	void show(const std::string& message)
+	{
+		instance().show(message);
+	}
+
+	void update()
+	{
+		instance().tick();
+	}
+
+	bool isVisible()
+	{
+		return instance().isVisible();
+	}
+}
 
 static std::map<std::string, std::function<BindableProperty(FileData*)>> properties =
 {
@@ -772,7 +1070,8 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 	{
 		process.killProcessTreeOnCallbackFalse = true;
 		process.pollCallback = [&credits, &creditExpired, &creditSessionStarted,
-			&warned60, &warned30, &warned10, &supervisedElapsedSeconds](long elapsedSeconds) {
+			&warned60, &warned30, &warned10,
+			&supervisedElapsedSeconds](long elapsedSeconds) {
 			if (!creditSessionStarted)
 			{
 				credits.beginGameSession();
@@ -792,6 +1091,10 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 			warnAt(60, warned60);
 			warnAt(30, warned30);
 			warnAt(10, warned10);
+			CreditWarningOverlay::update();
+			const std::string warning = credits.pollLowCreditWarning();
+			if (!warning.empty())
+				CreditWarningOverlay::show(warning);
 			if (!mayContinue) creditExpired = true;
 			return mayContinue;
 		};

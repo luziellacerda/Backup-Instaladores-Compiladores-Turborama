@@ -20,6 +20,10 @@ private:
 	void editText(const std::string& title, const std::string& current, bool password,
 		const std::function<void(const std::string&)>& callback);
 	void editPrice(int minutes);
+	void openHomeQrManager();
+	void openProviderManager();
+	void openOnlineProtectionManager();
+	void activateOnlineMachine();
 	void launchOwnerConfigurator();
 	void saveAndActivate();
 	std::string formatPrice(long long cents) const;

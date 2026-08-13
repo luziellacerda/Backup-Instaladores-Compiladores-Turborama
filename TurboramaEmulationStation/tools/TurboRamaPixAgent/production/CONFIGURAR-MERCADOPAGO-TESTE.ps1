@@ -328,7 +328,7 @@ try {
     $expectedAccountId = Read-Required 'User ID exibido nas credenciais de teste'
     if ($expectedAccountId -notmatch '^\d{5,24}$') { throw 'User ID invalido.' }
     $storeExternalId = Read-Required 'Identificador da loja (somente letras e numeros)' 'LZLOJA01'
-    $posExternalId = Read-Required 'Identificador do caixa/PDV (somente letras e numeros)' 'LZPIXCOMP'
+    $posExternalId = Read-Required 'Identificador do caixa/PDV (somente letras e numeros)' 'TURBORAMAKIOSK01'
     if ($storeExternalId -notmatch '^[A-Za-z0-9]{1,60}$') { throw 'Identificador da loja invalido.' }
     if ($posExternalId -notmatch '^[A-Za-z0-9]{1,39}$') { throw 'Identificador do PDV invalido.' }
     $storeName = Read-Required 'Nome da loja' 'TurboRama'

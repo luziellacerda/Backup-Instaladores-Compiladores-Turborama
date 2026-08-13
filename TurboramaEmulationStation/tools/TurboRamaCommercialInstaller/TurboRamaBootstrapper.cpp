@@ -50,7 +50,7 @@ namespace
 
 	constexpr bool preserveStagingForInstallerResult(int result)
 	{
-		return result == kAuxiliaryTreeUnconfirmedExitCode;
+		return result != 0;
 	}
 
 	constexpr int classifyInstallerProcessResult(DWORD waitResult, bool exitCodeRead,
@@ -78,9 +78,9 @@ namespace
 
 	static_assert(preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode)
 		&& !preserveStagingForInstallerResult(0)
-		&& !preserveStagingForInstallerResult(41)
-		&& !preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode + 1),
-		"Somente o estado critico da arvore auxiliar pode preservar o staging.");
+		&& preserveStagingForInstallerResult(41)
+		&& preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode + 1),
+		"Qualquer falha do instalador interno preserva staging e diagnostico.");
 	static_assert(validateInstallerProcessResultContract(),
 		"O bootstrapper so pode liberar cleanup depois de confirmar o termino do instalador interno.");
 
@@ -706,8 +706,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 			&& first != second && first.rfind(L"stage-", 0) == 0 && second.rfind(L"stage-", 0) == 0
 			&& validateInstallerProcessResultContract()
 			&& preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode)
-			&& !preserveStagingForInstallerResult(0) && !preserveStagingForInstallerResult(41)
-			&& !preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode + 1) ? 0 : 41;
+			&& !preserveStagingForInstallerResult(0) && preserveStagingForInstallerResult(41)
+			&& preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode + 1) ? 0 : 41;
 	}
 	const bool elevated = isProcessElevated();
 	if (elevated && environmentValue(L"TURBORAMA_INSTALLER_SILENT_TEST") == L"1")

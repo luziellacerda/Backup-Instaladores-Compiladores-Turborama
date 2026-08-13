@@ -1,0 +1,9 @@
+TURBORAMA PIX v25 - NENHUM INSTALADOR DESTA PASTA ESTA LIBERADO PARA VENDA
+
+O candidato de 05/08/2026 era nao assinado e foi preservado somente para
+auditoria em QUARENTENA-NAO-ASSINADO-2026-08-05.
+
+Uma nova pasta GERADO-v25 so pode ser criada pelo compilador comercial quando
+existirem dois certificados privados separados (Authenticode e licenca),
+carimbo RFC 3161 e aprovacao do teste isolado. Depois disso ainda e obrigatorio
+validar TPM, DPAPI, instalacao, cobranca e credito no usuario real do quiosque.

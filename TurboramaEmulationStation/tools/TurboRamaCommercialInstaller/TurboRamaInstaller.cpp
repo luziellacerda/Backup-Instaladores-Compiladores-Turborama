@@ -42,8 +42,6 @@ namespace
 	const wchar_t* kReleaseTag = L"v" TR_WSTRINGIFY(TURBORAMA_RELEASE_NUMBER);
 	const wchar_t* kTitle = L"TurboRama - Sistema PIX Comercial v" TR_WSTRINGIFY(TURBORAMA_RELEASE_NUMBER);
 	constexpr int kAuxiliaryTreeUnconfirmedExitCode = 42;
-	int gSecurityFixtureStage = 0;
-	DWORD gSecurityFixtureError = ERROR_SUCCESS;
 
 	std::wstring join(const std::wstring& left, const std::wstring& right)
 	{
@@ -60,9 +58,10 @@ namespace
 
 	std::wstring normalized(const std::wstring& value)
 	{
-		wchar_t full[32768]{};
-		const DWORD length = GetFullPathNameW(value.c_str(), 32768, full, nullptr);
-		std::wstring result = length > 0 && length < 32768 ? full : value;
+		std::vector<wchar_t> full(32768);
+		const DWORD length = GetFullPathNameW(value.c_str(), static_cast<DWORD>(full.size()),
+			full.data(), nullptr);
+		std::wstring result = length > 0 && length < full.size() ? full.data() : value;
 		std::replace(result.begin(), result.end(), L'/', L'\\');
 		std::transform(result.begin(), result.end(), result.begin(), ::towlower);
 		return result;
@@ -636,7 +635,7 @@ namespace
 		return !value.empty();
 	}
 
-	bool isLocalEnabledNonAdministrator(const std::wstring& resolvedDomain, const std::wstring& localUser)
+	bool isLocalEnabledAccount(const std::wstring& resolvedDomain, const std::wstring& localUser)
 	{
 		wchar_t computer[MAX_COMPUTERNAME_LENGTH + 1]{};
 		DWORD computerLength = MAX_COMPUTERNAME_LENGTH + 1;
@@ -646,32 +645,9 @@ namespace
 		const NET_API_STATUS accountStatus = NetUserGetInfo(nullptr, localUser.c_str(), 4,
 			(LPBYTE*)&accountInfo);
 		const bool enabled = accountStatus == NERR_Success && accountInfo != nullptr
-			&& (accountInfo->usri4_flags & UF_ACCOUNTDISABLE) == 0;
+			&& (accountInfo->usri4_flags & (UF_ACCOUNTDISABLE | UF_LOCKOUT)) == 0;
 		if (accountInfo) NetApiBufferFree(accountInfo);
-		if (!enabled) return false;
-		BYTE adminSid[SECURITY_MAX_SID_SIZE]{};
-		DWORD adminSidSize = sizeof(adminSid);
-		if (!CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, adminSid, &adminSidSize)) return false;
-		wchar_t adminName[256]{}, adminDomain[256]{};
-		DWORD adminNameSize = 256, adminDomainSize = 256;
-		SID_NAME_USE use{};
-		if (!LookupAccountSidW(nullptr, adminSid, adminName, &adminNameSize,
-			adminDomain, &adminDomainSize, &use)) return false;
-		LOCALGROUP_USERS_INFO_0* groups = nullptr;
-		DWORD read = 0, total = 0;
-		const NET_API_STATUS groupsStatus = NetUserGetLocalGroups(nullptr, localUser.c_str(), 0,
-			LG_INCLUDE_INDIRECT, (LPBYTE*)&groups, MAX_PREFERRED_LENGTH, &read, &total);
-		if (groupsStatus != NERR_Success)
-		{
-			if (groups) NetApiBufferFree(groups);
-			return false;
-		}
-		bool administrator = false;
-		for (DWORD index = 0; index < read; ++index)
-			administrator = administrator || (groups[index].lgrui0_name != nullptr
-				&& _wcsicmp(groups[index].lgrui0_name, adminName) == 0);
-		if (groups) NetApiBufferFree(groups);
-		return !administrator;
+		return enabled;
 	}
 
 	bool resolveKioskIdentity(const std::wstring& launcherConfig, bool smoke, ResolvedIdentity& identity)
@@ -680,8 +656,12 @@ namespace
 		if (!readUtf8FileStrict(launcherConfig, json) || !JsonReader(json).readKioskUser(kioskUser)) return false;
 		std::wstring jsonDomain;
 		if (!lookupUserSid(kioskUser, identity, &jsonDomain)) return false;
-		// O smoke isolado ainda precisa provar que o JSON aponta para uma conta
-		// resolvivel, mas nunca consulta nem relaxa o Winlogon real da maquina.
+		std::wstring jsonLocalUser = kioskUser;
+		const size_t jsonSeparator = jsonLocalUser.find_last_of(L"\\/");
+		if (jsonSeparator != std::wstring::npos) jsonLocalUser = jsonLocalUser.substr(jsonSeparator + 1);
+		if (jsonLocalUser.empty() || !isLocalEnabledAccount(jsonDomain, jsonLocalUser)) return false;
+		// O smoke isolado prova a mesma regra de conta local habilitada usada em
+		// producao, mas nunca consulta nem relaxa o Winlogon real da maquina.
 		if (smoke) return true;
 
 		HKEY key = nullptr;
@@ -704,7 +684,7 @@ namespace
 		std::wstring trustedDomain;
 		if (!lookupUserSid(trustedAccount, trusted, &trustedDomain)
 			|| !EqualSid(identity.sid.data(), trusted.sid.data())
-			|| !isLocalEnabledNonAdministrator(trustedDomain, localUser)) return false;
+			|| !isLocalEnabledAccount(trustedDomain, localUser)) return false;
 		identity.account = trusted.account;
 		identity.sidText = trusted.sidText;
 		identity.sid = std::move(trusted.sid);
@@ -851,31 +831,32 @@ namespace
 		const std::wstring* testOnlyTrustedRoot = nullptr)
 	{
 		closePinnedDirectories(directories);
-		wchar_t full[32768]{};
-		wchar_t volume[32768]{};
-		const DWORD fullLength = GetFullPathNameW(target.c_str(), 32768, full, nullptr);
-		if (fullLength == 0 || fullLength >= 32768) return false;
-		const std::wstring fullTarget = full;
+		std::vector<wchar_t> full(32768), volume(32768);
+		const DWORD fullLength = GetFullPathNameW(target.c_str(), static_cast<DWORD>(full.size()),
+			full.data(), nullptr);
+		if (fullLength == 0 || fullLength >= full.size()) return false;
+		const std::wstring fullTarget = full.data();
 		std::vector<std::wstring> paths;
 		if (testOnlyTrustedRoot != nullptr)
 		{
-			wchar_t trustedFull[32768]{};
+			std::vector<wchar_t> trustedFull(32768);
 			const DWORD trustedLength = GetFullPathNameW(testOnlyTrustedRoot->c_str(),
-				32768, trustedFull, nullptr);
-			if (trustedLength == 0 || trustedLength >= 32768
-				|| normalized(trustedFull) != normalized(parentOf(fullTarget))) return false;
-			paths.push_back(trustedFull);
+				static_cast<DWORD>(trustedFull.size()), trustedFull.data(), nullptr);
+			if (trustedLength == 0 || trustedLength >= trustedFull.size()
+				|| normalized(trustedFull.data()) != normalized(parentOf(fullTarget))) return false;
+			paths.push_back(trustedFull.data());
 			paths.push_back(fullTarget);
 		}
 		else
 		{
 			// Producao preserva a defesa original: fixa todos os ancestrais desde a
 			// raiz do volume. Somente o smoke nao elevado usa o ramo test-only acima.
-			if (!GetVolumePathNameW(full, volume, 32768)) return false;
-			std::wstring current = volume;
+			if (!GetVolumePathNameW(full.data(), volume.data(), static_cast<DWORD>(volume.size())))
+				return false;
+			std::wstring current = volume.data();
 			while (current.size() > 3 && current.back() == L'\\') current.pop_back();
 			paths.push_back(current);
-			std::wstring remainder = fullTarget.substr(wcslen(volume));
+			std::wstring remainder = fullTarget.substr(wcslen(volume.data()));
 			size_t start = 0;
 			while (start < remainder.size())
 			{
@@ -1193,15 +1174,51 @@ namespace
 		BOOL defaulted = FALSE, present = FALSE;
 		bool ok = GetSecurityDescriptorOwner(descriptor, &owner, &defaulted) != FALSE
 			&& GetSecurityDescriptorDacl(descriptor, &present, &dacl, &defaulted) != FALSE && present;
-		const DWORD access = MAXIMUM_ALLOWED;
-		HANDLE object = ok ? CreateFileW(path.c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE,
-			nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
-			nullptr) : INVALID_HANDLE_VALUE;
+
+		auto openObject = [&path, directory](DWORD access) -> HANDLE {
+			return CreateFileW(path.c_str(), access,
+				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+				nullptr, OPEN_EXISTING,
+				(directory ? FILE_FLAG_BACKUP_SEMANTICS : 0) | FILE_FLAG_OPEN_REPARSE_POINT,
+				nullptr);
+		};
+
+		HANDLE object = ok ? openObject(READ_CONTROL | WRITE_DAC) : INVALID_HANDLE_VALUE;
 		if (object == INVALID_HANDLE_VALUE) ok = false;
 		if (ok) ok = validateOpenedFilesystemObject(object, path, directory);
-		if (ok) ok = SetSecurityInfo(object, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION
-			| DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-			owner, nullptr, dacl, nullptr) == ERROR_SUCCESS && validateAdminOnlyObject(object, directory);
+
+		PSECURITY_DESCRIPTOR currentDescriptor = nullptr;
+		PSID currentOwner = nullptr;
+		bool ownerAlreadyCorrect = false;
+		if (ok)
+		{
+			const DWORD ownerResult = GetSecurityInfo(object, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION,
+				&currentOwner, nullptr, nullptr, nullptr, &currentDescriptor);
+			ok = ownerResult == ERROR_SUCCESS && currentOwner != nullptr;
+			if (ok) ownerAlreadyCorrect = EqualSid(currentOwner, owner) != FALSE;
+		}
+		if (ok && !ownerAlreadyCorrect)
+		{
+			if (currentDescriptor != nullptr)
+			{
+				LocalFree(currentDescriptor);
+				currentDescriptor = nullptr;
+			}
+			CloseHandle(object);
+			object = openObject(READ_CONTROL | WRITE_DAC | WRITE_OWNER);
+			if (object == INVALID_HANDLE_VALUE) ok = false;
+			if (ok) ok = validateOpenedFilesystemObject(object, path, directory);
+		}
+		if (ok)
+		{
+			const SECURITY_INFORMATION information = DACL_SECURITY_INFORMATION
+				| PROTECTED_DACL_SECURITY_INFORMATION
+				| (ownerAlreadyCorrect ? 0 : OWNER_SECURITY_INFORMATION);
+			ok = SetSecurityInfo(object, SE_FILE_OBJECT, information,
+				ownerAlreadyCorrect ? nullptr : owner, nullptr, dacl, nullptr) == ERROR_SUCCESS
+				&& validateAdminOnlyObject(object, directory);
+		}
+		if (currentDescriptor != nullptr) LocalFree(currentDescriptor);
 		if (object != INVALID_HANDLE_VALUE) CloseHandle(object);
 		LocalFree(descriptor);
 		return ok;
@@ -1265,12 +1282,14 @@ namespace
 		const std::wstring fullControlAuthority = fullControlIdentity != nullptr
 			? fullControlIdentity->sidText : L"BA";
 		const std::wstring ownerAuthority = ownerIdentity != nullptr
-			? ownerIdentity->sidText : fullControlAuthority;
+			? ownerIdentity->sidText : L"SY";
 		wchar_t rights[16]{};
 		// RX e M sao abreviacoes do icacls, nao tokens de direitos SDDL. A mascara
 		// explicita mantem a representacao aceita por SDDL e validada abaixo.
 		swprintf_s(rights, L"0x%08X", (unsigned)kioskAccessMask(permission));
-		std::wstring descriptor = L"O:" + ownerAuthority + L"G:" + ownerAuthority + L"D:P(A;" + flags
+		// O grupo primario nao participa da autorizacao deste objeto e nao e alterado
+		// por SetSecurityInfo. Nao o invente no SDDL; em producao, o owner e SYSTEM.
+		std::wstring descriptor = L"O:" + ownerAuthority + L"D:P(A;" + flags
 			+ L";FA;;;SY)(A;" + flags + L";FA;;;" + fullControlAuthority + L")(A;" + flags
 			+ L";" + rights + L";;;" + identity.sidText + L")";
 		if (auxiliaryAccessIdentity != nullptr)
@@ -1297,7 +1316,7 @@ namespace
 			&& CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, admins, &adminsSize) != FALSE
 			&& CreateWellKnownSid(WinLocalSystemSid, nullptr, system, &systemSize) != FALSE
 			&& CreateWellKnownSid(WinBuiltinUsersSid, nullptr, kiosk, &kioskSize) != FALSE
-			&& owner != nullptr && EqualSid(owner, admins) != FALSE && dacl != nullptr && dacl->AceCount == 3;
+			&& owner != nullptr && EqualSid(owner, system) != FALSE && dacl != nullptr && dacl->AceCount == 3;
 		bool adminFull = false, systemFull = false, kioskExpected = false;
 		const BYTE expectedFlags = directory && inheritable ? OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE : 0;
 		if (ok)
@@ -1344,19 +1363,21 @@ namespace
 		DWORD adminsSize = sizeof(admins), systemSize = sizeof(system);
 		PSID fullControlSid = fullControlIdentity != nullptr
 			? (PSID)fullControlIdentity->sid.data() : (PSID)admins;
-		PSID expectedOwnerSid = ownerIdentity != nullptr
-			? (PSID)ownerIdentity->sid.data() : fullControlSid;
+		PSID expectedOwnerSid = nullptr;
 		const bool fullControlSidReady = fullControlIdentity != nullptr
 			? !fullControlIdentity->sid.empty() && IsValidSid(fullControlSid) != FALSE
 			: CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, admins, &adminsSize) != FALSE;
 		const bool ownerSidReady = ownerIdentity == nullptr
-			|| (!ownerIdentity->sid.empty() && IsValidSid(expectedOwnerSid) != FALSE);
+			|| (!ownerIdentity->sid.empty()
+				&& IsValidSid((PSID)ownerIdentity->sid.data()) != FALSE);
 		if (ok && (!fullControlSidReady || !ownerSidReady
 			|| !CreateWellKnownSid(WinLocalSystemSid, nullptr, system, &systemSize)))
 		{
 			recordSecurityFailure(failure, L"preparacao dos SIDs de validacao", path, GetLastError());
 			ok = false;
 		}
+		if (ok) expectedOwnerSid = ownerIdentity != nullptr
+			? (PSID)ownerIdentity->sid.data() : (PSID)system;
 		const DWORD expectedAceCount = auxiliaryAccessIdentity != nullptr ? 4 : 3;
 		if (ok && (owner == nullptr || dacl == nullptr || dacl->AceCount != expectedAceCount
 			|| EqualSid(owner, expectedOwnerSid) == FALSE))
@@ -1418,6 +1439,39 @@ namespace
 		return ok;
 	}
 
+	bool openSecurityObject(const std::wstring& path, bool directory, DWORD access,
+		const FILE_ID_INFO* expectedFileIdentity, HANDLE& object, SecurityFailure* failure,
+		const wchar_t* stage)
+	{
+		object = CreateFileW(path.c_str(), access,
+			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+			FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+		if (object == INVALID_HANDLE_VALUE)
+		{
+			recordSecurityFailure(failure, stage, path, GetLastError());
+			return false;
+		}
+		FILE_ID_INFO openedIdentity{};
+		DWORD bindingError = ERROR_SUCCESS;
+		if (!validateOpenedFilesystemObject(object, path, directory, &openedIdentity,
+			&bindingError))
+		{
+			recordSecurityFailure(failure, stage, path, bindingError);
+			CloseHandle(object);
+			object = INVALID_HANDLE_VALUE;
+			return false;
+		}
+		if (expectedFileIdentity != nullptr
+			&& !sameFileIdentity(openedIdentity, *expectedFileIdentity))
+		{
+			recordSecurityFailure(failure, stage, path, ERROR_FILE_INVALID);
+			CloseHandle(object);
+			object = INVALID_HANDLE_VALUE;
+			return false;
+		}
+		return true;
+	}
+
 	bool applyKioskSecurity(const std::wstring& path, bool directory, const ResolvedIdentity& identity,
 		KioskPermission permission, bool inheritable, SecurityFailure* failure = nullptr,
 		const ResolvedIdentity* fullControlIdentity = nullptr,
@@ -1458,37 +1512,15 @@ namespace
 		bool ok = GetSecurityDescriptorOwner(descriptor, &owner, &defaulted) != FALSE
 			&& GetSecurityDescriptorDacl(descriptor, &present, &dacl, &defaulted) != FALSE && present;
 		if (!ok) recordSecurityFailure(failure, L"leitura do descritor do quiosque", path, GetLastError());
-		// MAXIMUM_ALLOWED impede a propagacao automatica de ACEs herdaveis por
-		// SetSecurityInfo; a arvore allowlisted e aplicada explicitamente abaixo.
-		const DWORD access = MAXIMUM_ALLOWED;
-		HANDLE object = ok ? CreateFileW(path.c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-			nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
-			nullptr) : INVALID_HANDLE_VALUE;
-		if (ok && object == INVALID_HANDLE_VALUE)
-		{
-			recordSecurityFailure(failure, L"abertura para aplicar DACL", path, GetLastError());
-			ok = false;
-		}
-		DWORD bindingError = ERROR_SUCCESS;
-		FILE_ID_INFO openedIdentity{};
-		if (ok && !validateOpenedFilesystemObject(object, path, directory, &openedIdentity,
-			&bindingError))
-		{
-			recordSecurityFailure(failure, L"vinculo caminho/objeto antes da DACL", path,
-				bindingError);
-			ok = false;
-		}
-		if (ok && expectedFileIdentity != nullptr
-			&& !sameFileIdentity(openedIdentity, *expectedFileIdentity))
-		{
-			recordSecurityFailure(failure, L"objeto substituido antes da DACL", path,
-				ERROR_FILE_INVALID);
-			ok = false;
-		}
+		// Comece apenas com os direitos realmente necessarios para ler owner e trocar
+		// DACL. WRITE_OWNER so e pedido num segundo open se o owner precisar mudar.
+		HANDLE object = INVALID_HANDLE_VALUE;
+		if (ok) ok = openSecurityObject(path, directory, READ_CONTROL | WRITE_DAC,
+			expectedFileIdentity, object, failure, L"abertura minima para aplicar DACL");
 		PSECURITY_DESCRIPTOR currentDescriptor = nullptr;
 		PSID currentOwner = nullptr;
 		bool ownerAlreadyCorrect = false;
-		if (ok)
+		auto readCurrentOwner = [&]()
 		{
 			const DWORD ownerResult = GetSecurityInfo(object, SE_FILE_OBJECT,
 				OWNER_SECURITY_INFORMATION, &currentOwner, nullptr, nullptr, nullptr,
@@ -1497,9 +1529,23 @@ namespace
 			{
 				recordSecurityFailure(failure, L"leitura do owner antes da DACL", path,
 					ownerResult == ERROR_SUCCESS ? ERROR_INVALID_OWNER : ownerResult);
-				ok = false;
+				return false;
 			}
-			else ownerAlreadyCorrect = EqualSid(currentOwner, owner) != FALSE;
+			ownerAlreadyCorrect = EqualSid(currentOwner, owner) != FALSE;
+			return true;
+		};
+		if (ok) ok = readCurrentOwner();
+		if (ok && !ownerAlreadyCorrect)
+		{
+			if (currentDescriptor) LocalFree(currentDescriptor);
+			currentDescriptor = nullptr;
+			currentOwner = nullptr;
+			CloseHandle(object);
+			object = INVALID_HANDLE_VALUE;
+			ok = openSecurityObject(path, directory,
+				READ_CONTROL | WRITE_DAC | WRITE_OWNER, expectedFileIdentity, object,
+				failure, L"reabertura para trocar owner e aplicar DACL");
+			if (ok) ok = readCurrentOwner();
 		}
 		if (ok)
 		{
@@ -1789,18 +1835,29 @@ namespace
 	bool explicitAcesOnly(PACL source, std::vector<unsigned char>& storage, PACL& result)
 	{
 		result = nullptr;
-		if (source == nullptr || !IsValidAcl(source)) return false;
+		if (source == nullptr || !IsValidAcl(source))
+		{
+			SetLastError(ERROR_INVALID_ACL);
+			return false;
+		}
 		DWORD size = sizeof(ACL);
 		for (DWORD index = 0; index < source->AceCount; ++index)
 		{
 			void* raw = nullptr;
-			if (!GetAce(source, index, &raw) || raw == nullptr) return false;
+			if (!GetAce(source, index, &raw) || raw == nullptr)
+			{
+				if (GetLastError() == ERROR_SUCCESS) SetLastError(ERROR_INVALID_ACL);
+				return false;
+			}
 			auto* header = static_cast<ACE_HEADER*>(raw);
 			if ((header->AceFlags & INHERITED_ACE) == 0)
 			{
 				if (header->AceSize < sizeof(ACE_HEADER)
 					|| size > static_cast<DWORD>(MAXWORD) - header->AceSize)
+				{
+					SetLastError(ERROR_INVALID_ACL);
 					return false;
+				}
 				size += header->AceSize;
 			}
 		}
@@ -1810,12 +1867,21 @@ namespace
 		for (DWORD index = 0; index < source->AceCount; ++index)
 		{
 			void* raw = nullptr;
-			if (!GetAce(source, index, &raw) || raw == nullptr) return false;
+			if (!GetAce(source, index, &raw) || raw == nullptr)
+			{
+				if (GetLastError() == ERROR_SUCCESS) SetLastError(ERROR_INVALID_ACL);
+				return false;
+			}
 			auto* header = static_cast<ACE_HEADER*>(raw);
 			if ((header->AceFlags & INHERITED_ACE) == 0
 				&& !AddAce(result, source->AclRevision, MAXDWORD, raw, header->AceSize)) return false;
 		}
-		return IsValidAcl(result) != FALSE;
+		if (IsValidAcl(result) == FALSE)
+		{
+			SetLastError(ERROR_INVALID_ACL);
+			return false;
+		}
+		return true;
 	}
 
 	bool restoreSecurityBackup(const SecurityBackup& backup, SecurityFailure* failure = nullptr)
@@ -1826,47 +1892,39 @@ namespace
 				ERROR_INVALID_SECURITY_DESCR);
 			return false;
 		}
-		// Assim como no apply, MAXIMUM_ALLOWED evita que SetSecurityInfo propague
-		// ACEs a filhos fora do plano durante o rollback.
-		HANDLE object = CreateFileW(backup.path.c_str(), MAXIMUM_ALLOWED,
-			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-			FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-		if (object == INVALID_HANDLE_VALUE)
-		{
-			recordSecurityFailure(failure, L"rollback da ACL: abertura", backup.path, GetLastError());
-			return false;
-		}
-		FILE_ID_INFO openedIdentity{};
 		PSID owner = nullptr, group = nullptr;
 		PACL dacl = nullptr;
 		BOOL defaulted = FALSE, present = FALSE;
 		PSECURITY_DESCRIPTOR descriptor = (PSECURITY_DESCRIPTOR)backup.descriptor.data();
-		DWORD bindingError = ERROR_SUCCESS;
-		bool ok = validateOpenedFilesystemObject(object, backup.path, backup.directory,
-			&openedIdentity, &bindingError);
-		if (!ok)
-		{
-			recordSecurityFailure(failure, L"rollback da ACL: vinculo caminho/objeto", backup.path,
-				bindingError);
-		}
-		if (ok && !sameFileIdentity(openedIdentity, backup.fileIdentity))
-		{
-			recordSecurityFailure(failure, L"rollback da ACL: objeto substituido", backup.path,
-				ERROR_FILE_INVALID);
-			ok = false;
-		}
-		if (ok && (!GetSecurityDescriptorOwner(descriptor, &owner, &defaulted)
-			|| !GetSecurityDescriptorGroup(descriptor, &group, &defaulted)
-			|| !GetSecurityDescriptorDacl(descriptor, &present, &dacl, &defaulted) || !present))
+		bool ok = GetSecurityDescriptorOwner(descriptor, &owner, &defaulted) != FALSE
+			&& GetSecurityDescriptorGroup(descriptor, &group, &defaulted) != FALSE
+			&& GetSecurityDescriptorDacl(descriptor, &present, &dacl, &defaulted) != FALSE
+			&& present;
+		if (!ok || owner == nullptr || group == nullptr || dacl == nullptr)
 		{
 			recordSecurityFailure(failure, L"rollback da ACL: descritor salvo invalido", backup.path,
 				GetLastError() == ERROR_SUCCESS ? ERROR_INVALID_SECURITY_DESCR : GetLastError());
-			ok = false;
+			return false;
 		}
+		std::vector<unsigned char> explicitAclStorage;
+		PACL restoreDacl = dacl;
+		if (!backup.daclProtected
+			&& !explicitAcesOnly(dacl, explicitAclStorage, restoreDacl))
+		{
+			recordSecurityFailure(failure, L"rollback da ACL: filtro de ACEs explicitas",
+				backup.path, GetLastError() == ERROR_SUCCESS ? ERROR_INVALID_ACL : GetLastError());
+			return false;
+		}
+
+		// Comece apenas com os direitos necessarios para ler o descritor e restaurar a
+		// DACL. WRITE_OWNER so e pedido se owner ou grupo realmente divergirem.
+		HANDLE object = INVALID_HANDLE_VALUE;
+		ok = openSecurityObject(backup.path, backup.directory, READ_CONTROL | WRITE_DAC,
+			&backup.fileIdentity, object, failure, L"rollback da ACL: abertura minima");
 		PSECURITY_DESCRIPTOR currentDescriptor = nullptr;
 		PSID currentOwner = nullptr, currentGroup = nullptr;
 		bool ownerAlreadyCorrect = false, groupAlreadyCorrect = false;
-		if (ok)
+		auto readCurrentOwnerAndGroup = [&]()
 		{
 			const DWORD ownerResult = GetSecurityInfo(object, SE_FILE_OBJECT,
 				OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION,
@@ -1876,26 +1934,29 @@ namespace
 			{
 				recordSecurityFailure(failure, L"rollback da ACL: leitura do owner atual",
 					backup.path, ownerResult == ERROR_SUCCESS ? ERROR_INVALID_OWNER : ownerResult);
-				ok = false;
+				return false;
 			}
-			else
-			{
-				ownerAlreadyCorrect = EqualSid(currentOwner, owner) != FALSE;
-				groupAlreadyCorrect = EqualSid(currentGroup, group) != FALSE;
-			}
+			ownerAlreadyCorrect = EqualSid(currentOwner, owner) != FALSE;
+			groupAlreadyCorrect = EqualSid(currentGroup, group) != FALSE;
+			return true;
+		};
+		if (ok) ok = readCurrentOwnerAndGroup();
+		if (ok && (!ownerAlreadyCorrect || !groupAlreadyCorrect))
+		{
+			if (currentDescriptor) LocalFree(currentDescriptor);
+			currentDescriptor = nullptr;
+			currentOwner = nullptr;
+			currentGroup = nullptr;
+			CloseHandle(object);
+			object = INVALID_HANDLE_VALUE;
+			ok = openSecurityObject(backup.path, backup.directory,
+				READ_CONTROL | WRITE_DAC | WRITE_OWNER, &backup.fileIdentity, object,
+				failure, L"rollback da ACL: reabertura para owner/grupo");
+			if (ok) ok = readCurrentOwnerAndGroup();
 		}
 		SECURITY_INFORMATION information = DACL_SECURITY_INFORMATION
 			| (backup.daclProtected ? PROTECTED_DACL_SECURITY_INFORMATION
 				: UNPROTECTED_DACL_SECURITY_INFORMATION);
-		std::vector<unsigned char> explicitAclStorage;
-		PACL restoreDacl = dacl;
-		if (ok && !backup.daclProtected
-			&& !explicitAcesOnly(dacl, explicitAclStorage, restoreDacl))
-		{
-			recordSecurityFailure(failure, L"rollback da ACL: filtro de ACEs explicitas",
-				backup.path, GetLastError() == ERROR_SUCCESS ? ERROR_INVALID_ACL : GetLastError());
-			ok = false;
-		}
 		if (!ownerAlreadyCorrect) information |= OWNER_SECURITY_INFORMATION;
 		if (!groupAlreadyCorrect) information |= GROUP_SECURITY_INFORMATION;
 		if (ok)
@@ -1912,7 +1973,7 @@ namespace
 		}
 		if (ok) ok = securityBackupMatchesObject(object, backup, failure);
 		if (currentDescriptor) LocalFree(currentDescriptor);
-		CloseHandle(object);
+		if (object != INVALID_HANDLE_VALUE) CloseHandle(object);
 		return ok;
 	}
 
@@ -1935,7 +1996,8 @@ namespace
 		const ResolvedIdentity* auxiliaryAccessIdentity = nullptr,
 		const std::vector<SecurityBackup>* expectedBackups = nullptr,
 		const std::wstring* extraExpectedPath = nullptr,
-		const FILE_ID_INFO* extraExpectedIdentity = nullptr)
+		const FILE_ID_INFO* extraExpectedIdentity = nullptr,
+		const std::wstring* selfTestFailurePath = nullptr)
 	{
 		const FILE_ID_INFO* expectedIdentity = nullptr;
 		if (expectedBackups != nullptr)
@@ -1952,10 +2014,26 @@ namespace
 				return false;
 			}
 		}
-		if (!applyKioskSecurity(path, directory, identity, permission, inheritable, failure,
-			fullControlIdentity, ownerIdentity, auxiliaryAccessIdentity,
-			expectedIdentity)) return false;
-		if (!directory) return true;
+		if (!directory)
+		{
+			if (selfTestFailurePath != nullptr
+				&& _wcsicmp(selfTestFailurePath->c_str(), path.c_str()) == 0)
+			{
+				recordSecurityFailure(failure, L"aplicacao da DACL: falha injetada no no",
+					path, ERROR_CANCELLED);
+				return false;
+			}
+			return applyKioskSecurity(path, false, identity, permission, inheritable, failure,
+				fullControlIdentity, ownerIdentity, auxiliaryAccessIdentity, expectedIdentity);
+		}
+
+		// Confirme a identidade da raiz antes de enumerar. A aplicacao efetiva ocorre
+		// somente depois dos filhos, evitando que uma DACL herdavel do pai altere o
+		// descritor de um descendente antes que ele seja validado contra o snapshot.
+		HANDLE validationHandle = INVALID_HANDLE_VALUE;
+		if (!openSecurityObject(path, true, 0, expectedIdentity, validationHandle, failure,
+			L"aplicacao da DACL: validacao pre-enumeracao")) return false;
+		CloseHandle(validationHandle);
 		WIN32_FIND_DATAW entry{};
 		HANDLE search = FindFirstFileW(join(path, L"*").c_str(), &entry);
 		if (search == INVALID_HANDLE_VALUE)
@@ -1986,7 +2064,7 @@ namespace
 			}
 			if (!applyKioskSecurityTree(child, childDirectory, identity, permission, inheritable,
 				failure, fullControlIdentity, ownerIdentity, auxiliaryAccessIdentity,
-				expectedBackups, extraExpectedPath, extraExpectedIdentity))
+				expectedBackups, extraExpectedPath, extraExpectedIdentity, selfTestFailurePath))
 			{
 				ok = false;
 				break;
@@ -2000,7 +2078,16 @@ namespace
 				enumerationError);
 			ok = false;
 		}
-		return ok;
+		if (!ok) return false;
+		if (selfTestFailurePath != nullptr
+			&& _wcsicmp(selfTestFailurePath->c_str(), path.c_str()) == 0)
+		{
+			recordSecurityFailure(failure, L"aplicacao da DACL: falha injetada no no", path,
+				ERROR_CANCELLED);
+			return false;
+		}
+		return applyKioskSecurity(path, true, identity, permission, inheritable, failure,
+			fullControlIdentity, ownerIdentity, auxiliaryAccessIdentity, expectedIdentity);
 	}
 
 	bool secureStagedTree(const std::wstring& directory)
@@ -2095,9 +2182,9 @@ namespace
 					}
 					else
 					{
-						wchar_t image[32768]{};
-						DWORD length = 32768;
-						const bool queried = QueryFullProcessImageNameW(query, 0, image, &length) != FALSE;
+						std::vector<wchar_t> image(32768);
+						DWORD length = static_cast<DWORD>(image.size());
+						const bool queried = QueryFullProcessImageNameW(query, 0, image.data(), &length) != FALSE;
 						DWORD observedExit = STILL_ACTIVE;
 						const bool alreadyExited = !queried && GetExitCodeProcess(query, &observedExit) != FALSE
 							&& observedExit != STILL_ACTIVE;
@@ -2106,7 +2193,7 @@ namespace
 						{
 							if (!alreadyExited && strictProcessInspection) ok = false;
 						}
-						else if (normalized(image) == expected)
+						else if (normalized(image.data()) == expected)
 						{
 							// O alvo ja foi identificado. A partir daqui qualquer falha permanece
 							// fechada ate no smoke; somente a corrida de saida natural e aceita.
@@ -2118,9 +2205,9 @@ namespace
 							}
 							else
 							{
-								wchar_t confirmedImage[32768]{};
-								DWORD confirmedLength = 32768;
-								const bool confirmedQuery = QueryFullProcessImageNameW(process, 0, confirmedImage,
+								std::vector<wchar_t> confirmedImage(32768);
+								DWORD confirmedLength = static_cast<DWORD>(confirmedImage.size());
+								const bool confirmedQuery = QueryFullProcessImageNameW(process, 0, confirmedImage.data(),
 									&confirmedLength) != FALSE;
 								DWORD confirmedExit = STILL_ACTIVE;
 								const bool exitedDuringConfirm = !confirmedQuery
@@ -2130,7 +2217,7 @@ namespace
 								{
 									if (!exitedDuringConfirm) ok = false;
 								}
-								else if (normalized(confirmedImage) == expected)
+								else if (normalized(confirmedImage.data()) == expected)
 								{
 									found = true;
 									const bool terminateRequested = TerminateProcess(process, 0) != FALSE;
@@ -2186,9 +2273,10 @@ namespace
 			{
 				HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
 				if (process == nullptr) continue;
-				wchar_t image[32768]{}; DWORD length = 32768;
-				running = QueryFullProcessImageNameW(process, 0, image, &length) != FALSE
-					&& normalized(image) == expected;
+				std::vector<wchar_t> image(32768);
+				DWORD length = static_cast<DWORD>(image.size());
+				running = QueryFullProcessImageNameW(process, 0, image.data(), &length) != FALSE
+					&& normalized(image.data()) == expected;
 				CloseHandle(process);
 				if (running) break;
 			} while (Process32NextW(snapshot, &entry));
@@ -2382,14 +2470,18 @@ namespace
 		entry.directory = directory;
 		FILE_STANDARD_INFO standard{};
 		DWORD bindingError = ERROR_SUCCESS;
-		return validateOpenedFilesystemObject(object, path, directory, nullptr, &bindingError)
-			&& GetFileInformationByHandleEx(object, FileBasicInfo, &entry.basic,
-				sizeof(entry.basic)) != FALSE
-			&& GetFileInformationByHandleEx(object, FileStandardInfo, &standard,
-				sizeof(standard)) != FALSE
-			&& (directory || (entry.size = standard.EndOfFile,
-				hashHandle(object, entry.hash.data()) && (entry.contentCaptured = true)))
-			&& captureSecurityBackupFromHandle(object, path, directory, entry.security);
+		if (!validateOpenedFilesystemObject(object, path, directory, nullptr, &bindingError)
+			|| GetFileInformationByHandleEx(object, FileBasicInfo, &entry.basic,
+				sizeof(entry.basic)) == FALSE
+			|| GetFileInformationByHandleEx(object, FileStandardInfo, &standard,
+				sizeof(standard)) == FALSE) return false;
+		if (!directory)
+		{
+			entry.size = standard.EndOfFile;
+			if (!hashHandle(object, entry.hash.data())) return false;
+			entry.contentCaptured = true;
+		}
+		return captureSecurityBackupFromHandle(object, path, directory, entry.security);
 	}
 
 	bool captureFilesystemMetadata(const std::wstring& path, bool directory,
@@ -3460,10 +3552,12 @@ namespace
 			else if (!entry.replacementCurrentPath.empty()
 				&& !pathIsMissing(entry.replacementCurrentPath)) ok = false;
 			closePinnedArtifactObjects(entry.originalPins);
-			if (entry.original != INVALID_HANDLE_VALUE)
+			const uintptr_t originalValue = reinterpret_cast<uintptr_t>(entry.original);
+			entry.original = INVALID_HANDLE_VALUE;
+			if (originalValue != reinterpret_cast<uintptr_t>(INVALID_HANDLE_VALUE)
+				&& originalValue != 0)
 			{
-				CloseHandle(entry.original);
-				entry.original = INVALID_HANDLE_VALUE;
+				CloseHandle(reinterpret_cast<HANDLE>(originalValue));
 			}
 		}
 		if (!ok) SetLastError(firstError);
@@ -3983,10 +4077,12 @@ namespace
 					&& pathIsMissing(entry.canonicalPath) && pathIsMissing(entry.preparedRoot);
 			if (!exactOriginal) ok = false;
 			closePinnedArtifactObjects(entry.originalPins);
-			if (entry.original != INVALID_HANDLE_VALUE)
+			const uintptr_t originalValue = reinterpret_cast<uintptr_t>(entry.original);
+			entry.original = INVALID_HANDLE_VALUE;
+			if (originalValue != reinterpret_cast<uintptr_t>(INVALID_HANDLE_VALUE)
+				&& originalValue != 0)
 			{
-				CloseHandle(entry.original);
-				entry.original = INVALID_HANDLE_VALUE;
+				CloseHandle(reinterpret_cast<HANDLE>(originalValue));
 			}
 		}
 		return ok;
@@ -4219,11 +4315,12 @@ namespace
 
 	constexpr bool validateChildRunResultContract()
 	{
+		static_assert(kAuxiliaryTreeUnconfirmedExitCode == 42,
+			"O codigo reservado da arvore auxiliar mudou.");
 		return !childTreeStateUnconfirmed(ChildRunResult::Completed)
 			&& !childTreeStateUnconfirmed(ChildRunResult::Failed)
 			&& !childTreeStateUnconfirmed(ChildRunResult::TimedOutTreeTerminated)
-			&& childTreeStateUnconfirmed(ChildRunResult::TreeStateUnconfirmed)
-			&& kAuxiliaryTreeUnconfirmedExitCode != 0 && kAuxiliaryTreeUnconfirmedExitCode != 41;
+			&& childTreeStateUnconfirmed(ChildRunResult::TreeStateUnconfirmed);
 	}
 
 	static_assert(validateChildRunResultContract(),
@@ -5006,6 +5103,46 @@ namespace
 			}
 		}
 		return ok && pixTemporaryResidueAbsent(pix);
+	}
+
+	bool acceptPinnedPixSecurityTransition(const std::wstring& target,
+		PixStateBackup& backup)
+	{
+		const std::wstring pix = join(target, L".emulationstation\\pix");
+		if (backup.currentDirectoryGuard == INVALID_HANDLE_VALUE
+			|| !validateOpenedFilesystemObject(backup.currentDirectoryGuard, pix, true))
+			return false;
+
+		for (auto& file : backup.files)
+		{
+			const std::wstring path = join(pix, file.name);
+			if (!file.currentExisted)
+			{
+				if (file.currentPin != INVALID_HANDLE_VALUE || !pathIsMissing(path)) return false;
+				continue;
+			}
+
+			FilesystemMetadata current;
+			std::vector<unsigned char> content;
+			if (file.currentPin == INVALID_HANDLE_VALUE
+				|| !captureFilesystemMetadataFromHandle(file.currentPin, path, false, current)
+				|| !readOpenedFileContent(file.currentPin, current, content)
+				|| content != file.currentContent
+				|| !sameFileIdentity(current.security.fileIdentity,
+					file.currentMetadata.security.fileIdentity)
+				|| current.basic.CreationTime.QuadPart
+					!= file.currentMetadata.basic.CreationTime.QuadPart
+				|| current.basic.LastWriteTime.QuadPart
+					!= file.currentMetadata.basic.LastWriteTime.QuadPart
+				|| current.basic.FileAttributes != file.currentMetadata.basic.FileAttributes)
+				return false;
+
+			// A aplicacao autorizada da DACL altera o descritor e pode alterar ChangeTime.
+			// Conteudo, FileId e os metadados de dados continuam fixados pelo handle exato.
+			file.currentMetadata.basic = current.basic;
+			file.currentMetadata.security = std::move(current.security);
+		}
+		return validatePinnedPixCurrentState(target, backup);
 	}
 
 	bool finalizePixStatePins(const std::wstring& target, PixStateBackup& backup)
@@ -6110,10 +6247,11 @@ namespace
 		}
 		closePinnedEvidence(wrapper);
 		const std::wstring thirdFrontend = std::wstring(temporaryFile) + L".third";
-		HANDLE third = CreateFileW(thirdFrontend.c_str(), GENERIC_WRITE, 0, nullptr,
+		const HANDLE third = CreateFileW(thirdFrontend.c_str(), GENERIC_WRITE, 0, nullptr,
 			CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (third != INVALID_HANDLE_VALUE) CloseHandle(third);
-		ok = ok && third != INVALID_HANDLE_VALUE
+		const bool thirdCreated = third != INVALID_HANDLE_VALUE;
+		if (thirdCreated) CloseHandle(third);
+		ok = ok && thirdCreated
 			&& launcherFrontendMatchesLayout(false, L"", temporaryFile)
 			&& launcherFrontendMatchesLayout(true,
 				std::wstring(temporaryFile) + L".stale-missing", temporaryFile)
@@ -6197,6 +6335,286 @@ namespace
 				|| current[0].descriptor != backup.descriptor) return false;
 		}
 		return true;
+	}
+
+	bool securityBackupVectorsEqual(const std::vector<SecurityBackup>& left,
+		const std::vector<SecurityBackup>& right)
+	{
+		if (left.size() != right.size()) return false;
+		for (size_t index = 0; index < left.size(); ++index)
+		{
+			const auto& first = left[index];
+			const auto& second = right[index];
+			if (_wcsicmp(first.path.c_str(), second.path.c_str()) != 0
+				|| first.directory != second.directory
+				|| first.daclProtected != second.daclProtected
+				|| !sameFileIdentity(first.fileIdentity, second.fileIdentity)
+				|| first.descriptor != second.descriptor) return false;
+		}
+		return true;
+	}
+
+	bool grantSecurityShareSelfTestAccess(const std::wstring& path,
+		const ResolvedIdentity& identity, bool directory = false, bool inheritable = false)
+	{
+		if (identity.sidText.empty()) return false;
+		const std::wstring sddl = L"D:P(A;" + std::wstring(inheritable ? L"OICI" : L"")
+			+ L";FA;;;" + identity.sidText + L")";
+		PSECURITY_DESCRIPTOR descriptor = nullptr;
+		if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(), SDDL_REVISION_1,
+			&descriptor, nullptr)) return false;
+		PACL dacl = nullptr;
+		BOOL present = FALSE, defaulted = FALSE;
+		bool ok = GetSecurityDescriptorDacl(descriptor, &present, &dacl, &defaulted) != FALSE
+			&& present && dacl != nullptr;
+		HANDLE object = ok ? CreateFileW(path.c_str(), READ_CONTROL | WRITE_DAC,
+			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+			FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr)
+			: INVALID_HANDLE_VALUE;
+		if (object == INVALID_HANDLE_VALUE) ok = false;
+		if (ok) ok = validateOpenedFilesystemObject(object, path, directory)
+			&& SetSecurityInfo(object, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION
+				| PROTECTED_DACL_SECURITY_INFORMATION, nullptr, nullptr, dacl, nullptr)
+				== ERROR_SUCCESS;
+		if (object != INVALID_HANDLE_VALUE) CloseHandle(object);
+		LocalFree(descriptor);
+		if (!ok) return false;
+
+		// A ACE explicita garante que o proprio teste exercite tambem WRITE_OWNER,
+		// em vez de depender apenas dos direitos implicitos concedidos ao owner.
+		object = CreateFileW(path.c_str(), READ_CONTROL | WRITE_DAC | WRITE_OWNER,
+			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+			FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+		ok = object != INVALID_HANDLE_VALUE
+			&& validateOpenedFilesystemObject(object, path, directory);
+		if (object != INVALID_HANDLE_VALUE) CloseHandle(object);
+		return ok;
+	}
+
+	bool maximumAllowedBlockedBySharing(const std::wstring& path)
+	{
+		HANDLE object = CreateFileW(path.c_str(), MAXIMUM_ALLOWED,
+			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+			FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+		if (object != INVALID_HANDLE_VALUE)
+		{
+			CloseHandle(object);
+			return false;
+		}
+		return GetLastError() == ERROR_SHARING_VIOLATION;
+	}
+
+	bool applyAndRestoreSecurityShareSelfTest(const std::wstring& path,
+		const ResolvedIdentity& kioskIdentity, const ResolvedIdentity& ownerIdentity,
+		const std::vector<SecurityBackup>& backup)
+	{
+		if (backup.size() != 1) return false;
+		SecurityFailure applyFailure, restoreFailure;
+		return applyKioskSecurity(path, false, kioskIdentity, KioskPermission::ReadExecute,
+			false, &applyFailure, &ownerIdentity, &ownerIdentity, nullptr,
+			&backup.front().fileIdentity)
+			&& restoreSecurityBackup(backup.front(), &restoreFailure)
+			&& securityBackupsMatch(backup);
+	}
+
+	bool applyAndRestoreSecurityTreeSelfTest(const std::wstring& tree,
+		const ResolvedIdentity& kioskIdentity, const ResolvedIdentity& ownerIdentity,
+		const std::vector<SecurityBackup>& treeBackup,
+		const std::vector<SecurityBackup>& sentinelBackup)
+	{
+		if (treeBackup.size() < 3 || sentinelBackup.size() != 1) return false;
+		SecurityFailure applyFailure, restoreFailure;
+		const bool applied = applyKioskSecurityTree(tree, true, kioskIdentity,
+			KioskPermission::ReadExecute, true, &applyFailure, &ownerIdentity,
+			&ownerIdentity, nullptr, &treeBackup);
+		const bool treeChanged = applied && !securityBackupsMatch(treeBackup);
+		const bool sentinelUntouched = securityBackupsMatch(sentinelBackup);
+		// Mesmo que a aplicacao falhe parcialmente, o teste sempre exercita o rollback.
+		const bool restored = restoreSecurityBackups(treeBackup, &restoreFailure);
+		return applied && treeChanged && sentinelUntouched && restored
+			&& securityBackupsMatch(treeBackup) && securityBackupsMatch(sentinelBackup);
+	}
+
+	bool rejectSubstitutedSecurityTreeSelfTest(const std::wstring& tree,
+		const std::wstring& leaf, const ResolvedIdentity& kioskIdentity,
+		const ResolvedIdentity& ownerIdentity,
+		const std::vector<SecurityBackup>& treeBackup,
+		const std::vector<SecurityBackup>& sentinelBackup)
+	{
+		const SecurityBackup* leafBackup = findSecurityBackup(treeBackup, leaf, false);
+		if (leafBackup == nullptr || sentinelBackup.size() != 1) return false;
+		const std::vector<SecurityBackup> preservedBackups = treeBackup;
+		// Mova o original para fora da arvore: deixa o mesmo caminho ocupado por um
+		// novo FileId sem introduzir um objeto extra que o snapshot deva rejeitar.
+		const std::wstring displaced = tree + L".snapshot-original-leaf";
+		if (!MoveFileExW(leaf.c_str(), displaced.c_str(), MOVEFILE_WRITE_THROUGH)) return false;
+
+		const bool replacementCreated = writeUtf8FileForSelfTest(leaf,
+			L"replacement created after security snapshot\n");
+		SecurityFailure applyFailure;
+		const bool rejected = replacementCreated
+			&& !applyKioskSecurityTree(tree, true, kioskIdentity,
+				KioskPermission::ReadExecute, true, &applyFailure, &ownerIdentity,
+				&ownerIdentity, nullptr, &treeBackup)
+			&& applyFailure.code == ERROR_FILE_INVALID
+			&& _wcsicmp(applyFailure.path.c_str(), leaf.c_str()) == 0;
+		const bool backupsPreserved = securityBackupVectorsEqual(treeBackup, preservedBackups);
+		const bool sentinelUntouchedBeforeRestore = securityBackupsMatch(sentinelBackup);
+
+		const bool replacementRemoved = !replacementCreated || removeRegularFileIfPresent(leaf);
+		const bool originalRestored = replacementRemoved
+			&& MoveFileExW(displaced.c_str(), leaf.c_str(), MOVEFILE_WRITE_THROUGH) != FALSE;
+		SecurityFailure restoreFailure;
+		const bool descriptorRestored = originalRestored
+			&& restoreSecurityBackups(treeBackup, &restoreFailure);
+		return replacementCreated && rejected && backupsPreserved
+			&& sentinelUntouchedBeforeRestore && descriptorRestored
+			&& securityBackupsMatch(treeBackup) && securityBackupsMatch(sentinelBackup);
+	}
+
+	bool applyInjectedFailureAndRollbackSecurityTreeSelfTest(const std::wstring& tree,
+		const std::wstring& failurePath, bool mutationExpected,
+		const ResolvedIdentity& kioskIdentity, const ResolvedIdentity& ownerIdentity,
+		const std::vector<SecurityBackup>& treeBackup,
+		const std::vector<SecurityBackup>& sentinelBackup)
+	{
+		const std::vector<SecurityBackup> preservedBackups = treeBackup;
+		SecurityFailure applyFailure, restoreFailure;
+		const bool rejected = !applyKioskSecurityTree(tree, true, kioskIdentity,
+			KioskPermission::ReadExecute, true, &applyFailure, &ownerIdentity,
+			&ownerIdentity, nullptr, &treeBackup, nullptr, nullptr, &failurePath)
+			&& applyFailure.code == ERROR_CANCELLED
+			&& _wcsicmp(applyFailure.path.c_str(), failurePath.c_str()) == 0;
+		const bool partialStateAsExpected = !mutationExpected || !securityBackupsMatch(treeBackup);
+		const bool backupsPreserved = securityBackupVectorsEqual(treeBackup, preservedBackups);
+		const bool sentinelUntouchedBeforeRestore = securityBackupsMatch(sentinelBackup);
+		// O rollback e sempre tentado, inclusive quando a falha foi injetada no primeiro no.
+		const bool restored = restoreSecurityBackups(treeBackup, &restoreFailure);
+		return rejected && partialStateAsExpected && backupsPreserved
+			&& sentinelUntouchedBeforeRestore && restored
+			&& securityBackupsMatch(treeBackup) && securityBackupsMatch(sentinelBackup);
+	}
+
+	bool validateSecurityOnlyHandleShareSelfTest()
+	{
+		wchar_t temporaryDirectory[MAX_PATH + 1]{};
+		std::vector<wchar_t> module(32768);
+		if (GetTempPathW(MAX_PATH, temporaryDirectory) == 0
+			|| GetModuleFileNameW(nullptr, module.data(), static_cast<DWORD>(module.size())) == 0)
+			return false;
+		const std::wstring root = join(temporaryDirectory,
+			L"TurboRama-security-share-self-test-" + std::to_wstring(GetCurrentProcessId())
+				+ L"-" + std::to_wstring(GetTickCount64()));
+		const std::wstring mappedExecutable = join(root, L"mapped-fixture.exe");
+		const std::wstring pinnedExecutable = join(root, L"pinned-fixture.exe");
+		const std::wstring tree = join(root, L"tree-fixture");
+		const std::wstring treeChild = join(tree, L"child");
+		const std::wstring treeGrandchild = join(treeChild, L"grandchild");
+		const std::wstring treeLeaf = join(treeGrandchild, L"leaf.txt");
+		const std::wstring siblingSentinel = join(root, L"sibling-sentinel.txt");
+		removeTree(root);
+
+		ResolvedIdentity processIdentity, kioskIdentity;
+		bool ok = ensureDirectory(root)
+			&& CopyFileW(module.data(), mappedExecutable.c_str(), TRUE) != FALSE
+			&& CopyFileW(module.data(), pinnedExecutable.c_str(), TRUE) != FALSE
+			&& ensureDirectory(tree)
+			&& currentProcessIdentity(processIdentity)
+			&& wellKnownIdentity(WinBuiltinUsersSid, L"BUILTIN\\Users", kioskIdentity)
+			&& grantSecurityShareSelfTestAccess(mappedExecutable, processIdentity)
+			&& grantSecurityShareSelfTestAccess(pinnedExecutable, processIdentity)
+			&& grantSecurityShareSelfTestAccess(tree, processIdentity, true, true)
+			&& ensureDirectory(treeChild)
+			&& ensureDirectory(treeGrandchild)
+			&& grantSecurityShareSelfTestAccess(treeGrandchild, processIdentity, true, true)
+			&& writeUtf8FileForSelfTest(treeLeaf, L"tree leaf\n")
+			&& writeUtf8FileForSelfTest(siblingSentinel, L"outside tree\n")
+			&& grantSecurityShareSelfTestAccess(siblingSentinel, processIdentity);
+
+		std::vector<SecurityBackup> mappedBackup, pinnedBackup, treeBackup, sentinelBackup;
+		if (ok) ok = captureSecurityBackup(mappedExecutable, false, mappedBackup)
+			&& captureSecurityBackup(pinnedExecutable, false, pinnedBackup)
+			&& captureSecurityTree(tree, true, treeBackup)
+			&& captureSecurityBackup(siblingSentinel, false, sentinelBackup);
+		if (ok)
+		{
+			const SecurityBackup* rootBackup = findSecurityBackup(treeBackup, tree, true);
+			const SecurityBackup* childBackup = findSecurityBackup(treeBackup, treeChild, true);
+			const SecurityBackup* grandchildBackup = findSecurityBackup(treeBackup,
+				treeGrandchild, true);
+			const SecurityBackup* leafBackup = findSecurityBackup(treeBackup, treeLeaf, false);
+			ok = treeBackup.size() == 4 && rootBackup != nullptr && rootBackup->daclProtected
+				&& childBackup != nullptr && !childBackup->daclProtected
+				&& grandchildBackup != nullptr && grandchildBackup->daclProtected
+				&& leafBackup != nullptr && !leafBackup->daclProtected;
+		}
+		if (ok) ok = rejectSubstitutedSecurityTreeSelfTest(tree, treeLeaf, kioskIdentity,
+			processIdentity, treeBackup, sentinelBackup);
+		if (ok)
+		{
+			for (const auto& backup : treeBackup)
+			{
+				if (!applyInjectedFailureAndRollbackSecurityTreeSelfTest(tree, backup.path,
+					backup.directory, kioskIdentity, processIdentity, treeBackup, sentinelBackup))
+				{
+					ok = false;
+					break;
+				}
+			}
+		}
+		if (ok) ok = applyAndRestoreSecurityTreeSelfTest(tree, kioskIdentity,
+			processIdentity, treeBackup, sentinelBackup);
+
+		HANDLE imageFile = INVALID_HANDLE_VALUE;
+		HANDLE imageMapping = nullptr;
+		void* imageView = nullptr;
+		if (ok)
+		{
+			imageFile = CreateFileW(mappedExecutable.c_str(), GENERIC_READ, FILE_SHARE_READ,
+				nullptr, OPEN_EXISTING,
+				FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+			ok = imageFile != INVALID_HANDLE_VALUE;
+		}
+		if (ok)
+		{
+			imageMapping = CreateFileMappingW(imageFile, nullptr, PAGE_READONLY | SEC_IMAGE,
+				0, 0, nullptr);
+			ok = imageMapping != nullptr;
+		}
+		if (ok)
+		{
+			imageView = MapViewOfFile(imageMapping, FILE_MAP_READ, 0, 0, 0);
+			ok = imageView != nullptr;
+		}
+		if (imageFile != INVALID_HANDLE_VALUE)
+		{
+			CloseHandle(imageFile);
+			imageFile = INVALID_HANDLE_VALUE;
+		}
+		if (ok) ok = maximumAllowedBlockedBySharing(mappedExecutable)
+			&& applyAndRestoreSecurityShareSelfTest(mappedExecutable, kioskIdentity,
+				processIdentity, mappedBackup);
+		if (imageView != nullptr) UnmapViewOfFile(imageView);
+		if (imageMapping != nullptr) CloseHandle(imageMapping);
+
+		HANDLE transactionPin = INVALID_HANDLE_VALUE;
+		if (ok)
+		{
+			const DWORD access = DELETE | READ_CONTROL | WRITE_DAC | WRITE_OWNER
+				| FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | GENERIC_READ;
+			transactionPin = CreateFileW(pinnedExecutable.c_str(), access, FILE_SHARE_READ,
+				nullptr, OPEN_EXISTING,
+				FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+			ok = transactionPin != INVALID_HANDLE_VALUE
+				&& validateOpenedFilesystemObject(transactionPin, pinnedExecutable, false);
+		}
+		if (ok) ok = maximumAllowedBlockedBySharing(pinnedExecutable)
+			&& applyAndRestoreSecurityShareSelfTest(pinnedExecutable, kioskIdentity,
+				processIdentity, pinnedBackup);
+		if (transactionPin != INVALID_HANDLE_VALUE) CloseHandle(transactionPin);
+
+		const bool cleaned = cleanupDirectoryTreeByHandle(root);
+		return ok && cleaned && pathIsMissing(root);
 	}
 
 	bool planHasEntry(const std::vector<InstallationSecurityContext::PlanEntry>& plan,
@@ -6806,11 +7224,14 @@ namespace
 
 }
 
+_Use_decl_annotations_
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 {
-	wchar_t module[32768]{};
-	if (GetModuleFileNameW(nullptr, module, 32768) == 0) return 10;
-	if (_wcsicmp(PathFindFileNameW(module), L"TurboRamaInstaller.exe") != 0) return 10;
+	std::vector<wchar_t> moduleBuffer(32768);
+	if (GetModuleFileNameW(nullptr, moduleBuffer.data(),
+		static_cast<DWORD>(moduleBuffer.size())) == 0) return 10;
+	const std::wstring module = moduleBuffer.data();
+	if (_wcsicmp(PathFindFileNameW(module.c_str()), L"TurboRamaInstaller.exe") != 0) return 10;
 	if (hasSingleArgument(L"--self-test"))
 	{
 		if (!validateLayoutSelectionContract()) return 57;
@@ -6822,7 +7243,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		if (!validateAtomicPublicationAndMetadataSelfTest()) return 63;
 		if (!validatePixStateAtomicRestoreSelfTest()) return 64;
 		if (!validateTestOnlyDirectoryPinScope()) return 65;
+		if (!validateSecurityOnlyHandleShareSelfTest()) return 67;
 		return 0;
+	}
+	if (hasSingleArgument(L"--validate-installed-kiosk-identity"))
+	{
+		ResolvedIdentity identity;
+		return resolveKioskIdentity(L"C:\\TurboRama\\Config\\turborama.json", false, identity)
+			? 0 : 66;
 	}
 
 	BootstrapArguments bootstrap;
@@ -7069,7 +7497,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 	{
 		closePinned();
 		if (!silentTest) MessageBoxW(nullptr,
-			L"Nao foi possivel resolver kioskUser a partir do turborama.json. Nenhum arquivo foi alterado.",
+			L"Nao foi possivel confirmar a conta Windows do TurboRama a partir do turborama.json/Winlogon. Neste gabinete a conta correta e Admin. Nenhum arquivo foi alterado.",
 			kTitle, MB_OK | MB_ICONERROR);
 		return 19;
 	}
@@ -7196,7 +7624,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		if (!silentTest) MessageBoxW(nullptr,
 			stateRestored
 				? L"Nao foi possivel confirmar a parada dos processos exatos. O estado PIX anterior foi restaurado; nenhum binario foi substituido."
-				: L"Nao foi possivel confirmar a parada e o rollback do estado PIX ficou incompleto. Nao inicie o quiosque.",
+				: L"Nao foi possivel confirmar a parada e o rollback do estado PIX ficou incompleto. Nao inicie o TurboRama.",
 			kTitle, MB_OK | MB_ICONERROR);
 		return stateRestored ? 18 : 16;
 	}
@@ -7249,10 +7677,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		if (!silentTest) MessageBoxW(nullptr,
 			restored
 				? L"A preparacao atomica dos quatro artefatos falhou antes da publicacao. Os temporarios foram removidos e o estado PIX anterior foi restaurado."
-				: L"A preparacao atomica falhou e a recuperacao ou limpeza ficou incompleta. Nao inicie o quiosque.",
+				: L"A preparacao atomica falhou e a recuperacao ou limpeza ficou incompleta. Nao inicie o TurboRama.",
 			kTitle, MB_OK | MB_ICONERROR);
 		return restored ? 12 : 14;
 	}
+	InstallationSecurityContext installationSecurity;
+	SecurityFailure installationSecurityFailure;
+	SecurityFailure installationSecurityRollbackFailure;
 	bool transactionFinalized = false;
 	auto rollbackAll = [&]()
 	{
@@ -7268,12 +7699,15 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 			(void)cleanupDirectoryTreeByHandle(transactionBackup);
 			return false;
 		}
+		const bool securityRestored = !installationSecurity.mutationAttempted
+			|| restoreInstallationSecurity(target, installationSecurity,
+				&installationSecurityRollbackFailure);
 		const bool installRestored = rollbackInstallTransaction(installTransaction);
 		const bool pixRestored = restorePixState(target, pixStateBackup);
 		const bool evidenceRestored = coordinationEvidenceIntact();
 		const bool backupRemoved = cleanupDirectoryTreeByHandle(transactionBackup);
-		return processesQuiet && installRestored && pixRestored && evidenceRestored
-			&& backupRemoved;
+		return processesQuiet && securityRestored && installRestored && pixRestored
+			&& evidenceRestored && backupRemoved;
 	};
 
 	bool installed = quiesceExactProcesses()
@@ -7288,7 +7722,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		if (!silentTest) MessageBoxW(nullptr,
 			restored
 				? L"A troca dos quatro artefatos falhou. O conjunto anterior e o estado PIX foram restaurados."
-				: L"A troca falhou e o rollback ficou incompleto. Nao inicie o quiosque.",
+				: L"A troca falhou e o rollback ficou incompleto. Nao inicie o TurboRama.",
 			kTitle, MB_OK | MB_ICONERROR);
 		return restored ? 13 : 14;
 	}
@@ -7306,7 +7740,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		if (!silentTest) MessageBoxW(nullptr,
 			restored
 				? L"A atualizacao do estado PIX falhou. Binarios e estado PIX anteriores foram restaurados exatamente."
-				: L"A atualizacao do estado PIX falhou e o rollback ficou incompleto. Nao inicie o quiosque.",
+				: L"A atualizacao do estado PIX falhou e o rollback ficou incompleto. Nao inicie o TurboRama.",
 			kTitle, MB_OK | MB_ICONERROR);
 		return restored ? 15 : 16;
 	}
@@ -7318,6 +7752,48 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		const bool restored = rollbackAll();
 		closePinned();
 		return restored ? 15 : 16;
+	}
+
+	// O smoke test autenticado roda propositalmente sem elevacao e em uma arvore
+	// temporaria. Ele valida integralmente o plano, os snapshots, os limites de
+	// dados e a transacao, mas nao tenta trocar owner/DACL: essa operacao exige o
+	// token elevado que o bootstrap real fornece. A instalacao real continua
+	// fail-closed e so avanca depois de aplicar e validar todas as ACLs.
+	const bool installationSecurityProtected = silentTest
+		? (quiesceExactProcesses()
+			&& captureInstallationSecurity(target, installationSecurity,
+				&installationSecurityFailure)
+			&& validateWritableDataScopes(target, &installationSecurityFailure)
+			&& validatePinnedPixCurrentState(target, pixStateBackup)
+			&& quiesceExactProcesses())
+		: (quiesceExactProcesses()
+			&& hardenInstallationSecurity(target, kioskIdentity, installationSecurity,
+				&installationSecurityFailure)
+			&& validateWritableDataScopes(target, &installationSecurityFailure)
+			&& acceptPinnedPixSecurityTransition(target, pixStateBackup)
+			&& quiesceExactProcesses());
+	if (!installationSecurityProtected)
+	{
+		if (installationSecurityFailure.empty())
+			recordSecurityFailure(&installationSecurityFailure,
+				L"barreira transacional da ACL", target,
+				GetLastError() == ERROR_SUCCESS ? ERROR_GEN_FAILURE : GetLastError());
+		const bool restored = rollbackAll();
+		const std::wstring incident = silentTest ? std::wstring()
+			: writeSecurityIncidentLog(installationSecurityFailure,
+				installationSecurity.mutationAttempted, restored,
+				installationSecurityRollbackFailure);
+		closePinned();
+		if (!silentTest)
+		{
+			std::wstring message = restored
+				? L"A protecao de permissoes da instalacao falhou. Binarios, estado PIX e permissoes anteriores foram restaurados."
+				: L"A protecao de permissoes falhou e o rollback ficou incompleto. Nao inicie o TurboRama.";
+			message += L"\n\n" + securityFailureText(installationSecurityFailure);
+			if (!incident.empty()) message += L"\n\nRegistro protegido: " + incident;
+			MessageBoxW(nullptr, message.c_str(), kTitle, MB_OK | MB_ICONERROR);
+		}
+		return restored ? 20 : 16;
 	}
 
 	const bool finalEvidenceValid = coordinationEvidenceIntact()
@@ -7339,7 +7815,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		if (!silentTest) MessageBoxW(nullptr,
 			restored
 				? L"O preflight final do commit falhou; os artefatos e o estado PIX anteriores foram restaurados."
-				: L"O preflight final do commit falhou e o rollback ficou incompleto. Nao inicie o quiosque.",
+				: L"O preflight final do commit falhou e o rollback ficou incompleto. Nao inicie o TurboRama.",
 			kTitle, MB_OK | MB_ICONERROR);
 		return restored ? 15 : 14;
 	}

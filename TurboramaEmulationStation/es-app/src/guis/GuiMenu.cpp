@@ -32,6 +32,7 @@
 #include <functional>
 #include "utils/Platform.h"
 #include "utils/FileSystemUtil.h"
+#include "resources/ProtectedDecorations.h"
 
 #include "SystemConf.h"
 #include "ApiSystem.h"
@@ -5876,6 +5877,25 @@ std::vector<DecorationSetInfo> GuiMenu::getDecorationsSetsByName(const std::stri
 			// So inclui o set se encontrou systems/{cand}.png
 			if (!info.imageUrl.empty())
 				sets.push_back(info);
+		}
+	}
+
+	// Preserve the decoration-set entry when its PNG lives only inside the EXE.
+	bool hasDefaultUnglazed = false;
+	for (const auto& set : sets)
+		if (set.name == "default_unglazed")
+			hasDefaultUnglazed = true;
+	if (!hasDefaultUnglazed)
+	{
+		for (const auto& candidate : nameCandidates)
+		{
+			if (!ProtectedDecorations::hasSystem(candidate))
+				continue;
+			sets.push_back(DecorationSetInfo(
+				"default_unglazed",
+				":/__turborama_protected/decorations/default_unglazed",
+				ProtectedDecorations::resourcePathForSystem(candidate)));
+			break;
 		}
 	}
 

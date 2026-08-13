@@ -8,6 +8,7 @@
 #include "Settings.h"
 #include "Paths.h"
 #include "EmbeddedTheme.h"
+#include "resources/ProtectedDecorations.h"
 #include "utils/ConcurrentVector.h"
 #include <unordered_map>
 
@@ -132,6 +133,15 @@ std::string ResourceManager::getResourcePath(const std::string& path) const
 
 const ResourceData ResourceManager::getFileData(const std::string& path) const
 {
+	if (ProtectedDecorations::isResourcePath(path))
+	{
+		std::shared_ptr<unsigned char> data;
+		size_t length = 0;
+		if (ProtectedDecorations::loadResource(path, data, length))
+			return { data, length };
+		return { NULL, 0 };
+	}
+
 	//check if its a resource
 	const std::string respath = getResourcePath(path);
 
@@ -173,6 +183,9 @@ ResourceData ResourceManager::loadFile(const std::string& path, size_t size) con
 
 bool ResourceManager::fileExists(const std::string& path) const
 {
+	if (ProtectedDecorations::isResourcePath(path))
+		return true;
+
 	// Animated Gifs : Check if the extension contains a ',' -> If it's the case, we have the multi-image index as argument
 	if (Utils::FileSystem::getExtension(path).find(',') != std::string::npos)
 	{

@@ -43,11 +43,17 @@
 #include "watchers/WatchersManager.h"
 #include "HttpReq.h"
 #include <thread>
+#include <chrono>
+#include <vector>
 #include "ZaparooSupport.h"
 #include "utils/ThreadPool.h"
 #include "CreditManager.h"
+#include "CreditWarningOverlay.h"
+#include "resources/ProtectedDecorations.h"
+#include "resources/ResourceManager.h"
 #include "PixBridge.h"
 #include "PixAgentManager.h"
+#include "PixBinaryTrust.h"
 #include "guis/GuiMenu.h"
 
 #ifdef WIN32
@@ -475,6 +481,52 @@ void launchStartupGame()
 
 int main(int argc, char* argv[])
 {
+	// Os auto-testes do gerenciador PIX resolvem o agente em relacao ao EXE.
+	// Inicialize esse caminho antes de qualquer retorno antecipado; antes ele
+	// dependia por engano do diretorio atual usado para iniciar o teste.
+	Paths::setExePath(argv[0]);
+#ifdef WIN32
+	if (PixBinaryTrust::required())
+	{
+		std::vector<wchar_t> executable(32768, L'\0');
+		const DWORD length = GetModuleFileNameW(nullptr, executable.data(),
+			static_cast<DWORD>(executable.size()));
+		std::string trustError;
+		if (length == 0 || length >= executable.size()
+			|| !PixBinaryTrust::verifyVendorBinary(std::wstring(executable.data(), length), trustError))
+		{
+			MessageBoxA(nullptr, trustError.empty() ? "EmulationStation comercial sem assinatura valida."
+				: trustError.c_str(), "TurboRama - protecao comercial", MB_OK | MB_ICONERROR | MB_TOPMOST);
+			return 31;
+		}
+	}
+#endif
+	if (argc == 2 && strcmp(argv[1], "--protected-decorations-self-test") == 0)
+	{
+		const char* systems[] = { "pc", "ps3", "ps4", "ps5", "switch", "windows", "xboxone" };
+		const unsigned char pngSignature[] = { 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
+		for (const char* system : systems)
+		{
+			const std::string path = ProtectedDecorations::resourcePathForSystem(system);
+			const ResourceData data = ResourceManager::getInstance()->getFileData(path);
+			if (!data.ptr || data.length < sizeof(pngSignature) ||
+				std::memcmp(data.ptr.get(), pngSignature, sizeof(pngSignature)) != 0)
+				return 27;
+		}
+		return 0;
+	}
+	if (argc == 2 && strcmp(argv[1], "--credit-warning-overlay-self-test") == 0)
+	{
+		CreditWarningOverlay::show(
+			"TESTE DO AVISO: RESTAM 5 MINUTOS. ESTA CAMADA DEVE FICAR NA FRENTE DE TODAS AS TELAS.");
+		const bool visible = CreditWarningOverlay::isVisible();
+		for (int elapsedMs = 0; elapsedMs < 4000; elapsedMs += 50)
+		{
+			CreditWarningOverlay::update();
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		}
+		return visible ? 0 : 26;
+	}
 	if (argc == 2 && strcmp(argv[1], "--pix-agent-manager-self-test") == 0)
 	{
 		std::string error;
@@ -482,6 +534,14 @@ int main(int argc, char* argv[])
 		if (!passed && !error.empty()) fprintf(stderr, "PIX_AGENT_MANAGER_TEST=FAILED: %s\n", error.c_str());
 		else fprintf(stdout, "PIX_AGENT_MANAGER_TEST=OK\n");
 		return passed ? 0 : 25;
+	}
+	if (argc == 2 && strcmp(argv[1], "--pix-agent-trust-self-test") == 0)
+	{
+		std::string error;
+		const bool passed = PixAgentManager::runTrustSelfTest(error);
+		if (!passed && !error.empty()) fprintf(stderr, "PIX_AGENT_TRUST_TEST=FAILED: %s\n", error.c_str());
+		else fprintf(stdout, "PIX_AGENT_TRUST_TEST=OK\n");
+		return passed ? 0 : 32;
 	}
 	if (argc == 3 && strcmp(argv[1], "--pix-agent-start-once") == 0)
 	{
@@ -823,8 +883,8 @@ int main(int argc, char* argv[])
 
 				TRYCATCH("InputManager::parseEvent", InputManager::getInstance()->parseEvent(event, &window));
 
-				// TurboRama: somente o acesso autenticado ao painel permanece global.
-				// Operacoes de credito/contador existem apenas dentro do painel admin.
+				// TurboRama: F10/F12 atuam exclusivamente sobre o saldo avulso.
+				// Contas cadastradas e o fluxo PIX nunca sao alterados por estes atalhos.
 				if (event.type == SDL_KEYDOWN && !event.key.repeat)
 				{
 					const SDL_Keycode k = event.key.keysym.sym;
@@ -834,6 +894,49 @@ int main(int argc, char* argv[])
 					if (k == SDLK_F11)
 					{
 						GuiMenu::requestCreditSettingsAccess_static(&window);
+						continue;
+					}
+					if (k == SDLK_F10)
+					{
+						auto& credits = CreditManager::getInstance();
+						if (!credits.isGuestMode())
+						{
+							window.displayNotificationMessage(
+								_("F10 disponivel somente para credito AVULSO."), 4);
+						}
+						else if (credits.addCoin())
+						{
+							window.displayNotificationMessage(
+								std::string(_("AVULSO +")) + std::to_string(credits.getMinutesPerCoin())
+								+ _(" MIN | SALDO: ") + credits.formatRemaining(), 5);
+						}
+						else
+						{
+							window.displayNotificationMessage(
+								_("Credito avulso nao adicionado. Aguarde e tente novamente."), 3);
+						}
+						continue;
+					}
+					if (k == SDLK_F12)
+					{
+						auto& credits = CreditManager::getInstance();
+						if (!credits.isGuestMode())
+						{
+							window.displayNotificationMessage(
+								_("F12 nao altera credito de cliente cadastrado."), 4);
+						}
+						else if (!credits.hasGuestCredit())
+						{
+							window.displayNotificationMessage(_("Credito AVULSO ja esta zerado."), 3);
+						}
+						else
+						{
+							credits.clearGuestCredit();
+							window.displayNotificationMessage(
+								credits.hasGuestCredit()
+									? _("Nao foi possivel zerar o credito AVULSO.")
+									: _("Credito AVULSO ZERADO (F12)."), 4);
+						}
 						continue;
 					}
 				}

@@ -11,7 +11,9 @@
 #include "components/CarouselComponent.h"
 #include "components/TextListComponent.h"
 #include "components/ImageGridComponent.h"
+#include "components/ImageComponent.h"
 #include "resources/TextureDataManager.h"
+#include "PixBridge.h"
 
 #include <memory>
 #include <functional>
@@ -105,10 +107,39 @@ private:
 	void	 renderCarousel(const Transform4x4f& parentTrans);
 	void	 renderExtras(const Transform4x4f& parentTrans, float lower, float upper);
 	void	 renderInfoBar(const Transform4x4f& trans);
+	void	 updateHomePix(int deltaTime);
+	void	 startHomePixRequest();
+	void	 pollHomePixRequest();
+	void	 resetHomePixRequest(int retryDelayMs, const std::string& status);
+	void	 layoutHomePix();
+	void	 updateHomePixOffer();
+	void	 renderHomePix(const Transform4x4f& trans);
+	void	 renderHomePixQrMatrix(const Transform4x4f& trans);
+	std::string formatHomePixOffer(const PixPackage& package) const;
 	
 	ControlWrapper						mCarousel;
 
 	TextComponent						mSystemInfo;
+	ImageComponent						mHomePixQrImage;
+	TextComponent						mHomePixOffer;
+	TextComponent						mHomePixInstruction;
+	PixPublicOptions					mHomePixOptions;
+	PixPackage						mHomePixPackage;
+	PixBeneficiary					mHomePixBeneficiary;
+	std::string						mHomePixRequestId;
+	std::string						mHomePixLoadedQrPath;
+	std::vector<unsigned char>		mHomePixQrModules;
+	Vector2f							mHomePixQrPosition;
+	float							mHomePixQrSize;
+	int								mHomePixQrModuleCount;
+	int								mHomePixPollElapsedMs;
+	int								mHomePixRequestElapsedMs;
+	int								mHomePixConfigCheckElapsedMs;
+	int								mHomePixRetryElapsedMs;
+	int								mHomePixRetryDelayMs;
+	int								mHomePixEffectElapsedMs;
+	bool							mHomePixRequestActive;
+	bool							mHomePixQrReady;
 
 	std::vector<GuiComponent*>			mStaticBackgrounds;
 	std::vector<SystemViewData>			mEntries;

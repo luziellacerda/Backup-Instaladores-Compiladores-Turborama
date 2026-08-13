@@ -6,10 +6,40 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>false</InvariantGlobalization>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <CommercialLicenseRequired Condition="'$(CommercialLicenseRequired)' == ''">false</CommercialLicenseRequired>
+    <CommercialLicenseIssuerCertificateBase64 Condition="'$(CommercialLicenseIssuerCertificateBase64)' == ''"></CommercialLicenseIssuerCertificateBase64>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <Optimize>true</Optimize>
+    <Deterministic>true</Deterministic>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="QRCoder" Version="1.8.0" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="obj\**\*.cs" />
+    <Compile Remove="bin\**\*.cs" />
+    <Compile Remove=".build\**\*.cs" />
+    <Compile Remove="**\obj\**\*.cs" />
+    <Compile Remove="**\bin\**\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Estes metadados ficam dentro da DLL que depois recebe Authenticode.
+         Somente o certificado publico e incorporado; a chave privada nunca
+         entra no projeto, no Git nem no instalador. -->
+    <AssemblyMetadata Include="TurboRama.CommercialLicenseRequired" Value="$(CommercialLicenseRequired)" />
+    <AssemblyMetadata Include="TurboRama.LicenseIssuerCertificateBase64" Value="$(CommercialLicenseIssuerCertificateBase64)" />
+  </ItemGroup>
+  <Target Name="ValidateCommercialLicenseBuildIdentity" BeforeTargets="CoreCompile">
+    <Error Condition="'$(CommercialLicenseRequired)' != 'true' and '$(CommercialLicenseRequired)' != 'false'"
+           Text="CommercialLicenseRequired deve ser true ou false em minusculas." />
+    <Error Condition="'$(CommercialLicenseRequired)' == 'true' and '$(CommercialLicenseIssuerCertificateBase64)' == ''"
+           Text="A compilacao comercial exige o certificado publico do emissor da licenca." />
+    <Error Condition="'$(CommercialLicenseRequired)' == 'false' and '$(CommercialLicenseIssuerCertificateBase64)' != ''"
+           Text="Uma compilacao sem licenca obrigatoria nao pode incorporar emissor comercial." />
+  </Target>
   <ItemGroup>
     <!-- appsettings.json is an operator-local file and must never influence a
          commercial package. The build orchestrator installs the tracked,
