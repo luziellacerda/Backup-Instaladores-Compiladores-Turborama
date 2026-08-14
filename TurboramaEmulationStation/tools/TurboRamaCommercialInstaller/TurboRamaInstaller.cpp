@@ -1219,7 +1219,7 @@ namespace
 				&& validateAdminOnlyObject(object, directory);
 		}
 		if (currentDescriptor != nullptr) LocalFree(currentDescriptor);
-		if (object != INVALID_HANDLE_VALUE) CloseHandle(object);
+		if (object != nullptr && object != INVALID_HANDLE_VALUE) CloseHandle(object);
 		LocalFree(descriptor);
 		return ok;
 	}

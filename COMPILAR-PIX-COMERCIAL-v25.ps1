@@ -33,6 +33,11 @@ Enables the fail-closed commercial build profile. This profile requires a
 usable code-signing certificate, enables the native release mitigations and
 refuses to package debug symbols, source files or test material. It also
 embeds only the public certificate used to verify offline TPM-bound licenses.
+
+.PARAMETER DiretorioTemporarioBuild
+Absolute directory used exclusively as the boundary for build, package and
+isolated smoke-test files. It can also be supplied through
+TURBORAMA_BUILD_TEMP_ROOT. When omitted, the current TEMP directory is used.
 #>
 param(
     [switch]$Limpar,
@@ -46,7 +51,8 @@ param(
     [ValidateSet('CurrentUser','LocalMachine')]
     [string]$LocalCertificadoEmissorLicenca = 'CurrentUser',
     [switch]$ExigirAssinatura,
-    [switch]$ProtecaoComercial
+    [switch]$ProtecaoComercial,
+    [string]$DiretorioTemporarioBuild = $env:TURBORAMA_BUILD_TEMP_ROOT
 )
 
 Set-StrictMode -Version Latest
@@ -71,12 +77,26 @@ $WorkspaceRoot = Split-Path (Split-Path $RepoRoot -Parent) -Parent
 $ProjectRoot = Join-Path $RepoRoot 'TurboramaEmulationStation'
 # The .NET runtime contained in the payload has legitimate deep paths. Keep
 # all disposable build roots short and explicit so clean builds do not depend
-# on legacy MAX_PATH behavior of the current workspace location.
-$LocalAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
-if ([string]::IsNullOrWhiteSpace($LocalAppData)) { throw 'Nao foi possivel localizar LocalAppData para o build temporario.' }
-$BuildTempRoot = Join-Path $LocalAppData 'Temp\TurboRama-v25-build'
+# on legacy MAX_PATH behavior of the current workspace location. Never force
+# LOCALAPPDATA: the operator may deliberately place every disposable byte on a
+# drive with enough free space (for example H:\TurboRamaTemp).
+if ([string]::IsNullOrWhiteSpace($DiretorioTemporarioBuild)) {
+    $DiretorioTemporarioBuild = [IO.Path]::GetTempPath()
+}
+if (-not [IO.Path]::IsPathRooted($DiretorioTemporarioBuild)) {
+    throw 'DiretorioTemporarioBuild deve ser um caminho absoluto.'
+}
+$BuildTempBoundary = [IO.Path]::GetFullPath($DiretorioTemporarioBuild).TrimEnd('\')
+$buildTempDriveRoot = [IO.Path]::GetPathRoot($BuildTempBoundary).TrimEnd('\')
+if ([string]::IsNullOrWhiteSpace($BuildTempBoundary) -or
+    [string]::Equals($BuildTempBoundary, $buildTempDriveRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'DiretorioTemporarioBuild nao pode ser a raiz de uma unidade.'
+}
+[IO.Directory]::CreateDirectory($BuildTempBoundary) | Out-Null
+$BuildTempRoot = Join-Path $BuildTempBoundary 'TurboRama-v25-build'
 $WorkRoot = Join-Path $BuildTempRoot 'pack'
 $EsBuild = Join-Path $BuildTempRoot 'es'
+$EsOutput = Join-Path $BuildTempRoot 'es-output'
 $BuildLockFile = Join-Path $BuildTempRoot 'build-v25.lock'
 $script:BuildLockStream = $null
 $script:InstallerCppSourcePin = $null
@@ -87,7 +107,7 @@ $script:AgentBundleSha256 = ''
 # Keep the installer smoke test on a deliberately short, explicit path. The
 # payload carries the .NET runtime, whose valid nested files can exceed the
 # legacy MAX_PATH limit when the test is rooted under the long workspace path.
-$SmokeRoot = Join-Path $LocalAppData 'Temp\TurboRama-v25-smoke'
+$SmokeRoot = Join-Path $BuildTempBoundary 'TurboRama-v25-smoke'
 $AgentOutput = Join-Path $WorkRoot 'agent-output'
 $NativeOutput = Join-Path $WorkRoot 'native-output'
 $ArchiveRoot = Join-Path $WorkRoot 'archive-update'
@@ -137,9 +157,7 @@ function Stage([string]$Text) {
 }
 
 function Enter-BuildLock {
-    $localBoundary = Assert-RegularDirectoryPath $LocalAppData 'LOCALAPPDATA para lock do build'
-    $tempBoundary = Join-Path $localBoundary 'Temp'
-    Assert-AnchoredRegularDirectoryPath $tempBoundary $localBoundary 'Temp para lock do build' | Out-Null
+    $tempBoundary = Assert-RegularDirectoryPath $BuildTempBoundary 'Fronteira temporaria para lock do build'
     Assert-AnchoredRegularDirectoryPath $BuildTempRoot $tempBoundary 'Raiz do lock do build' -AllowMissingTail | Out-Null
     [IO.Directory]::CreateDirectory($BuildTempRoot) | Out-Null
     Assert-AnchoredRegularDirectoryPath $BuildTempRoot $tempBoundary 'Raiz criada do lock do build' | Out-Null
@@ -196,6 +214,7 @@ function Get-GeneratedPathBoundary([string]$Path) {
     $allowedTargets = @(
         $WorkRoot,
         $EsBuild,
+        $EsOutput,
         $AgentOutput,
         $NativeOutput,
         $ArchiveRoot,
@@ -207,7 +226,7 @@ function Get-GeneratedPathBoundary([string]$Path) {
     foreach ($target in $allowedTargets) {
         $targetFull = [IO.Path]::GetFullPath($target).TrimEnd('\')
         if ([string]::Equals($full, $targetFull, [StringComparison]::OrdinalIgnoreCase)) {
-            return [IO.Path]::GetFullPath($LocalAppData).TrimEnd('\')
+            return [IO.Path]::GetFullPath($BuildTempBoundary).TrimEnd('\')
         }
     }
     throw "Limpeza recusada fora do mapa exato de pastas geradas: $full"
@@ -218,12 +237,12 @@ function Assert-GeneratedPath([string]$Path) {
 }
 
 function Reset-IsolatedSmokeRoot {
-    $expected = [IO.Path]::GetFullPath((Join-Path $LocalAppData 'Temp\TurboRama-v25-smoke')).TrimEnd('\')
+    $expected = [IO.Path]::GetFullPath((Join-Path $BuildTempBoundary 'TurboRama-v25-smoke')).TrimEnd('\')
     $actual = [IO.Path]::GetFullPath($SmokeRoot).TrimEnd('\')
     if (-not [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Limpeza recusada fora do laboratorio isolado: $actual"
     }
-    Reset-DirectoryByQuarantine $actual $LocalAppData 'laboratorio isolado do instalador'
+    Reset-DirectoryByQuarantine $actual $BuildTempBoundary 'laboratorio isolado do instalador'
 }
 
 function Get-CanonicalPath([string]$Path) {
@@ -2168,6 +2187,7 @@ try {
     # A release promovida nunca reutiliza objetos CMake/Ninja. Isto torna a
     # afirmacao "build limpo" verificavel mesmo quando -Limpar nao foi passado.
     Reset-GeneratedDirectory $EsBuild
+    Reset-GeneratedDirectory $EsOutput
     [IO.Directory]::CreateDirectory($WorkRoot) | Out-Null
     [IO.Directory]::CreateDirectory($EsBuild) | Out-Null
     # A failed candidate must never contaminate a later candidate, while the
@@ -2246,6 +2266,7 @@ try {
         ('-DCMAKE_C_COMPILER=' + ($script:Cl -replace '\\','/')),
         ('-DCMAKE_CXX_COMPILER=' + ($script:Cl -replace '\\','/')),
         ('-DCMAKE_RC_COMPILER=' + ($script:Rc -replace '\\','/')),
+		('-DTURBORAMA_OUTPUT_DIRECTORY=' + ($EsOutput -replace '\\','/')),
         ('-DTURBORAMA_COMMERCIAL_HARDENING=' + $(if ($ProtecaoComercial) { 'ON' } else { 'OFF' })),
         ('-DTURBORAMA_REQUIRE_SIGNED_PIX=' + $(if ($ProtecaoComercial) { 'ON' } else { 'OFF' })),
         ('-DTURBORAMA_PIX_SIGNER_THUMBPRINT=' + $(if ($ProtecaoComercial) { $script:NormalizedSigningThumbprint } else { '' })),
@@ -2253,7 +2274,7 @@ try {
     )
     Run $cmake $cmakeArguments
     Run $cmake @('--build',$EsBuild,'--target','emulationstation','--parallel',([Math]::Max(1,[Environment]::ProcessorCount).ToString()))
-    $esExe = Join-Path $ProjectRoot 'bin\emulationstation.exe'
+    $esExe = Join-Path $EsOutput 'emulationstation.exe'
     Require-File $esExe 'emulationstation.exe'
     # O frontend comercial verifica a propria assinatura antes de qualquer
     # argumento ou tela; ele precisa ser assinado antes dos seus autotestes.
@@ -2337,7 +2358,7 @@ try {
     Copy-Item -LiteralPath $bootstrapper -Destination (Join-Path $BundleRoot 'TurboRamaBootstrapper.exe') -Force
     $payload = Join-Path $BundleRoot 'payload-v25.7z'
     if ((Get-PathEntryState $payload).Exists) {
-        $retainedPayload = Move-RegularFileToUniqueSibling $payload $LocalAppData 'payload-v25.anterior' '.7z' 'payload anterior'
+        $retainedPayload = Move-RegularFileToUniqueSibling $payload $BuildTempBoundary 'payload-v25.anterior' '.7z' 'payload anterior'
         Write-Host "Payload anterior inesperado foi retido em: $retainedPayload" -ForegroundColor Yellow
     }
     Assert-PathEntryAbsent $payload 'Payload antes da compactacao'

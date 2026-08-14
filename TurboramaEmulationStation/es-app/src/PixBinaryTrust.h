@@ -242,7 +242,10 @@ namespace PixBinaryTrust
 			object.resize(objectLength);
 			accepted = BCryptCreateHash(algorithm, &hash, object.data(), objectLength, nullptr, 0, 0) >= 0;
 		}
-		std::array<unsigned char, 64 * 1024> buffer{};
+		// Keep the streaming buffer off the thread stack. This routine is shared by
+		// the GUI configurators and can run on kiosk threads with a constrained
+		// stack; the bytes are still wiped before the allocation is released.
+		std::vector<unsigned char> buffer(64 * 1024, 0);
 		while (accepted)
 		{
 			DWORD count = 0;

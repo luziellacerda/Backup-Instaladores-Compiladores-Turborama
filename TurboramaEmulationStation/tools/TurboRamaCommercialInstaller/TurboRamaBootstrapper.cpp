@@ -97,9 +97,9 @@ namespace
 
 	std::wstring normalized(const std::wstring& value)
 	{
-		wchar_t full[32768]{};
-		const DWORD length = GetFullPathNameW(value.c_str(), 32768, full, nullptr);
-		std::wstring result = length > 0 && length < 32768 ? full : value;
+		std::vector<wchar_t> full(32768, L'\0');
+		const DWORD length = GetFullPathNameW(value.c_str(), static_cast<DWORD>(full.size()), full.data(), nullptr);
+		std::wstring result = length > 0 && length < full.size() ? std::wstring(full.data(), length) : value;
 		for (auto& character : result)
 		{
 			if (character == L'/') character = L'\\';
@@ -694,10 +694,13 @@ namespace
 	}
 }
 
-int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
+int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
 {
-	wchar_t module[32768]{};
-	if (GetModuleFileNameW(nullptr, module, 32768) == 0) return 20;
+	std::vector<wchar_t> moduleBuffer(32768, L'\0');
+	const DWORD moduleLength = GetModuleFileNameW(nullptr, moduleBuffer.data(),
+		static_cast<DWORD>(moduleBuffer.size()));
+	if (moduleLength == 0 || moduleLength >= moduleBuffer.size()) return 20;
+	const std::wstring module(moduleBuffer.data(), moduleLength);
 	if (hasSingleArgument(L"--self-test"))
 	{
 		const std::wstring first = randomName();
@@ -723,7 +726,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 	enablePrivilege(SE_TAKE_OWNERSHIP_NAME);
 	enablePrivilege(SE_RESTORE_NAME);
 
-	HANDLE source = CreateFileW(module, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+	HANDLE source = CreateFileW(module.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
 		FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 	if (source == INVALID_HANDLE_VALUE) return 21;
 	FILE_ATTRIBUTE_TAG_INFO moduleAttributes{};

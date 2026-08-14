@@ -59,6 +59,7 @@ namespace
 	constexpr int ID_INVENTORY_DELETE_POS = 506;
 	constexpr int ID_INVENTORY_REFRESH = 507;
 	constexpr int ID_INVENTORY_CLOSE = 508;
+	constexpr int ID_INVENTORY_USE_AND_CLEAN = 509;
 	constexpr UINT WM_CONFIGURED = WM_APP + 25;
 	constexpr UINT WM_IDENTITY_CHECKED = WM_APP + 26;
 	constexpr UINT WM_INVENTORY_READY = WM_APP + 27;
@@ -84,7 +85,9 @@ namespace
 	{
 		bool adapter{};
 		bool sandbox{ true };
+		bool removeOtherManagedPairs{};
 		std::wstring token, storeName, posName, storeExternalId, posExternalId;
+		std::wstring selectedAccountId, selectedStoreId, selectedPosId;
 		std::wstring cep, number, reference, adapterUrl, adapterId;
 		std::wstring p15, p30, p45, p60, p120;
 	};
@@ -123,8 +126,10 @@ namespace
 	{
 		HWND window{}, list{}, status{};
 		const std::vector<MercadoPagoPair>* pairs{};
+		std::wstring currentStoreExternalId, currentPosExternalId;
 		int selected{ -1 };
 		bool confirmed{};
+		bool removeOthers{};
 	};
 	struct InventoryWorkerResult
 	{
@@ -612,9 +617,183 @@ namespace
 		return pairs;
 	}
 
-	std::wstring pairCaption(const MercadoPagoPair& pair)
+	bool asciiDigits(const std::wstring& value)
+	{
+		return !value.empty() && std::all_of(value.begin(), value.end(),
+			[](wchar_t ch) { return ch >= L'0' && ch <= L'9'; });
+	}
+
+	bool startsWithInsensitive(const std::wstring& value, const wchar_t* prefix)
+	{
+		const size_t length = wcslen(prefix);
+		return value.size() >= length && _wcsnicmp(value.c_str(), prefix, length) == 0;
+	}
+
+	bool isTurboRamaManagedPair(const MercadoPagoPair& pair)
+	{
+		// Nunca consideramos recursos genéricos da conta para limpeza. Somente
+		// os external_id gerados historicamente pelo TurboRama entram no plano.
+		return startsWithInsensitive(pair.store.externalId, L"LZLOJA")
+			&& startsWithInsensitive(pair.pos.externalId, L"LZPIX");
+	}
+
+	struct ManagedCleanupPlan
+	{
+		std::vector<std::wstring> pointIds;
+		std::vector<std::wstring> candidateStoreIds;
+	};
+
+	bool buildManagedCleanupPlan(const MercadoPagoInventory& inventory,
+		const std::wstring& selectedStoreId, const std::wstring& selectedPosId,
+		ManagedCleanupPlan& plan, std::wstring& error)
+	{
+		plan = {};
+		const auto pairs = compatiblePairs(inventory);
+		const auto selected = std::find_if(pairs.begin(), pairs.end(), [&](const auto& pair) {
+			return pair.store.id == selectedStoreId && pair.pos.id == selectedPosId;
+		});
+		if (selected == pairs.end())
+		{
+			error = L"O cadastro escolhido nao existe mais no inventario atual do Mercado Pago.";
+			return false;
+		}
+		if (!isTurboRamaManagedPair(*selected))
+		{
+			error = L"O cadastro escolhido nao usa os identificadores gerenciados pelo TurboRama; a limpeza automatica foi recusada.";
+			return false;
+		}
+
+		// Limpe tambem PDVs antigos, inativos e o legado LZPIXCOMP. Eles nao
+		// aparecem em compatiblePairs(), pois nao podem ser escolhidos para uso,
+		// mas continuam sendo recursos gerenciados pelo TurboRama que impedem o
+		// inventario de ficar unico. A associacao com uma loja LZLOJA real e
+		// obrigatoria; um recurso de outra aplicacao nunca entra no plano.
+		for (const auto& point : inventory.points)
+		{
+			if (point.id == selectedPosId) continue;
+			if (!startsWithInsensitive(point.externalId, L"LZPIX")) continue;
+			const MercadoPagoStore* store = findCompatibleStore(inventory, point);
+			if (!store || !startsWithInsensitive(store->externalId, L"LZLOJA")) continue;
+			if (!asciiDigits(point.id) || !asciiDigits(store->id))
+			{
+				error = L"O Mercado Pago retornou ID interno nao numerico; nenhuma exclusao foi iniciada.";
+				return false;
+			}
+			if (std::find(plan.pointIds.begin(), plan.pointIds.end(), point.id) == plan.pointIds.end())
+				plan.pointIds.push_back(point.id);
+		}
+
+		// Inclua lojas LZLOJA que ja estejam vazias. A exclusao efetiva continua
+		// condicionada a uma nova consulta que prove que nenhum PDV as referencia.
+		for (const auto& store : inventory.stores)
+		{
+			if (store.id == selectedStoreId || !startsWithInsensitive(store.externalId, L"LZLOJA")) continue;
+			if (!asciiDigits(store.id))
+			{
+				error = L"O Mercado Pago retornou ID interno nao numerico; nenhuma exclusao foi iniciada.";
+				return false;
+			}
+			if (std::find(plan.candidateStoreIds.begin(), plan.candidateStoreIds.end(), store.id)
+				== plan.candidateStoreIds.end())
+				plan.candidateStoreIds.push_back(store.id);
+		}
+		return true;
+	}
+
+	bool removeOtherManagedPairs(const std::wstring& token, const std::wstring& expectedAccountId,
+		const std::wstring& selectedStoreId, const std::wstring& selectedPosId,
+		size_t& removedPoints, size_t& removedStores, std::wstring& error)
+	{
+		removedPoints = 0;
+		removedStores = 0;
+		MercadoPagoInventory inventory;
+		if (!fetchMercadoPagoInventory(token, inventory, error)) return false;
+		if (!asciiDigits(expectedAccountId) || inventory.accountId != expectedAccountId)
+		{
+			error = L"A conta retornada mudou durante a limpeza; nenhuma exclusao foi iniciada.";
+			return false;
+		}
+
+		ManagedCleanupPlan plan;
+		if (!buildManagedCleanupPlan(inventory, selectedStoreId, selectedPosId, plan, error)) return false;
+		HttpResult response;
+		for (const auto& pointId : plan.pointIds)
+		{
+			if (!mercadoPagoRequest(L"api.mercadopago.com", L"/pos/" + pointId,
+				token, L"DELETE", {}, response, error))
+			{
+				error = L"O cadastro selecionado foi preservado, mas a exclusao de um PDV antigo falhou: " + error;
+				return false;
+			}
+			++removedPoints;
+		}
+
+		MercadoPagoInventory afterPoints;
+		if (!fetchMercadoPagoInventory(token, afterPoints, error)) return false;
+		const auto remainingPairs = compatiblePairs(afterPoints);
+		if (std::none_of(remainingPairs.begin(), remainingPairs.end(), [&](const auto& pair) {
+			return pair.store.id == selectedStoreId && pair.pos.id == selectedPosId;
+		}))
+		{
+			error = L"O cadastro escolhido deixou de aparecer apos a limpeza dos PDVs antigos. A Loja selecionada nao foi excluida.";
+			return false;
+		}
+
+		for (const auto& storeId : plan.candidateStoreIds)
+		{
+			const auto store = std::find_if(afterPoints.stores.begin(), afterPoints.stores.end(),
+				[&](const auto& item) { return item.id == storeId; });
+			if (store == afterPoints.stores.end()) continue;
+			const bool stillReferenced = std::any_of(afterPoints.points.begin(), afterPoints.points.end(),
+				[&](const auto& point) {
+					return point.storeId == storeId
+						|| (!store->externalId.empty()
+							&& sameTextInsensitive(point.externalStoreId, store->externalId));
+				});
+			if (stillReferenced) continue;
+			if (!mercadoPagoRequest(L"api.mercadopago.com",
+				L"/users/" + expectedAccountId + L"/stores/" + storeId,
+				token, L"DELETE", {}, response, error))
+			{
+				error = L"Os PDVs antigos foram removidos, mas uma Loja antiga vazia nao pode ser excluida: " + error;
+				return false;
+			}
+			++removedStores;
+		}
+
+		MercadoPagoInventory confirmed;
+		if (!fetchMercadoPagoInventory(token, confirmed, error)) return false;
+		const auto confirmedPairs = compatiblePairs(confirmed);
+		const bool selectedStillExists = std::any_of(confirmedPairs.begin(), confirmedPairs.end(), [&](const auto& pair) {
+			return pair.store.id == selectedStoreId && pair.pos.id == selectedPosId;
+		});
+		const size_t otherManagedPoints = static_cast<size_t>(std::count_if(confirmed.points.begin(), confirmed.points.end(), [&](const auto& point) {
+			if (point.id == selectedPosId || !startsWithInsensitive(point.externalId, L"LZPIX")) return false;
+			const MercadoPagoStore* store = findCompatibleStore(confirmed, point);
+			return store && startsWithInsensitive(store->externalId, L"LZLOJA");
+		}));
+		const size_t otherManagedStores = static_cast<size_t>(std::count_if(confirmed.stores.begin(), confirmed.stores.end(), [&](const auto& store) {
+			return store.id != selectedStoreId && startsWithInsensitive(store.externalId, L"LZLOJA");
+		}));
+		if (!selectedStillExists || otherManagedPoints != 0 || otherManagedStores != 0)
+		{
+			error = L"O Mercado Pago nao confirmou o inventario unico depois da limpeza. O cadastro selecionado permanece como autoridade local.";
+			return false;
+		}
+		return true;
+	}
+
+	bool matchesSavedPair(const MercadoPagoPair& pair, const std::wstring& storeExternalId,
+		const std::wstring& posExternalId)
+	{
+		return sameTextInsensitive(pair.store.externalId, storeExternalId)
+			&& sameTextInsensitive(pair.pos.externalId, posExternalId);
+	}
+
+	std::wstring pairCaption(const MercadoPagoPair& pair, bool current)
 	{
 		std::wostringstream text;
+		if (current) text << L"[ATUAL NESTE PC]  ";
 		text << L"Loja: " << (pair.store.name.empty() ? L"sem nome" : pair.store.name)
 			<< L"  | loja=" << pair.store.externalId
 			<< L"    PDV: " << (pair.pos.name.empty() ? L"sem nome" : pair.pos.name)
@@ -874,9 +1053,9 @@ namespace
 
 	std::wstring normalizePath(std::wstring value)
 	{
-		wchar_t full[32768]{};
-		const DWORD length = GetFullPathNameW(value.c_str(), (DWORD)std::size(full), full, nullptr);
-		if (length > 0 && length < std::size(full)) value.assign(full, length);
+		std::vector<wchar_t> full(32768, L'\0');
+		const DWORD length = GetFullPathNameW(value.c_str(), static_cast<DWORD>(full.size()), full.data(), nullptr);
+		if (length > 0 && length < full.size()) value.assign(full.data(), length);
 		std::replace(value.begin(), value.end(), L'/', L'\\');
 		std::transform(value.begin(), value.end(), value.begin(), towlower);
 		return value;
@@ -1041,14 +1220,15 @@ namespace
 			return error == ERROR_INVALID_PARAMETER ? DaemonIdentityState::Absent : DaemonIdentityState::Unknown;
 		}
 		DWORD exitCode{};
-		wchar_t path[32768]{}; DWORD length = (DWORD)std::size(path);
+		std::vector<wchar_t> path(32768, L'\0');
+		DWORD length = static_cast<DWORD>(path.size());
 		FILETIME creation{}, exit{}, kernel{}, user{};
 		if (!GetExitCodeProcess(process, &exitCode)) { CloseHandle(process); return DaemonIdentityState::Unknown; }
 		if (exitCode != STILL_ACTIVE) { CloseHandle(process); return DaemonIdentityState::Absent; }
-		if (!QueryFullProcessImageNameW(process, 0, path, &length)
+		if (!QueryFullProcessImageNameW(process, 0, path.data(), &length)
 			|| !GetProcessTimes(process, &creation, &exit, &kernel, &user))
 		{ CloseHandle(process); return DaemonIdentityState::Unknown; }
-		if (normalizePath(path) != normalizePath(expectedExecutable)
+		if (normalizePath(std::wstring(path.data(), length)) != normalizePath(expectedExecutable)
 			|| fileTimeValue(creation) != status.startFileTime)
 		{ CloseHandle(process); return DaemonIdentityState::Absent; }
 		if (mutexState(kDaemonSingletonMutex) != DaemonIdentityState::Found
@@ -1481,6 +1661,23 @@ namespace
 			result.message = L"Cadastro salvo, mas o daemon PIX nao confirmou a reinicializacao: " + restartError;
 			return result;
 		}
+		if (!data.adapter && data.removeOtherManagedPairs)
+		{
+			size_t removedPoints = 0, removedStores = 0;
+			std::wstring cleanupError;
+			if (!removeOtherManagedPairs(data.token, data.selectedAccountId,
+				data.selectedStoreId, data.selectedPosId, removedPoints, removedStores, cleanupError))
+			{
+				result.message = L"O PIX foi validado e o cadastro escolhido esta ativo, mas a limpeza dos cadastros antigos nao terminou: "
+					+ cleanupError;
+				return result;
+			}
+			result.ok = true;
+			result.message = L"PIX ativo com um unico cadastro TurboRama. PDVs antigos removidos: "
+				+ std::to_wstring(removedPoints) + L"; lojas antigas vazias removidas: "
+				+ std::to_wstring(removedStores) + L".";
+			return result;
+		}
 		result.ok = true;
 		result.message = data.adapter
 			? L"Adaptador bancário validado e ativado. O EmulationStation já pode gerar cobranças PIX."
@@ -1527,6 +1724,39 @@ namespace
 		}
 		updateProvider();
 		message = L"Cadastro carregado. Por segurança, cole novamente a credencial somente ao salvar alterações.";
+		return true;
+	}
+
+	bool readSavedMercadoPagoPair(ActiveMercadoPagoPair& active)
+	{
+		active = {};
+		std::wstring root, executable, assembly, bridge;
+		if (!resolveInstallation(root, executable, assembly, bridge))
+		{
+			active.error = L"Instalacao PIX nao encontrada.";
+			return false;
+		}
+		std::string json;
+		if (!readAll(join(bridge, L"owner-settings.json"), json))
+		{
+			active.error = L"Cadastro local ainda nao existe ou nao pode ser lido.";
+			return false;
+		}
+		if (jsonString(json, "provider", "") != "mercadopago")
+		{
+			active.error = L"O cadastro local ativo nao e Mercado Pago.";
+			return false;
+		}
+		active.storeExternalId = trim(wide(jsonString(json, "storeExternalId")));
+		active.posExternalId = trim(wide(jsonString(json, "posExternalId")));
+		active.safeToDelete = validExternalId(active.storeExternalId, 60)
+			&& validExternalId(active.posExternalId, 40)
+			&& !isLegacyTestPosId(active.posExternalId);
+		if (!active.safeToDelete)
+		{
+			active.error = L"O cadastro local nao possui Loja/PDV validos para identificacao.";
+			return false;
+		}
 		return true;
 	}
 
@@ -1664,24 +1894,34 @@ namespace
 			applyGuiFont(state->list, gFont);
 			if (state->pairs)
 			{
-				for (const auto& pair : *state->pairs)
+				int currentIndex = -1;
+				for (size_t index = 0; index < state->pairs->size(); ++index)
 				{
-					const auto caption = pairCaption(pair);
+					const auto& pair = (*state->pairs)[index];
+					const bool current = matchesSavedPair(pair, state->currentStoreExternalId,
+						state->currentPosExternalId);
+					if (current) currentIndex = static_cast<int>(index);
+					const auto caption = pairCaption(pair, current);
 					SendMessageW(state->list, LB_ADDSTRING, 0, (LPARAM)caption.c_str());
 				}
-				if (!state->pairs->empty()) SendMessageW(state->list, LB_SETCURSEL, 0, 0);
+				if (!state->pairs->empty()) SendMessageW(state->list, LB_SETCURSEL,
+					currentIndex >= 0 ? currentIndex : 0, 0);
 			}
 			state->status = CreateWindowExW(WS_EX_TRANSPARENT, L"STATIC",
 				L"Dica: se houver duvida, cancele e confira o cadastro no Mercado Pago antes de salvar.",
 				WS_CHILD | WS_VISIBLE | SS_LEFT, 22, 304, 730, 24, dialog, nullptr, nullptr, nullptr);
 			applyGuiFont(state->status, gSmallFont);
-			HWND use = CreateWindowExW(0, L"BUTTON", L"USAR E ATIVAR CADASTRO",
+			HWND use = CreateWindowExW(0, L"BUTTON", L"USAR ESTE CADASTRO",
 				WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-				354, 344, 254, 38, dialog, (HMENU)(INT_PTR)ID_INVENTORY_USE, nullptr, nullptr);
+				140, 344, 190, 38, dialog, (HMENU)(INT_PTR)ID_INVENTORY_USE, nullptr, nullptr);
 			applyGuiFont(use);
+			HWND clean = CreateWindowExW(0, L"BUTTON", L"USAR E REMOVER OUTROS TURBORAMA",
+				WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+				342, 344, 298, 38, dialog, (HMENU)(INT_PTR)ID_INVENTORY_USE_AND_CLEAN, nullptr, nullptr);
+			applyGuiFont(clean, gSmallFont);
 			HWND cancel = CreateWindowExW(0, L"BUTTON", L"CANCELAR",
 				WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-				624, 344, 128, 38, dialog, (HMENU)(INT_PTR)ID_INVENTORY_CLOSE, nullptr, nullptr);
+				652, 344, 100, 38, dialog, (HMENU)(INT_PTR)ID_INVENTORY_CLOSE, nullptr, nullptr);
 			applyGuiFont(cancel);
 			return 0;
 		}
@@ -1689,7 +1929,8 @@ namespace
 		{
 			const int id = LOWORD(wParam);
 			const int notify = HIWORD(wParam);
-			if (id == ID_INVENTORY_USE || (id == ID_INVENTORY_POS && notify == LBN_DBLCLK))
+			if (id == ID_INVENTORY_USE || id == ID_INVENTORY_USE_AND_CLEAN
+				|| (id == ID_INVENTORY_POS && notify == LBN_DBLCLK))
 			{
 				const int selected = (int)SendMessageW(state->list, LB_GETCURSEL, 0, 0);
 				if (selected < 0)
@@ -1698,6 +1939,14 @@ namespace
 					return 0;
 				}
 				state->selected = selected;
+				state->removeOthers = id == ID_INVENTORY_USE_AND_CLEAN;
+				if (state->removeOthers)
+				{
+					const int answer = MessageBoxW(dialog,
+						L"O cadastro selecionado sera mantido. Os outros pares Loja/PDV com external_id LZLOJA/LZPIX serao excluidos desta conta Mercado Pago. Recursos que nao pertencem ao TurboRama serao preservados.\n\nDeseja continuar?",
+						kTitle, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+					if (answer != IDYES) return 0;
+				}
 				state->confirmed = true;
 				DestroyWindow(dialog);
 				return 0;
@@ -1717,8 +1966,10 @@ namespace
 	}
 
 	bool showInventorySelectionDialog(HWND owner, const std::vector<MercadoPagoPair>& pairs,
-		MercadoPagoStore& store, MercadoPagoPointOfSale& pos)
+		const ActiveMercadoPagoPair& active, MercadoPagoStore& store,
+		MercadoPagoPointOfSale& pos, bool& removeOthers)
 	{
+		removeOthers = false;
 		if (pairs.empty()) return false;
 		WNDCLASSEXW wc{ sizeof(wc) };
 		wc.lpfnWndProc = inventorySelectProc;
@@ -1736,6 +1987,11 @@ namespace
 		RECT rect = centeredWindowRect(width, height);
 		InventoryDialogState state{};
 		state.pairs = &pairs;
+		if (active.safeToDelete)
+		{
+			state.currentStoreExternalId = active.storeExternalId;
+			state.currentPosExternalId = active.posExternalId;
+		}
 		HWND dialog = CreateWindowExW(WS_EX_DLGMODALFRAME, kInventoryClassName,
 			L"LZ Games - Selecionar cadastro Mercado Pago",
 			WS_POPUP | WS_CAPTION | WS_SYSMENU,
@@ -1765,6 +2021,7 @@ namespace
 		if (!state.confirmed || state.selected < 0 || state.selected >= (int)pairs.size()) return false;
 		store = pairs[(size_t)state.selected].store;
 		pos = pairs[(size_t)state.selected].pos;
+		removeOthers = state.removeOthers;
 		return true;
 	}
 
@@ -2019,6 +2276,7 @@ namespace
 				MercadoPagoStore store; MercadoPagoPointOfSale pos;
 				const auto pairs = compatiblePairs(result->inventory);
 				bool selected = false;
+				bool removeOthers = false;
 				std::wstring selectError;
 				if(pairs.size() == 1)
 				{
@@ -2029,7 +2287,9 @@ namespace
 				}
 				else if(pairs.size() > 1)
 				{
-					selected = showInventorySelectionDialog(window, pairs, store, pos);
+					ActiveMercadoPagoPair active;
+					readSavedMercadoPagoPair(active);
+					selected = showInventorySelectionDialog(window, pairs, active, store, pos, removeOthers);
 					if(selected) setStatus(L"Cadastro Mercado Pago selecionado e preenchido na tela.",false);
 					else setStatus(L"Selecao cancelada. Nenhum cadastro foi alterado.",true);
 				}
@@ -2055,6 +2315,10 @@ namespace
 						delete result;
 						return 0;
 					}
+					data.removeOtherManagedPairs = removeOthers;
+					data.selectedAccountId = result->inventory.accountId;
+					data.selectedStoreId = store.id;
+					data.selectedPosId = pos.id;
 
 					clearTokenControl();
 					gWorking = true;
@@ -2132,15 +2396,49 @@ namespace
 			&& error.find(L"loja nao encontrada") != std::wstring::npos;
 	}
 
+	bool managedCleanupPlanSelfTest()
+	{
+		MercadoPagoInventory inventory;
+		inventory.accountId = L"123456";
+		inventory.stores.push_back({ L"101", L"LZLOJAKEEP", L"TurboRamaX" });
+		inventory.stores.push_back({ L"102", L"LZLOJAOLD", L"TurboRamaX" });
+		inventory.stores.push_back({ L"103", L"OUTRALOJA", L"Outra loja" });
+		inventory.stores.push_back({ L"104", L"LZLOJAEMPTY", L"Loja antiga vazia" });
+		inventory.points.push_back({ L"201", L"LZPIXKEEP", L"TurboRama Kiosk", L"101", L"LZLOJAKEEP", L"active" });
+		inventory.points.push_back({ L"202", L"LZPIXOLD", L"TurboRama Kiosk", L"102", L"LZLOJAOLD", L"active" });
+		inventory.points.push_back({ L"203", L"OUTROPDV", L"Outro caixa", L"103", L"OUTRALOJA", L"active" });
+		inventory.points.push_back({ L"204", L"LZPIXCOMP", L"Caixa legado", L"101", L"LZLOJAKEEP", L"inactive" });
+		ManagedCleanupPlan plan;
+		std::wstring error;
+		if (!buildManagedCleanupPlan(inventory, L"101", L"201", plan, error)) return false;
+		if (plan.pointIds != std::vector<std::wstring>{ L"202", L"204" }
+			|| plan.candidateStoreIds != std::vector<std::wstring>{ L"102", L"104" }) return false;
+		const auto pairs = compatiblePairs(inventory);
+		if (pairs.size() != 3 || !matchesSavedPair(pairs[0], L"lzlojakeep", L"lzpixkeep")
+			|| matchesSavedPair(pairs[1], L"LZLOJAKEEP", L"LZPIXKEEP")) return false;
+
+		if (buildManagedCleanupPlan(inventory, L"103", L"203", plan, error)) return false;
+		if (error.find(L"identificadores gerenciados") == std::wstring::npos) return false;
+
+		inventory.points[1].id = L"nao-numerico";
+		if (buildManagedCleanupPlan(inventory, L"101", L"201", plan, error)) return false;
+		return error.find(L"nao numerico") != std::wstring::npos;
+	}
+
 	bool layoutSelfTest()
 	{
 		RECT desired{ 0,0,kClientWidth,kClientHeight };
 		AdjustWindowRectEx(&desired, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE, 0);
 		const int width = desired.right - desired.left;
 		const int height = desired.bottom - desired.top;
-		return kClientWidth == 1040
-			&& kClientHeight <= 680
-			&& kStatusCardBottom <= kClientHeight
+		// Volatile copies keep the static analyzer from folding the self-test into
+		// constant expressions; the executable must evaluate the shipped layout.
+		volatile int clientWidth = kClientWidth;
+		volatile int clientHeight = kClientHeight;
+		volatile int statusCardBottom = kStatusCardBottom;
+		return clientWidth == 1040
+			&& clientHeight <= 680
+			&& statusCardBottom <= clientHeight
 			&& width <= 1360
 			&& height <= 728;
 	}
@@ -2159,7 +2457,7 @@ namespace
 		const auto normalizedProductionJson = configurationJson(realTokenData);
 		const std::string saved = R"({"provider":"adapter","storeName":"LZ \"Games\"","packagePricesCents":{"15":750}})";
 		ULONGLONG parsedPid = 0;
-		return inventoryPairSelfTest() && layoutSelfTest()
+		return inventoryPairSelfTest() && managedCleanupPlanSelfTest() && layoutSelfTest()
 			&& parsePrice(L"7,50")==750 && json.find("\"accessToken\"")==std::string::npos
 			&& json.find("\"mercadoPagoEnvironment\": \"sandbox\"")!=std::string::npos
 			&& json.find("\"storeExternalId\": \"\"")!=std::string::npos
@@ -2176,7 +2474,7 @@ namespace
 	}
 }
 
-int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show)
+int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ LPWSTR, _In_ int show)
 {
 	SetProcessDPIAware(); int count{}; wchar_t** args=CommandLineToArgvW(GetCommandLineW(),&count);
 	if(args&&count>1&&std::wstring(args[1])==L"--self-test"){LocalFree(args);return selfTest()?0:20;} if(args)LocalFree(args);

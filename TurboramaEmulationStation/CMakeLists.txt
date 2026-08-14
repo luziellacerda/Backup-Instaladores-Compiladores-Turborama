@@ -535,7 +535,10 @@ endif()
 #-------------------------------------------------------------------------------
 # set up build directories
 
-if(WIN32)		
+set(TURBORAMA_OUTPUT_DIRECTORY "" CACHE PATH "Optional build output directory")
+if(TURBORAMA_OUTPUT_DIRECTORY)
+	get_filename_component(dir "${TURBORAMA_OUTPUT_DIRECTORY}" ABSOLUTE)
+elseif(WIN32)
 	set(dir ${CMAKE_CURRENT_SOURCE_DIR}/bin/${CMAKE_GENERATOR_PLATFORM})
 else()
 	set(dir ${CMAKE_CURRENT_SOURCE_DIR})
