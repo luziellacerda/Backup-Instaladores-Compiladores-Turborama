@@ -2777,8 +2777,7 @@ sealed class OwnerInfrastructureCoordinator
         var existingAccountId = (settings.AccountId ?? "").Trim();
         if (string.IsNullOrEmpty(existingAccountId))
             return settings with { AccountId = accountId };
-        if (!existingAccountId.Equals(settings.AccountId, StringComparison.Ordinal)
-            || existingAccountId.Length is < 5 or > 24 || !existingAccountId.All(char.IsAsciiDigit))
+        if (existingAccountId.Length is < 5 or > 24 || !existingAccountId.All(char.IsAsciiDigit))
             throw new SecurityException("O cadastro PIX existente tem User ID invalido. Compras permanecem bloqueadas.");
         if (!existingAccountId.Equals(accountId, StringComparison.Ordinal))
             throw new SecurityException("A credencial protegida nao pertence a conta Mercado Pago ja vinculada a esta maquina. Compras permanecem bloqueadas.");
