@@ -65,6 +65,10 @@ namespace
 	const wchar_t* kClassName = L"TurboRamaPixOwnerConfigurator";
 	const wchar_t* kInventoryClassName = L"TurboRamaPixInventoryManager";
 	const wchar_t* kTitle = L"LZ Games - Configuração Comercial PIX";
+	constexpr int kClientWidth = 1040;
+	constexpr int kClientHeight = 680;
+	constexpr int kStatusCardTop = 604;
+	constexpr int kStatusCardBottom = 626;
 
 	HWND gWindow{}, gProvider{}, gEnvironment{}, gToken{}, gShow{}, gStore{}, gPos{}, gStoreExternal{}, gPosExternal{};
 	HWND gCep{}, gNumber{}, gReference{};
@@ -92,13 +96,18 @@ namespace
 	};
 	struct MercadoPagoPointOfSale
 	{
-		std::wstring id, externalId, name, storeId, status;
+		std::wstring id, externalId, name, storeId, externalStoreId, status;
 	};
 	struct MercadoPagoInventory
 	{
 		std::wstring accountId;
 		std::vector<MercadoPagoStore> stores;
 		std::vector<MercadoPagoPointOfSale> points;
+	};
+	struct MercadoPagoPair
+	{
+		MercadoPagoStore store;
+		MercadoPagoPointOfSale pos;
 	};
 	struct KioskIdentityDisplay
 	{
@@ -112,10 +121,10 @@ namespace
 	};
 	struct InventoryDialogState
 	{
-		HWND window{}, stores{}, points{}, status{};
-		std::wstring token;
-		bool sandbox{};
-		MercadoPagoInventory inventory;
+		HWND window{}, list{}, status{};
+		const std::vector<MercadoPagoPair>* pairs{};
+		int selected{ -1 };
+		bool confirmed{};
 	};
 	struct InventoryWorkerResult
 	{
@@ -124,6 +133,7 @@ namespace
 		MercadoPagoInventory inventory;
 	};
 	void updateProvider();
+	bool isLegacyTestPosId(const std::wstring& value);
 
 	std::wstring trim(std::wstring value)
 	{
@@ -496,7 +506,8 @@ namespace
 		for (const auto& item : posItems)
 		{
 			MercadoPagoPointOfSale pos{ scalarText(item.member("id")), scalarText(item.member("external_id")),
-				scalarText(item.member("name")), scalarText(item.member("store_id")), scalarText(item.member("status")) };
+				scalarText(item.member("name")), scalarText(item.member("store_id")),
+				scalarText(item.member("external_store_id")), scalarText(item.member("status")) };
 			if (!pos.id.empty()) inventory.points.push_back(std::move(pos));
 		}
 		return true;
@@ -517,27 +528,108 @@ namespace
 		for (const auto& pos : inventory.points)
 			text << L"- " << (pos.name.empty() ? L"sem nome" : pos.name)
 				<< L" | external_id=" << (pos.externalId.empty() ? L"(vazio)" : pos.externalId)
-				<< L" | loja=" << pos.storeId
+				<< L" | store_id=" << (pos.storeId.empty() ? L"(vazio)" : pos.storeId)
+				<< L" | external_store_id=" << (pos.externalStoreId.empty() ? L"(vazio)" : pos.externalStoreId)
 				<< L" | status=" << (pos.status.empty() ? L"active" : pos.status) << L"\r\n";
+		return text.str();
+	}
+
+	bool sameTextInsensitive(const std::wstring& left, const std::wstring& right)
+	{
+		return !left.empty() && !right.empty() && _wcsicmp(left.c_str(), right.c_str()) == 0;
+	}
+
+	const MercadoPagoStore* findCompatibleStore(const MercadoPagoInventory& inventory, const MercadoPagoPointOfSale& point)
+	{
+		if (!point.storeId.empty())
+		{
+			auto found = std::find_if(inventory.stores.begin(), inventory.stores.end(),
+				[&](const auto& item) { return item.id == point.storeId; });
+			if (found != inventory.stores.end()) return &*found;
+		}
+		if (!point.externalStoreId.empty())
+		{
+			auto found = std::find_if(inventory.stores.begin(), inventory.stores.end(),
+				[&](const auto& item) { return sameTextInsensitive(item.externalId, point.externalStoreId); });
+			if (found != inventory.stores.end()) return &*found;
+		}
+		return nullptr;
+	}
+
+	std::wstring pointCompatibilityReason(const MercadoPagoInventory& inventory, const MercadoPagoPointOfSale& point)
+	{
+		if (!point.status.empty() && _wcsicmp(point.status.c_str(), L"active") != 0)
+			return L"ignorado: status=" + point.status;
+		if (point.externalId.empty())
+			return L"recusado: PDV sem external_id";
+		if (isLegacyTestPosId(point.externalId))
+			return L"recusado: LZPIXCOMP e cadastro antigo de teste";
+		const MercadoPagoStore* store = findCompatibleStore(inventory, point);
+		if (!store)
+			return L"recusado: loja nao encontrada por store_id nem por external_store_id";
+		if (store->externalId.empty())
+			return L"recusado: loja vinculada sem external_id";
+		return L"aceito";
+	}
+
+	std::wstring inventoryCompatibilityReport(const MercadoPagoInventory& inventory)
+	{
+		std::wostringstream text;
+		text << L"\r\nANALISE DOS CADASTROS\r\n";
+		if (inventory.points.empty())
+		{
+			text << L"- nenhum PDV retornado pela conta.\r\n";
+			return text.str();
+		}
+		size_t shown = 0;
+		for (const auto& point : inventory.points)
+		{
+			if (shown++ >= 20)
+			{
+				text << L"- lista cortada para nao esconder a mensagem principal.\r\n";
+				break;
+			}
+			text << L"- PDV " << (point.name.empty() ? L"sem nome" : point.name)
+				<< L" | external_id=" << (point.externalId.empty() ? L"(vazio)" : point.externalId)
+				<< L" | store_id=" << (point.storeId.empty() ? L"(vazio)" : point.storeId)
+				<< L" | external_store_id=" << (point.externalStoreId.empty() ? L"(vazio)" : point.externalStoreId)
+				<< L" -> " << pointCompatibilityReason(inventory, point) << L"\r\n";
+		}
+		return text.str();
+	}
+
+	std::vector<MercadoPagoPair> compatiblePairs(const MercadoPagoInventory& inventory)
+	{
+		std::vector<MercadoPagoPair> pairs;
+		for (const auto& point : inventory.points)
+		{
+			if (!point.status.empty() && _wcsicmp(point.status.c_str(), L"active") != 0) continue;
+			if (point.externalId.empty() || isLegacyTestPosId(point.externalId)) continue;
+			const MercadoPagoStore* found = findCompatibleStore(inventory, point);
+			if (found && !found->externalId.empty())
+				pairs.push_back({ *found, point });
+		}
+		return pairs;
+	}
+
+	std::wstring pairCaption(const MercadoPagoPair& pair)
+	{
+		std::wostringstream text;
+		text << L"Loja: " << (pair.store.name.empty() ? L"sem nome" : pair.store.name)
+			<< L"  | loja=" << pair.store.externalId
+			<< L"    PDV: " << (pair.pos.name.empty() ? L"sem nome" : pair.pos.name)
+			<< L"  | pdv=" << pair.pos.externalId;
 		return text.str();
 	}
 
 	bool chooseSingleCompatiblePair(const MercadoPagoInventory& inventory, MercadoPagoStore& store,
 		MercadoPagoPointOfSale& pos, std::wstring& error)
 	{
-		std::vector<std::pair<MercadoPagoStore, MercadoPagoPointOfSale>> pairs;
-		for (const auto& point : inventory.points)
-		{
-			if (!point.status.empty() && _wcsicmp(point.status.c_str(), L"active") != 0) continue;
-			auto found = std::find_if(inventory.stores.begin(), inventory.stores.end(),
-				[&](const auto& item) { return item.id == point.storeId; });
-			if (found != inventory.stores.end() && !found->externalId.empty() && !point.externalId.empty())
-				pairs.emplace_back(*found, point);
-		}
-		if (pairs.empty()) { error = L"Nenhum par ativo Loja/PDV com external_id foi encontrado nesta conta."; return false; }
-		if (pairs.size() > 1) { error = L"Existe mais de um par Loja/PDV ativo. A lista foi mostrada; informe manualmente os external_id corretos."; return false; }
-		store = pairs.front().first;
-		pos = pairs.front().second;
+		const auto pairs = compatiblePairs(inventory);
+		if (pairs.empty()) { error = L"Nenhum par ativo Loja/PDV com external_id foi encontrado nesta conta." + inventoryCompatibilityReport(inventory); return false; }
+		if (pairs.size() > 1) { error = L"Existe mais de um par Loja/PDV ativo. Escolha o cadastro correto na lista."; return false; }
+		store = pairs.front().store;
+		pos = pairs.front().pos;
 		return true;
 	}
 
@@ -901,6 +993,34 @@ namespace
 		return DaemonStatusReadResult::Valid;
 	}
 
+	std::wstring startupErrorFile(const std::wstring& bridge)
+	{
+		return join(bridge, L"agent-startup-error.json");
+	}
+
+	std::wstring readStartupErrorMessage(const std::wstring& bridge)
+	{
+		const std::wstring file = startupErrorFile(bridge);
+		const DWORD attributes = GetFileAttributesW(file.c_str());
+		if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY)
+			|| (attributes & FILE_ATTRIBUTE_REPARSE_POINT)) return {};
+		std::string json;
+		if (!readAll(file, json) || json.empty() || json.size() > 16384) return {};
+		JsonNode root;
+		if (!parseJson(json, root) || root.kind != JsonKind::Object) return {};
+		const std::wstring message = trim(scalarText(root.member("message")));
+		if (message.empty()) return {};
+		std::wstring clean;
+		for (wchar_t ch : message)
+		{
+			if (ch == L'\r' || ch == L'\n' || ch == L'\t') clean.push_back(L' ');
+			else if (ch >= 0x20) clean.push_back(ch);
+		}
+		clean = trim(clean);
+		if (clean.size() > 900) clean.resize(900);
+		return clean;
+	}
+
 	ULONGLONG fileTimeValue(const FILETIME& value)
 	{
 		ULARGE_INTEGER converted{};
@@ -1027,6 +1147,23 @@ namespace
 		return _wcsicmp(value.c_str(), L"LZPIXCOMP") == 0;
 	}
 
+	bool looksLikeProductionMercadoPagoToken(const std::wstring& value)
+	{
+		return value.rfind(L"APP_USR-", 0) == 0;
+	}
+
+	void forceProductionMercadoPagoEnvironment()
+	{
+		if (gEnvironment)
+			SendMessageW(gEnvironment, CB_SETCURSEL, 1, 0);
+	}
+
+	void normalizeMercadoPagoProduction(FormData& data)
+	{
+		if (!data.adapter && looksLikeProductionMercadoPagoToken(data.token))
+			data.sandbox = false;
+	}
+
 	bool collect(FormData& data, std::wstring& error)
 	{
 		data.adapter = SendMessageW(gProvider, CB_GETCURSEL, 0, 0) == 1;
@@ -1040,7 +1177,9 @@ namespace
 		if (data.token.size() < (data.adapter ? 8u : 40u)) { error = L"Informe a credencial completa do provedor."; return false; }
 		if (!data.adapter)
 		{
-			if (data.token.rfind(L"APP_USR-", 0) != 0) { error = L"Use o Access Token completo do ambiente selecionado, iniciado por APP_USR-."; return false; }
+			if (!looksLikeProductionMercadoPagoToken(data.token)) { error = L"Use o Access Token completo de producao do Mercado Pago, iniciado por APP_USR-."; return false; }
+			normalizeMercadoPagoProduction(data);
+			forceProductionMercadoPagoEnvironment();
 			std::wstring digits; for (wchar_t ch : data.cep) if (iswdigit(ch)) digits.push_back(ch); data.cep = digits;
 			if (data.storeName.size() < 2 || data.posName.size() < 2) { error = L"Informe os nomes da loja e do caixa."; return false; }
 			if (!validExternalId(data.storeExternalId, 60) || !validExternalId(data.posExternalId, 40))
@@ -1191,6 +1330,7 @@ namespace
 	{
 		if (mutexState(kDaemonSingletonMutex) != DaemonIdentityState::Absent)
 		{ error = L"J\u00E1 existe um daemon PIX ou sua identidade n\u00E3o pode ser consultada."; return false; }
+		DeleteFileW(startupErrorFile(bridge).c_str());
 		std::string token;
 		if (!createManagerToken(token))
 		{ error = L"O Windows n\u00E3o conseguiu gerar a identidade do daemon PIX."; return false; }
@@ -1247,7 +1387,12 @@ namespace
 			stopped = WaitForSingleObject(process.hProcess, 3000) == WAIT_OBJECT_0;
 		CloseHandle(process.hProcess);
 		if (exitCode != STILL_ACTIVE)
-			error = L"O daemon PIX encerrou antes de publicar sua identidade (c\u00F3digo " + std::to_wstring(exitCode) + L").";
+		{
+			const std::wstring startupError = readStartupErrorMessage(bridge);
+			error = !startupError.empty()
+				? startupError + L" (codigo " + std::to_wstring(exitCode) + L")."
+				: L"O daemon PIX encerrou antes de publicar sua identidade (c\u00F3digo " + std::to_wstring(exitCode) + L").";
+		}
 		else error = stopped ? L"O daemon PIX n\u00E3o confirmou sua identidade no prazo seguro."
 			: L"O daemon PIX n\u00E3o confirmou identidade e seu encerramento falhou.";
 		return false;
@@ -1271,7 +1416,7 @@ namespace
 		if (exitCode == 0) return true;
 		error = trim(wide(output));
 		if (error.empty())
-			error = L"A sessão Windows atual não é o usuário automático do quiosque configurado no Launcher. Abra pelo menu do EmulationStation e tente novamente.";
+			error = L"A conta Windows atual nao corresponde ao turborama.json/Winlogon. Abra na conta configurada do gabinete e tente novamente.";
 		return false;
 	}
 
@@ -1392,7 +1537,7 @@ namespace
 		// O controle e transparente; redesenhar somente o STATIC deixava partes
 		// da mensagem anterior no fundo, sobrepondo o novo status. Repintamos o
 		// cartao inteiro e seus filhos para sempre limpar o texto anterior.
-		RECT statusCard{ 316, 630, 996, 690 };
+		RECT statusCard{ 316, kStatusCardTop, 996, kStatusCardBottom };
 		RedrawWindow(gWindow, &statusCard, nullptr,
 			RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
 	}
@@ -1422,6 +1567,8 @@ namespace
 	void updateProvider()
 	{
 		const bool adapter = SendMessageW(gProvider, CB_GETCURSEL, 0, 0) == 1;
+		if (!adapter)
+			forceProductionMercadoPagoEnvironment();
 		for (HWND control : { gEnvironment,gStore,gPos,gStoreExternal,gPosExternal,gCep,gNumber,gReference })
 			ShowWindow(control, adapter ? SW_HIDE : SW_SHOW);
 		for (HWND control : { gAdapterUrl,gAdapterId }) ShowWindow(control, adapter ? SW_SHOW : SW_HIDE);
@@ -1434,6 +1581,8 @@ namespace
 			: (SendMessageW(gEnvironment, CB_GETCURSEL, 0, 0) == 1
 				? L"PRODUCAO REAL: a conta, Loja e PDV serao validados antes de liberar cobrancas."
 				: L"AMBIENTE DE TESTE: use somente credenciais e compradores de teste do Mercado Pago."));
+		if (!adapter)
+			setStatus(L"PRODUCAO REAL: token APP_USR, Loja e PDV serao validados antes de liberar cobrancas.");
 		InvalidateRect(gWindow, nullptr, TRUE);
 	}
 
@@ -1457,6 +1606,168 @@ namespace
 		SendMessageW(control, WM_SETFONT, (WPARAM)gFont, TRUE); return control;
 	}
 
+	void applyGuiFont(HWND control, HFONT font = nullptr)
+	{
+		HFONT chosen = font ? font : (gFont ? gFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT));
+		SendMessageW(control, WM_SETFONT, (WPARAM)chosen, TRUE);
+	}
+
+	RECT workArea()
+	{
+		RECT area{};
+		if (!SystemParametersInfoW(SPI_GETWORKAREA, 0, &area, 0) || area.right <= area.left || area.bottom <= area.top)
+		{
+			area.left = 0;
+			area.top = 0;
+			area.right = GetSystemMetrics(SM_CXSCREEN);
+			area.bottom = GetSystemMetrics(SM_CYSCREEN);
+		}
+		return area;
+	}
+
+	RECT centeredWindowRect(int width, int height)
+	{
+		RECT area = workArea();
+		const int workWidth = area.right - area.left;
+		const int workHeight = area.bottom - area.top;
+		RECT result{};
+		result.left = area.left + (std::max)(0, (workWidth - width) / 2);
+		result.top = area.top + (std::max)(0, (workHeight - height) / 2);
+		result.right = result.left + width;
+		result.bottom = result.top + height;
+		if (result.right > area.right) { result.left = area.left; result.right = area.right; }
+		if (result.bottom > area.bottom) { result.top = area.top; result.bottom = area.bottom; }
+		return result;
+	}
+
+	LRESULT CALLBACK inventorySelectProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam)
+	{
+		auto* state = reinterpret_cast<InventoryDialogState*>(GetWindowLongPtrW(dialog, GWLP_USERDATA));
+		switch (message)
+		{
+		case WM_CREATE:
+		{
+			state = reinterpret_cast<InventoryDialogState*>(reinterpret_cast<CREATESTRUCTW*>(lParam)->lpCreateParams);
+			SetWindowLongPtrW(dialog, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+			state->window = dialog;
+			HWND title = CreateWindowExW(WS_EX_TRANSPARENT, L"STATIC",
+				L"Selecione o cadastro Mercado Pago que esta maquina deve usar.",
+				WS_CHILD | WS_VISIBLE | SS_LEFT, 22, 18, 720, 24, dialog, nullptr, nullptr, nullptr);
+			applyGuiFont(title, gHeaderFont);
+			HWND hint = CreateWindowExW(WS_EX_TRANSPARENT, L"STATIC",
+				L"Use somente a Loja/PDV correto deste gabinete. Ao confirmar, este cadastro sera gravado e ativado nesta maquina.",
+				WS_CHILD | WS_VISIBLE | SS_LEFT, 22, 48, 720, 22, dialog, nullptr, nullptr, nullptr);
+			applyGuiFont(hint, gSmallFont);
+			state->list = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+				WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+				22, 82, 730, 210, dialog, (HMENU)(INT_PTR)ID_INVENTORY_POS, nullptr, nullptr);
+			applyGuiFont(state->list, gFont);
+			if (state->pairs)
+			{
+				for (const auto& pair : *state->pairs)
+				{
+					const auto caption = pairCaption(pair);
+					SendMessageW(state->list, LB_ADDSTRING, 0, (LPARAM)caption.c_str());
+				}
+				if (!state->pairs->empty()) SendMessageW(state->list, LB_SETCURSEL, 0, 0);
+			}
+			state->status = CreateWindowExW(WS_EX_TRANSPARENT, L"STATIC",
+				L"Dica: se houver duvida, cancele e confira o cadastro no Mercado Pago antes de salvar.",
+				WS_CHILD | WS_VISIBLE | SS_LEFT, 22, 304, 730, 24, dialog, nullptr, nullptr, nullptr);
+			applyGuiFont(state->status, gSmallFont);
+			HWND use = CreateWindowExW(0, L"BUTTON", L"USAR E ATIVAR CADASTRO",
+				WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+				354, 344, 254, 38, dialog, (HMENU)(INT_PTR)ID_INVENTORY_USE, nullptr, nullptr);
+			applyGuiFont(use);
+			HWND cancel = CreateWindowExW(0, L"BUTTON", L"CANCELAR",
+				WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+				624, 344, 128, 38, dialog, (HMENU)(INT_PTR)ID_INVENTORY_CLOSE, nullptr, nullptr);
+			applyGuiFont(cancel);
+			return 0;
+		}
+		case WM_COMMAND:
+		{
+			const int id = LOWORD(wParam);
+			const int notify = HIWORD(wParam);
+			if (id == ID_INVENTORY_USE || (id == ID_INVENTORY_POS && notify == LBN_DBLCLK))
+			{
+				const int selected = (int)SendMessageW(state->list, LB_GETCURSEL, 0, 0);
+				if (selected < 0)
+				{
+					SetWindowTextW(state->status, L"Selecione uma Loja/PDV na lista antes de continuar.");
+					return 0;
+				}
+				state->selected = selected;
+				state->confirmed = true;
+				DestroyWindow(dialog);
+				return 0;
+			}
+			if (id == ID_INVENTORY_CLOSE)
+			{
+				DestroyWindow(dialog);
+				return 0;
+			}
+			break;
+		}
+		case WM_CLOSE:
+			DestroyWindow(dialog);
+			return 0;
+		}
+		return DefWindowProcW(dialog, message, wParam, lParam);
+	}
+
+	bool showInventorySelectionDialog(HWND owner, const std::vector<MercadoPagoPair>& pairs,
+		MercadoPagoStore& store, MercadoPagoPointOfSale& pos)
+	{
+		if (pairs.empty()) return false;
+		WNDCLASSEXW wc{ sizeof(wc) };
+		wc.lpfnWndProc = inventorySelectProc;
+		wc.hInstance = GetModuleHandleW(nullptr);
+		wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+		wc.hbrBackground = gBackgroundBrush ? gBackgroundBrush : (HBRUSH)(COLOR_WINDOW + 1);
+		wc.lpszClassName = kInventoryClassName;
+		if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
+
+		RECT area = workArea();
+		const int availableWidth = static_cast<int>(area.right - area.left) - 40;
+		const int availableHeight = static_cast<int>(area.bottom - area.top) - 40;
+		const int width = (std::min)(780, (std::max)(520, availableWidth));
+		const int height = (std::min)(430, (std::max)(360, availableHeight));
+		RECT rect = centeredWindowRect(width, height);
+		InventoryDialogState state{};
+		state.pairs = &pairs;
+		HWND dialog = CreateWindowExW(WS_EX_DLGMODALFRAME, kInventoryClassName,
+			L"LZ Games - Selecionar cadastro Mercado Pago",
+			WS_POPUP | WS_CAPTION | WS_SYSMENU,
+			rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
+			owner, nullptr, GetModuleHandleW(nullptr), &state);
+		if (!dialog) return false;
+		EnableWindow(owner, FALSE);
+		ShowWindow(dialog, SW_SHOW);
+		UpdateWindow(dialog);
+		MSG msg{};
+		while (IsWindow(dialog))
+		{
+			const BOOL read = GetMessageW(&msg, nullptr, 0, 0);
+			if (read <= 0)
+			{
+				if (read == 0) PostQuitMessage((int)msg.wParam);
+				break;
+			}
+			if (!IsDialogMessageW(dialog, &msg))
+			{
+				TranslateMessage(&msg);
+				DispatchMessageW(&msg);
+			}
+		}
+		EnableWindow(owner, TRUE);
+		SetActiveWindow(owner);
+		if (!state.confirmed || state.selected < 0 || state.selected >= (int)pairs.size()) return false;
+		store = pairs[(size_t)state.selected].store;
+		pos = pairs[(size_t)state.selected].pos;
+		return true;
+	}
+
 	void createControls(HWND window)
 	{
 		gTitleFont = CreateFontW(30,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
@@ -1476,7 +1787,7 @@ namespace
 		SendMessageW(gEnvironment,WM_SETFONT,(WPARAM)gFont,TRUE);
 		SendMessageW(gEnvironment,CB_ADDSTRING,0,(LPARAM)L"TESTE - sem dinheiro real");
 		SendMessageW(gEnvironment,CB_ADDSTRING,0,(LPARAM)L"PRODUCAO - cobrancas reais");
-		SendMessageW(gEnvironment,CB_SETCURSEL,0,0);
+		SendMessageW(gEnvironment,CB_SETCURSEL,1,0);
 
 		label(window,L"ACCESS TOKEN — CREDENCIAL PROTEGIDA",316,218,390,22); gToken=edit(window,ID_TOKEN,L"",316,241,438,38,ES_PASSWORD);
 		SendMessageW(gToken,EM_SETPASSWORDCHAR,0x25CF,0); gShow=button(window,ID_SHOW,L"MOSTRAR",766,241,102,38);
@@ -1495,18 +1806,18 @@ namespace
 		gAdapterLabels.push_back(label(window,L"IDENTIFICADOR DO PROVEDOR",316,380,280,22)); gAdapterId=edit(window,ID_ADAPTER_ID,L"meu-banco",316,403,680,38);
 		ShowWindow(gAdapterUrl,SW_HIDE); ShowWindow(gAdapterId,SW_HIDE);
 
-		label(window,L"PACOTES DE TEMPO — VALOR EM REAIS",316,535,360,22);
+		label(window,L"PACOTES DE TEMPO — VALOR EM REAIS",316,522,360,22);
 		const int xs[] = {316,456,596,736,876}; const wchar_t* captions[]={L"15 MIN",L"30 MIN",L"45 MIN",L"60 MIN",L"120 MIN"};
 		HWND* fields[]={&gPrice15,&gPrice30,&gPrice45,&gPrice60,&gPrice120}; const int ids[]={ID_PRICE15,ID_PRICE30,ID_PRICE45,ID_PRICE60,ID_PRICE120};
 		const wchar_t* values[]={L"1,00",L"2,00",L"3,00",L"4,00",L"8,00"};
-		for(int i=0;i<5;++i){label(window,captions[i],xs[i],562,118,20);*fields[i]=edit(window,ids[i],values[i],xs[i],580,120,38);}
+		for(int i=0;i<5;++i){label(window,captions[i],xs[i],546,118,20);*fields[i]=edit(window,ids[i],values[i],xs[i],564,120,34);}
 
 		gStatus=CreateWindowExW(WS_EX_TRANSPARENT,L"STATIC",L"",WS_CHILD|WS_VISIBLE|SS_LEFT|SS_NOPREFIX,
-			350,638,628,46,window,nullptr,nullptr,nullptr);
+			350,607,628,20,window,nullptr,nullptr,nullptr);
 		SendMessageW(gStatus,WM_SETFONT,(WPARAM)gSmallFont,TRUE);
-		gConfigure=button(window,ID_CONFIGURE,L"VALIDAR E ATIVAR PIX",316,701,408,56);
-		gLoad=button(window,ID_LOAD,L"CARREGAR CADASTRO",738,701,258,56);
-		gClose=button(window,ID_CLOSE,L"FECHAR",88,710,130,38);
+		gConfigure=button(window,ID_CONFIGURE,L"VALIDAR E ATIVAR PIX",316,632,408,42);
+		gLoad=button(window,ID_LOAD,L"CARREGAR CADASTRO",738,632,258,42);
+		gClose=button(window,ID_CLOSE,L"FECHAR",88,636,130,36);
 		updateProvider();
 	}
 
@@ -1566,16 +1877,16 @@ namespace
 			if(i<4){RECT connector{55,y+25,57,y+42};HBRUSH line=CreateSolidBrush(RGB(30,69,92));FillRect(dc,&connector,line);DeleteObject(line);}
 		}
 
-		RECT safeCard{24,470,246,674};fillBox(dc,safeCard,RGB(7,24,27),RGB(38,91,76),16);
+		RECT safeCard{24,470,246,626};fillBox(dc,safeCard,RGB(7,24,27),RGB(38,91,76),16);
 		drawTextLine(dc,gHeaderFont,RGB(114,226,160),44,494,L"SEGURO");
-		RECT safeText{44,534,226,640};SelectObject(dc,gSmallFont);SetTextColor(dc,RGB(157,185,183));SetBkMode(dc,TRANSPARENT);
+		RECT safeText{44,528,226,610};SelectObject(dc,gSmallFont);SetTextColor(dc,RGB(157,185,183));SetBkMode(dc,TRANSPARENT);
 		DrawTextW(dc,L"A credencial é cifrada pelo Windows e nunca aparece em arquivos comuns.\n\nO titular da conta é reconhecido automaticamente.",-1,&safeText,DT_LEFT|DT_WORDBREAK);
 
 		RECT providerCard{292,132,1020,292};fillBox(dc,providerCard,RGB(10,24,40),RGB(34,63,88),16);
 		RECT establishmentCard{292,298,1020,518};fillBox(dc,establishmentCard,RGB(10,24,40),RGB(34,63,88),16);
-		RECT priceCard{292,525,1020,624};fillBox(dc,priceCard,RGB(10,24,40),RGB(34,63,88),16);
-		RECT statusCard{316,630,996,690};fillBox(dc,statusCard,RGB(6,21,31),RGB(32,85,104),14);
-		RECT statusAccent{316,630,322,690};HBRUSH statusBrush=CreateSolidBrush(GetWindowLongPtrW(gStatus,GWLP_USERDATA)?RGB(236,85,92):RGB(0,198,231));FillRect(dc,&statusAccent,statusBrush);DeleteObject(statusBrush);
+		RECT priceCard{292,520,1020,602};fillBox(dc,priceCard,RGB(10,24,40),RGB(34,63,88),16);
+		RECT statusCard{316,kStatusCardTop,996,kStatusCardBottom};fillBox(dc,statusCard,RGB(6,21,31),RGB(32,85,104),14);
+		RECT statusAccent{316,kStatusCardTop,322,kStatusCardBottom};HBRUSH statusBrush=CreateSolidBrush(GetWindowLongPtrW(gStatus,GWLP_USERDATA)?RGB(236,85,92):RGB(0,198,231));FillRect(dc,&statusAccent,statusBrush);DeleteObject(statusBrush);
 		EndPaint(window,&ps);
 	}
 
@@ -1583,13 +1894,13 @@ namespace
 	{
 		if (raw.find(L"SID local do quiosque") != std::wstring::npos
 			|| raw.find(L"privilegios de administrador") != std::wstring::npos)
-			return L"Este configurador foi aberto na conta de manutencao ou como administrador. "
-				L"Feche-o, volte ao usuario automatico do quiosque e abra normalmente pelo menu do EmulationStation.";
+			return L"Este configurador precisa ser aberto na mesma conta Windows configurada no TurboRama/Winlogon. "
+				L"No gabinete atual, a conta valida e Admin quando o turborama.json e o AutoLogon apontam para o mesmo SID.";
 		if (raw.find(L"AutoAdminLogon") != std::wstring::npos
 			|| raw.find(L"Winlogon") != std::wstring::npos
 			|| raw.find(L"kioskUser") != std::wstring::npos)
-			return L"O usuario automatico do quiosque nao esta alinhado com o Launcher. "
-				L"Repare o login automatico antes de configurar o PIX.";
+			return L"A conta Windows configurada no TurboRama nao esta alinhada com o AutoLogon do Windows. "
+				L"Corrija C:\\TurboRama\\Config\\turborama.json e o Winlogon antes de configurar o PIX.";
 		return raw;
 	}
 
@@ -1602,7 +1913,7 @@ namespace
 			createControls(window);
 			gWorking = true;
 			enableForm(false);
-			setStatus(L"Confirmando a sessao segura do usuario automatico do quiosque...", false);
+			setStatus(L"Confirmando a conta Windows configurada no TurboRama/Winlogon...", false);
 			std::thread([window]() {
 				auto* result = new WorkerResult;
 				result->ok = preflightKioskIdentity(result->message);
@@ -1640,9 +1951,10 @@ namespace
 				{ setStatus(L"A consulta de cadastros existe apenas para Mercado Pago.",true); return 0; }
 				if(!preflightKioskIdentity(error)){error=friendlyIdentityError(error);setStatus(error,true);MessageBoxW(window,error.c_str(),kTitle,MB_OK|MB_ICONERROR);return 0;}
 				std::wstring token = textOf(gToken);
-				if(token.size() < 40 || token.rfind(L"APP_USR-", 0) != 0)
+				if(token.size() < 40 || !looksLikeProductionMercadoPagoToken(token))
 				{ setStatus(L"Cole o Access Token completo antes de consultar a conta Mercado Pago.",true); return 0; }
-				gWorking=true; enableForm(false); setStatus(L"Consultando conta, lojas e PDVs no Mercado Pago...",false);
+				forceProductionMercadoPagoEnvironment();
+				gWorking=true; enableForm(false); setStatus(L"Credencial APP_USR detectada: PRODUCAO selecionada automaticamente. Consultando conta, lojas e PDVs no Mercado Pago...",false);
 				std::thread([window,token=std::move(token)]() mutable {
 					auto* result=new InventoryWorkerResult;
 					result->ok=fetchMercadoPagoInventory(token,result->inventory,result->message);
@@ -1655,11 +1967,12 @@ namespace
 			{
 				if(gWorking) return 0;
 				std::wstring error;
-				// Confirma a conta Windows/Winlogon antes de copiar o Access Token
-				// do controle da interface. Uma sessao Admin nunca deve gravar a
-				// DPAPI que pertence ao usuario automatico do quiosque.
+				// Confirma que o processo atual e a mesma conta Windows configurada
+				// no TurboRama/Winlogon antes de copiar o Access Token.
 				if(!preflightKioskIdentity(error)){error=friendlyIdentityError(error);setStatus(error,true);MessageBoxW(window,error.c_str(),kTitle,MB_OK|MB_ICONERROR);return 0;}
 				const bool mercadoPago = SendMessageW(gProvider, CB_GETCURSEL, 0, 0) == 0;
+				if (mercadoPago && looksLikeProductionMercadoPagoToken(textOf(gToken)))
+					forceProductionMercadoPagoEnvironment();
 				const bool production = SendMessageW(gEnvironment, CB_GETCURSEL, 0, 0) == 1;
 				if (mercadoPago && production && MessageBoxW(window,
 					L"PRODUCAO REAL\n\nEsta operacao valida uma conta real, pode criar ou reutilizar Loja e PDV reais "
@@ -1687,7 +2000,7 @@ namespace
 			if(result->ok)
 			{
 				enableForm(true);
-				setStatus(L"Sessao do quiosque confirmada. Escolha TESTE ou PRODUCAO antes de informar a credencial.",false);
+				setStatus(L"Conta Windows configurada confirmada. Mercado Pago APP_USR sera gravado automaticamente como PRODUCAO.",false);
 			}
 			else
 			{
@@ -1703,21 +2016,62 @@ namespace
 			auto* result=(InventoryWorkerResult*)lParam; gWorking=false; enableForm(true);
 			if(result->ok)
 			{
-				MercadoPagoStore store; MercadoPagoPointOfSale pos; std::wstring selectError;
-				const bool single = chooseSingleCompatiblePair(result->inventory, store, pos, selectError);
-				if(single)
+				MercadoPagoStore store; MercadoPagoPointOfSale pos;
+				const auto pairs = compatiblePairs(result->inventory);
+				bool selected = false;
+				std::wstring selectError;
+				if(pairs.size() == 1)
+				{
+					store = pairs.front().store;
+					pos = pairs.front().pos;
+					selected = true;
+					setStatus(L"Conta consultada. Par Loja/PDV unico encontrado e preenchido na tela.",false);
+				}
+				else if(pairs.size() > 1)
+				{
+					selected = showInventorySelectionDialog(window, pairs, store, pos);
+					if(selected) setStatus(L"Cadastro Mercado Pago selecionado e preenchido na tela.",false);
+					else setStatus(L"Selecao cancelada. Nenhum cadastro foi alterado.",true);
+				}
+				else
+				{
+					selectError = L"Nenhum par ativo Loja/PDV com external_id foi encontrado nesta conta." + inventoryCompatibilityReport(result->inventory);
+					setStatus(selectError,true);
+				}
+				if(selected)
 				{
 					SetWindowTextW(gStore, store.name.empty()?L"TurboRama":store.name.c_str());
 					SetWindowTextW(gStoreExternal, store.externalId.c_str());
 					SetWindowTextW(gPos, pos.name.empty()?L"TurboRama Kiosk":pos.name.c_str());
 					SetWindowTextW(gPosExternal, pos.externalId.c_str());
-					setStatus(L"Conta consultada. Par Loja/PDV unico encontrado e preenchido na tela.",false);
+
+					FormData data;
+					std::wstring configureError;
+					if(!collect(data, configureError))
+					{
+						clearTokenControl();
+						setStatus(configureError, true);
+						MessageBoxW(window, configureError.c_str(), kTitle, MB_OK | MB_ICONERROR);
+						delete result;
+						return 0;
+					}
+
+					clearTokenControl();
+					gWorking = true;
+					enableForm(false);
+					setStatus(L"Cadastro selecionado. Gravando e ativando somente este Loja/PDV nesta maquina...", false);
+					std::thread([window, data = std::move(data)]() mutable {
+						auto* configured = new WorkerResult(configure(std::move(data)));
+						PostMessageW(window, WM_CONFIGURED, 0, (LPARAM)configured);
+					}).detach();
+					delete result;
+					return 0;
 				}
-				else setStatus(selectError,true);
-				const std::wstring summary = inventorySummary(result->inventory)
-					+ (single ? L"\r\n\r\nO par unico foi preenchido automaticamente na tela."
-						: L"\r\n\r\n" + selectError + L"\r\nCopie os external_id corretos para os campos da tela.");
-				MessageBoxW(window,summary.c_str(),kTitle,MB_OK|(single?MB_ICONINFORMATION:MB_ICONWARNING));
+				std::wstring suffix;
+				if(pairs.size() > 1) suffix = L"\r\n\r\nSelecao cancelada. Nenhum cadastro foi alterado.";
+				else suffix = L"\r\n\r\n" + selectError;
+				const std::wstring summary = inventorySummary(result->inventory) + suffix;
+				MessageBoxW(window,summary.c_str(),kTitle,MB_OK|MB_ICONWARNING);
 			}
 			else
 			{
@@ -1739,6 +2093,58 @@ namespace
 		return DefWindowProcW(window,message,wParam,lParam);
 	}
 
+	bool inventoryPairSelfTest()
+	{
+		MercadoPagoInventory empty;
+		MercadoPagoStore store;
+		MercadoPagoPointOfSale pos;
+		std::wstring error;
+		if (chooseSingleCompatiblePair(empty, store, pos, error)) return false;
+		if (error.find(L"Nenhum") == std::wstring::npos) return false;
+
+		MercadoPagoInventory multiple;
+		multiple.stores.push_back({ L"store-1", L"LZLOJA01", L"Loja 1" });
+		multiple.stores.push_back({ L"store-2", L"LZLOJA02", L"Loja 2" });
+		multiple.points.push_back({ L"pos-1", L"LZPIX01", L"PDV 1", L"store-1", L"LZLOJA01", L"active" });
+		multiple.points.push_back({ L"pos-2", L"LZPIX02", L"PDV 2", L"", L"LZLOJA02", L"active" });
+		multiple.points.push_back({ L"pos-3", L"LZPIX03", L"PDV inativo", L"store-1", L"LZLOJA01", L"inactive" });
+		multiple.points.push_back({ L"pos-4", L"", L"PDV sem external", L"store-1", L"LZLOJA01", L"active" });
+		multiple.points.push_back({ L"pos-5", L"LZPIXCOMP", L"PDV antigo de teste", L"store-1", L"LZLOJA01", L"active" });
+		const auto pairs = compatiblePairs(multiple);
+		if (pairs.size() != 2) return false;
+		if (pairs[1].store.externalId != L"LZLOJA02" || pairs[1].pos.externalId != L"LZPIX02") return false;
+		if (chooseSingleCompatiblePair(multiple, store, pos, error)) return false;
+		if (error.find(L"Escolha") == std::wstring::npos) return false;
+
+		MercadoPagoInventory single;
+		single.stores.push_back({ L"store-1", L"LZLOJA01", L"Loja 1" });
+		single.points.push_back({ L"pos-1", L"LZPIX01", L"PDV 1", L"store-1", L"LZLOJA01", L"active" });
+		if (!chooseSingleCompatiblePair(single, store, pos, error)) return false;
+		if (store.externalId != L"LZLOJA01" || pos.externalId != L"LZPIX01") return false;
+
+		MercadoPagoInventory invalid;
+		invalid.stores.push_back({ L"store-1", L"LZLOJA01", L"Loja 1" });
+		invalid.points.push_back({ L"pos-legacy", L"LZPIXCOMP", L"PDV antigo de teste", L"store-1", L"LZLOJA01", L"active" });
+		invalid.points.push_back({ L"pos-orphan", L"LZPIX04", L"PDV sem loja", L"store-x", L"LZLOJAX", L"active" });
+		if (chooseSingleCompatiblePair(invalid, store, pos, error)) return false;
+		return error.find(L"LZPIXCOMP") != std::wstring::npos
+			&& error.find(L"external_store_id") != std::wstring::npos
+			&& error.find(L"loja nao encontrada") != std::wstring::npos;
+	}
+
+	bool layoutSelfTest()
+	{
+		RECT desired{ 0,0,kClientWidth,kClientHeight };
+		AdjustWindowRectEx(&desired, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE, 0);
+		const int width = desired.right - desired.left;
+		const int height = desired.bottom - desired.top;
+		return kClientWidth == 1040
+			&& kClientHeight <= 680
+			&& kStatusCardBottom <= kClientHeight
+			&& width <= 1360
+			&& height <= 728;
+	}
+
 	bool selfTest()
 	{
 		FormData data; data.storeName=L"TurboRama";data.posName=L"Kiosk";data.cep=L"57084648";data.number=L"52";data.reference=L"Loja";
@@ -1746,12 +2152,19 @@ namespace
 		const auto json=configurationJson(data);
 		data.sandbox=false; data.storeExternalId=L"LZLOJA01"; data.posExternalId=L"LZPIX01";
 		const auto productionJson=configurationJson(data);
+		FormData realTokenData = data;
+		realTokenData.sandbox = true;
+		realTokenData.token = L"APP_USR-1234567890123456-123456-12345678901234567890123456789012-123456789";
+		normalizeMercadoPagoProduction(realTokenData);
+		const auto normalizedProductionJson = configurationJson(realTokenData);
 		const std::string saved = R"({"provider":"adapter","storeName":"LZ \"Games\"","packagePricesCents":{"15":750}})";
 		ULONGLONG parsedPid = 0;
-		return parsePrice(L"7,50")==750 && json.find("\"accessToken\"")==std::string::npos
+		return inventoryPairSelfTest() && layoutSelfTest()
+			&& parsePrice(L"7,50")==750 && json.find("\"accessToken\"")==std::string::npos
 			&& json.find("\"mercadoPagoEnvironment\": \"sandbox\"")!=std::string::npos
 			&& json.find("\"storeExternalId\": \"\"")!=std::string::npos
 			&& productionJson.find("\"mercadoPagoEnvironment\": \"production\"")!=std::string::npos
+			&& normalizedProductionJson.find("\"mercadoPagoEnvironment\": \"production\"")!=std::string::npos
 			&& productionJson.find("\"storeExternalId\": \"LZLOJA01\"")!=std::string::npos
 			&& productionJson.find("\"posExternalId\": \"LZPIX01\"")!=std::string::npos
 			&& validExternalId(std::wstring(60,L'A'),60) && !validExternalId(std::wstring(61,L'A'),60)
@@ -1772,8 +2185,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show)
 	gIcon=(HICON)LoadImageW(instance,MAKEINTRESOURCEW(1),IMAGE_ICON,64,64,LR_DEFAULTCOLOR);
 	WNDCLASSEXW wc{sizeof(wc)};wc.lpfnWndProc=windowProc;wc.hInstance=instance;wc.hIcon=gIcon;wc.hIconSm=gIcon;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.hbrBackground=gBackgroundBrush;wc.lpszClassName=kClassName;
 	if(!RegisterClassExW(&wc))return 2;
-	RECT desired{0,0,1040,790};AdjustWindowRectEx(&desired,WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,FALSE,0);
-	const int width=desired.right-desired.left,height=desired.bottom-desired.top,x=(GetSystemMetrics(SM_CXSCREEN)-width)/2,y=(GetSystemMetrics(SM_CYSCREEN)-height)/2;
-	gWindow=CreateWindowExW(0,kClassName,kTitle,WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,x,y,width,height,nullptr,nullptr,instance,nullptr);
+	RECT desired{0,0,kClientWidth,kClientHeight};AdjustWindowRectEx(&desired,WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,FALSE,0);
+	const int width=desired.right-desired.left,height=desired.bottom-desired.top;
+	RECT windowRect = centeredWindowRect(width, height);
+	gWindow=CreateWindowExW(0,kClassName,kTitle,WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,windowRect.left,windowRect.top,windowRect.right-windowRect.left,windowRect.bottom-windowRect.top,nullptr,nullptr,instance,nullptr);
 	if(!gWindow)return 3;ShowWindow(gWindow,show);UpdateWindow(gWindow);MSG message{};while(GetMessageW(&message,nullptr,0,0)>0){TranslateMessage(&message);DispatchMessageW(&message);}return(int)message.wParam;
 }

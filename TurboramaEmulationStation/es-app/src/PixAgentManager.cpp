@@ -44,6 +44,11 @@ namespace
 		return Utils::FileSystem::combine(PixAgentManager::bridgeDirectory(), "agent-status.json");
 	}
 
+	std::string startupErrorFile()
+	{
+		return Utils::FileSystem::combine(PixAgentManager::bridgeDirectory(), "agent-startup-error.json");
+	}
+
 	std::string setupStatusFile()
 	{
 		return Utils::FileSystem::combine(PixAgentManager::bridgeDirectory(), "owner-setup-status.json");
@@ -180,6 +185,30 @@ namespace
 		return object[name].GetInt64();
 	}
 
+	std::string trimForDisplay(std::string value, size_t maximum)
+	{
+		while (!value.empty() && static_cast<unsigned char>(value.front()) <= ' ') value.erase(value.begin());
+		while (!value.empty() && static_cast<unsigned char>(value.back()) <= ' ') value.pop_back();
+		value.erase(std::remove(value.begin(), value.end(), '\r'), value.end());
+		value.erase(std::remove(value.begin(), value.end(), '\n'), value.end());
+		if (value.size() > maximum) value.resize(maximum);
+		return value;
+	}
+
+	std::string readStartupErrorMessage()
+	{
+		const std::string file = startupErrorFile();
+		if (!Utils::FileSystem::exists(file)) return {};
+		const std::string text = Utils::FileSystem::readAllText(file);
+		if (text.empty() || text.size() > 16 * 1024) return {};
+		rapidjson::Document document;
+		document.Parse(text.c_str());
+		if (document.HasParseError() || !document.IsObject()) return {};
+		if (!document.HasMember("schemaVersion") || !document["schemaVersion"].IsInt()
+			|| document["schemaVersion"].GetInt() != 1) return {};
+		return trimForDisplay(jsonString(document, "message"), 1024);
+	}
+
 	bool writeAtomically(const std::string& destination, const std::string& contents, std::string& error)
 	{
 		Utils::FileSystem::createDirectory(Utils::FileSystem::getParent(destination));
@@ -296,6 +325,93 @@ namespace
 		})) return false;
 		if (!https && host != "localhost" && host != "::1" && !isIpv4Loopback(host)) return false;
 		return pathStart == std::string::npos || value[pathStart] == '/';
+	}
+
+	std::string normalizedAscii(std::string value)
+	{
+		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+			return (char)std::tolower(ch);
+		});
+		return value;
+	}
+
+	bool isNumericMercadoPagoAccountId(const std::string& value)
+	{
+		return value.size() >= 5 && value.size() <= 24
+			&& std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+				return std::isdigit(ch) != 0;
+			});
+	}
+
+	bool hasReadyMercadoPagoRegistration(const PixOwnerSettings& settings, std::string& error)
+	{
+		const std::string provider = normalizedAscii(settings.provider);
+		const std::string setupState = normalizedAscii(settings.setupState);
+		const std::string environment = normalizedAscii(settings.mercadoPagoEnvironment);
+		if (provider != "mercadopago")
+			error = "O cadastro local salvo nao pertence ao Mercado Pago.";
+		else if (setupState != "ready")
+			error = "O cadastro Mercado Pago ainda nao foi validado pelo configurador.";
+		else if (environment != "production" && environment != "sandbox")
+			error = "O ambiente Mercado Pago salvo e invalido.";
+		else if (!isNumericMercadoPagoAccountId(settings.accountId))
+			error = "O cadastro Mercado Pago salvo nao possui User ID valido.";
+		else if (!onlyLettersAndNumbers(settings.storeExternalId, 60))
+			error = "O cadastro Mercado Pago salvo nao possui loja valida.";
+		else if (!onlyLettersAndNumbers(settings.posExternalId, 40)
+			|| normalizedAscii(settings.posExternalId) == "lzpixcomp")
+			error = "O cadastro Mercado Pago salvo nao possui PDV valido.";
+		else if (settings.storeName.size() < 2 || settings.storeName.size() >= 60
+			|| settings.posName.size() < 2 || settings.posName.size() >= 45)
+			error = "O cadastro Mercado Pago salvo possui nomes invalidos.";
+		else
+		{
+			std::string cep;
+			for (unsigned char ch : settings.postalCode)
+				if (std::isdigit(ch)) cep.push_back((char)ch);
+			if (cep.size() != 8) error = "O cadastro Mercado Pago salvo nao possui CEP valido.";
+			else if (settings.streetNumber.empty() || settings.streetNumber.size() > 20)
+				error = "O cadastro Mercado Pago salvo nao possui numero valido.";
+			else if (settings.reference.empty() || settings.reference.size() > 120)
+				error = "O cadastro Mercado Pago salvo nao possui referencia valida.";
+		}
+		return error.empty();
+	}
+
+	bool preserveMercadoPagoRegistrationForActivation(PixOwnerSettings& settings,
+		const PixOwnerSettings& registered, std::string& error)
+	{
+		if (normalizedAscii(settings.provider) != "mercadopago") return true;
+		if (!hasReadyMercadoPagoRegistration(registered, error))
+		{
+			error += "\n\nAbra CONFIGURAR-USER-TOKEN-PIX.exe, selecione o unico cadastro desta maquina e valide novamente.";
+			return false;
+		}
+
+		// O menu do EmulationStation edita preco/licenca local. A conta, loja e
+		// PDV do Mercado Pago pertencem ao configurador USER e nao podem ser
+		// sobrescritos por um rascunho antigo da tela.
+		settings.enabled = true;
+		settings.provider = "mercadopago";
+		settings.setupState = "ready";
+		settings.mercadoPagoEnvironment = registered.mercadoPagoEnvironment;
+		settings.accountId = registered.accountId;
+		settings.storeExternalId = registered.storeExternalId;
+		settings.storeName = registered.storeName;
+		settings.posExternalId = registered.posExternalId;
+		settings.posName = registered.posName;
+		if (settings.postalCode.empty()) settings.postalCode = registered.postalCode;
+		if (settings.streetNumber.empty()) settings.streetNumber = registered.streetNumber;
+		if (settings.reference.empty()) settings.reference = registered.reference;
+		if (registered.onlineLicensingEnabled) settings.onlineLicensingEnabled = true;
+		if (!registered.onlineBaseUrl.empty()) settings.onlineBaseUrl = registered.onlineBaseUrl;
+		if (settings.onlineLicenseId.empty() || settings.onlineLicenseId == "CONFIGURE-A-LICENCA")
+			settings.onlineLicenseId = registered.onlineLicenseId;
+		if (!registered.onlineProtectionProfile.empty())
+			settings.onlineProtectionProfile = registered.onlineProtectionProfile;
+		settings.onlineConfigurationVersion = registered.onlineConfigurationVersion;
+		settings.onlineConfigurationPending = false;
+		return true;
 	}
 
 #ifdef _WIN32
@@ -980,6 +1096,17 @@ bool PixAgentManager::validateOwnerSettings(const PixOwnerSettings& settings, st
 	return error.empty();
 }
 
+bool PixAgentManager::prepareOwnerSettingsForLocalActivation(PixOwnerSettings& settings, std::string& error)
+{
+	PixOwnerSettings prepared = settings;
+	prepared.enabled = true;
+	if (!preserveMercadoPagoRegistrationForActivation(prepared, loadOwnerSettings(), error))
+		return false;
+	if (!validateOwnerSettings(prepared, error)) return false;
+	settings = prepared;
+	return true;
+}
+
 bool PixAgentManager::runSelfTest(std::string& error)
 {
 	PixOwnerSettings base;
@@ -1044,6 +1171,51 @@ bool PixAgentManager::runSelfTest(std::string& error)
 	if (validateOwnerSettings(readyWithoutAccount, settingsError))
 	{
 		error = "Cadastro Mercado Pago pronto sem User ID foi aceito.";
+		return false;
+	}
+	PixOwnerSettings staleDraft = pending;
+	staleDraft.enabled = true;
+	staleDraft.setupState = "pending";
+	staleDraft.accountId.clear();
+	staleDraft.storeExternalId = "TURBORAMALOJA01";
+	staleDraft.posExternalId = "TURBORAMAKIOSK01";
+	staleDraft.pricesCents[15] = 123;
+	staleDraft.onlineLicensingEnabled = true;
+	staleDraft.onlineLicenseId = "TR-TESTE-001";
+	staleDraft.onlineBaseUrl = "https://pix.lzgames.com.br/";
+	PixOwnerSettings registered = pending;
+	registered.enabled = true;
+	registered.setupState = "ready";
+	registered.mercadoPagoEnvironment = "production";
+	registered.accountId = "123456789";
+	registered.storeExternalId = "LZLOJAABC123";
+	registered.storeName = "TurboRamaX";
+	registered.posExternalId = "LZPIXABC123";
+	registered.posName = "TurboRama Kiosk";
+	registered.onlineLicensingEnabled = true;
+	registered.onlineLicenseId = "TR-TESTE-001";
+	registered.onlineBaseUrl = "https://pix.lzgames.com.br/";
+	std::string preserveError;
+	if (!preserveMercadoPagoRegistrationForActivation(staleDraft, registered, preserveError))
+	{
+		error = "Cadastro Mercado Pago pronto nao foi preservado para ativacao local: " + preserveError;
+		return false;
+	}
+	if (staleDraft.setupState != "ready" || staleDraft.accountId != registered.accountId
+		|| staleDraft.storeExternalId != registered.storeExternalId
+		|| staleDraft.posExternalId != registered.posExternalId
+		|| staleDraft.pricesCents[15] != 123)
+	{
+		error = "Ativacao local nao preservou conta/PDV Mercado Pago ou alterou preco local.";
+		return false;
+	}
+	PixOwnerSettings missingRegistration = registered;
+	missingRegistration.setupState = "pending";
+	missingRegistration.accountId.clear();
+	preserveError.clear();
+	if (preserveMercadoPagoRegistrationForActivation(staleDraft, missingRegistration, preserveError))
+	{
+		error = "Ativacao local aceitou Mercado Pago sem cadastro validado pelo configurador.";
 		return false;
 	}
 #ifdef _WIN32
@@ -1294,6 +1466,7 @@ bool PixAgentManager::startIfConfigured(std::string* error)
 		if (error) *error = "A identidade do servico PIX nao pode ser confirmada; nenhum processo novo foi iniciado.";
 		return false;
 	}
+	Utils::FileSystem::removeFile(startupErrorFile());
 	std::string token;
 	if (!generateManagerToken(token))
 	{
@@ -1370,7 +1543,12 @@ bool PixAgentManager::startIfConfigured(std::string* error)
 	if (error)
 	{
 		if (exitCode != STILL_ACTIVE)
-			*error = "O servico PIX encerrou antes de publicar sua identidade (codigo " + std::to_string(exitCode) + ").";
+		{
+			const std::string startupError = readStartupErrorMessage();
+			*error = startupError.empty()
+				? "O servico PIX encerrou antes de publicar sua identidade (codigo " + std::to_string(exitCode) + ")."
+				: startupError + " (codigo " + std::to_string(exitCode) + ").";
+		}
 		else if (!exited)
 			*error = "O servico PIX nao confirmou identidade e seu encerramento falhou.";
 		else *error = "O servico PIX nao confirmou sua identidade dentro do prazo seguro.";

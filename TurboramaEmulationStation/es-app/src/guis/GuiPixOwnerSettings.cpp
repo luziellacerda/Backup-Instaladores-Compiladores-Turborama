@@ -208,8 +208,8 @@ void GuiPixOwnerSettings::launchOwnerConfigurator()
 	if (!elevationKnown || elevation.TokenIsElevated != 0)
 	{
 		mWindow->pushGui(new GuiMsgBox(mWindow,
-			_("O CONFIGURADOR PIX PRECISA DA SESSAO NORMAL DA CONTA WINDOWS ARCADE.\n\n"
-				"Feche o EmulationStation aberto como administrador e entre novamente pelo Launcher do quiosque."),
+			_("O CONFIGURADOR PIX PRECISA DA CONTA WINDOWS CONFIGURADA NO TURBORAMA.\n\n"
+				"No gabinete atual, use a conta Admin quando ela estiver alinhada com o turborama.json e o AutoLogon do Windows."),
 			_("OK"), nullptr, ICON_ERROR));
 		return;
 	}
@@ -262,8 +262,8 @@ void GuiPixOwnerSettings::launchOwnerConfigurator()
 		const DWORD windowsError = GetLastError();
 		mWindow->pushGui(new GuiMsgBox(mWindow,
 			_("NAO FOI POSSIVEL ABRIR O CONFIGURADOR PIX.\n\n"
-				"Confirme que o EmulationStation esta aberto normalmente na conta Windows Arcade, "
-				"sem Executar como administrador.\n\nErro do Windows: ") + std::to_string(windowsError),
+				"Confirme que o EmulationStation esta aberto na conta Windows configurada no TurboRama/Winlogon.\n\n"
+				"Erro do Windows: ") + std::to_string(windowsError),
 			_("OK"), nullptr, ICON_ERROR));
 		return;
 	}
@@ -385,6 +385,11 @@ void GuiPixOwnerSettings::saveAndActivate()
 		_("SIM, ATIVAR"), [this] {
 			std::string error;
 			mDraft.enabled = true;
+			if (!PixAgentManager::prepareOwnerSettingsForLocalActivation(mDraft, error))
+			{
+				mWindow->pushGui(new GuiMsgBox(mWindow, error, _("OK"), nullptr, ICON_ERROR));
+				return;
+			}
 			if (!PixAgentManager::saveOwnerSettings(mDraft, "", error))
 			{
 				mWindow->pushGui(new GuiMsgBox(mWindow, error, _("OK"), nullptr, ICON_ERROR));

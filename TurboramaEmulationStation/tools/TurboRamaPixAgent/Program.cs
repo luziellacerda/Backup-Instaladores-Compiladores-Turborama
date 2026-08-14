@@ -146,7 +146,9 @@ catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or J
     or InvalidOperationException or SecurityException or CryptographicException
     or FormatException or ArgumentException)
 {
-    Console.Error.WriteLine($"Configuracao PIX invalida: {ex.Message}");
+    var startupError = $"Configuracao PIX invalida: {ex.Message}";
+    PixStartupErrorContract.Publish(startupPaths, daemonIdentity?.Descriptor, 10, startupError);
+    Console.Error.WriteLine(startupError);
     return 10;
 }
 
@@ -238,7 +240,9 @@ if (command.OnlineActivate)
 try { signingKeys.GetOrCreate(); }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or InvalidOperationException)
 {
-    Console.Error.WriteLine($"Nao foi possivel preparar a chave do contrato PIX: {ex.Message}");
+    var startupError = $"Nao foi possivel preparar a chave do contrato PIX: {ex.Message}";
+    PixStartupErrorContract.Publish(paths, daemonIdentity?.Descriptor, 10, startupError);
+    Console.Error.WriteLine(startupError);
     return 10;
 }
 
@@ -1581,6 +1585,13 @@ static class PixOwnerProvisioner
             throw new SecurityException("Access Token do Mercado Pago esta incompleto ou em formato invalido");
 
         var declaredEnvironment = ValidateMercadoPagoEnvironment(request.MercadoPagoEnvironment);
+        // APP_USR e credencial comercial. Telas antigas ou cadastros antigos
+        // podem ainda enviar "sandbox"; o agente corrige isso antes de ler
+        // /users/me, gravar owner-settings ou salvar o segredo. Assim um token
+        // real nunca fica persistido como TESTE e nunca bloqueia o daemon depois.
+        if (credential.StartsWith("APP_USR-", StringComparison.Ordinal)
+            && declaredEnvironment.Equals("sandbox", StringComparison.OrdinalIgnoreCase))
+            declaredEnvironment = "production";
         var requestedStoreName = RequiredText(request.StoreName, 2, 59, "nome da loja");
         var requestedPosName = RequiredText(request.PosName, 2, 44, "nome do caixa");
         var requestedStoreExternalId = string.IsNullOrWhiteSpace(request.StoreExternalId)
@@ -1620,8 +1631,8 @@ static class PixOwnerProvisioner
         try
         {
             // /users/me devolve o titular real autorizado pelo token. Client ID
-            // e ID da aplicacao jamais sao aceitos como conta; uma conta de
-            // teste so passa quando o request declarou sandbox explicitamente.
+            // e ID da aplicacao jamais sao aceitos como conta. APP_USR sempre
+            // entra como producao neste fluxo comercial.
             var inventory = await mercadoPago.GetInfrastructureAsync(token);
             var accountId = inventory.AccountId.Trim();
             if (accountId.Length is < 5 or > 24 || !accountId.All(char.IsAsciiDigit))
@@ -1811,7 +1822,7 @@ static class PixOwnerProvisioner
                     : "mais de um par ativo de loja e PDV e compativel com os nomes informados");
 
             var storesByName = stores.Where(store => NamesEqual(store.Name, cleanStoreName)).ToList();
-            if (storesByName.Count == 1 && !HasUsablePointForStore(points, storesByName[0].Id))
+            if (storesByName.Count == 1 && !HasUsablePointForStore(points, storesByName[0]))
                 return CreatePointOfSale(accountId, storesByName[0], cleanPosName);
 
             throw ExplicitSelectionRequired(storesByName.Count == 0
@@ -1838,7 +1849,7 @@ static class PixOwnerProvisioner
                 return Reuse(accountId, requestedStore!, candidates[0]);
             if (candidates.Count > 1)
                 throw ExplicitSelectionRequired("a loja informada possui mais de um PDV ativo compativel com o nome do caixa");
-            if (!HasUsablePointForStore(points, requestedStore!.Id))
+            if (!HasUsablePointForStore(points, requestedStore!))
                 return CreatePointOfSale(accountId, requestedStore!, cleanPosName);
             throw ExplicitSelectionRequired("a loja informada possui outro PDV ativo; selecione o external_id correto antes do reparo");
         }
@@ -1965,7 +1976,7 @@ static class PixOwnerProvisioner
         RequireActive(point);
         if (MercadoPagoOptions.IsLegacyTestExternalPosId(point.ExternalId))
             throw new SecurityException("o PDV legado LZPIXCOMP nao pode ser reutilizado");
-        if (!point.StoreId.Equals(store.Id, StringComparison.Ordinal))
+        if (!PointBelongsToStore(point, store))
             throw new SecurityException("o PDV selecionado nao pertence a loja selecionada");
         if (string.IsNullOrWhiteSpace(store.ExternalId) || string.IsNullOrWhiteSpace(point.ExternalId))
             throw new SecurityException("a loja ou o PDV selecionado nao possui external_id valido");
@@ -1980,11 +1991,11 @@ static class PixOwnerProvisioner
         var result = new List<MercadoPagoProvisioningPair>();
         foreach (var point in points.Where(point => IsUsablePoint(point) && NamesEqual(point.Name, posName)))
         {
-            var associated = stores.Where(store => store.Id.Equals(point.StoreId, StringComparison.Ordinal)
+            var associated = stores.Where(store => PointBelongsToStore(point, store)
                     && NamesEqual(store.Name, storeName))
                 .ToList();
             if (associated.Count > 1)
-                throw new SecurityException("o inventario retornou mais de uma loja com o mesmo ID interno");
+                throw new SecurityException("o inventario retornou mais de uma loja compativel com o mesmo PDV");
             if (associated.Count == 1) result.Add(new MercadoPagoProvisioningPair(associated[0], point));
         }
         return result;
@@ -2001,9 +2012,15 @@ static class PixOwnerProvisioner
             RequireEmptyInventoryBeforeCreation: false);
     }
 
-    private static bool HasUsablePointForStore(IReadOnlyList<MercadoPagoPosInfo> points, string storeId)
+    private static bool HasUsablePointForStore(IReadOnlyList<MercadoPagoPosInfo> points, MercadoPagoStoreInfo store)
         => points.Any(point => IsUsablePoint(point)
-            && point.StoreId.Equals(storeId, StringComparison.Ordinal));
+            && PointBelongsToStore(point, store));
+
+    private static bool PointBelongsToStore(MercadoPagoPosInfo point, MercadoPagoStoreInfo store)
+        => (!string.IsNullOrWhiteSpace(point.StoreId)
+                && point.StoreId.Equals(store.Id, StringComparison.Ordinal))
+            || (!string.IsNullOrWhiteSpace(point.ExternalStoreId)
+                && point.ExternalStoreId.Equals(store.ExternalId, StringComparison.OrdinalIgnoreCase));
 
     private static bool IsUsablePoint(MercadoPagoPosInfo point)
         => IsActive(point)
@@ -2031,7 +2048,7 @@ static class PixOwnerProvisioner
     private static MercadoPagoStoreInfo RequireAssociatedStore(IReadOnlyList<MercadoPagoStoreInfo> stores,
         MercadoPagoPosInfo point)
     {
-        var matches = stores.Where(store => store.Id.Equals(point.StoreId, StringComparison.Ordinal)).ToList();
+        var matches = stores.Where(store => PointBelongsToStore(point, store)).ToList();
         if (matches.Count != 1)
             throw new SecurityException(matches.Count == 0
                 ? "o PDV informado nao esta associado a uma loja visivel desta conta"
@@ -2676,58 +2693,80 @@ sealed class OwnerInfrastructureCoordinator
         automaticallyRecovered = false;
         selectionError = "";
 
-        var storesById = inventory.Stores
-            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
-            .GroupBy(item => item.Id, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
-        var usablePoints = inventory.PointsOfSale
-            .Where(item => !string.IsNullOrWhiteSpace(item.Id)
-                && !string.IsNullOrWhiteSpace(item.ExternalId)
-                && !MercadoPagoOptions.IsLegacyTestExternalPosId(item.ExternalId)
-                && storesById.ContainsKey(item.StoreId)
-                && (string.IsNullOrWhiteSpace(item.Status) || item.Status.Equals("active", StringComparison.OrdinalIgnoreCase)))
-            .ToList();
+        var usablePairs = new List<MercadoPagoProvisioningPair>();
+        foreach (var item in inventory.PointsOfSale.Where(item => !string.IsNullOrWhiteSpace(item.Id)
+                     && !string.IsNullOrWhiteSpace(item.ExternalId)
+                     && !MercadoPagoOptions.IsLegacyTestExternalPosId(item.ExternalId)
+                     && (string.IsNullOrWhiteSpace(item.Status)
+                         || item.Status.Equals("active", StringComparison.OrdinalIgnoreCase))))
+        {
+            var matches = MatchingStores(inventory.Stores, item);
+            if (matches.Count == 1)
+                usablePairs.Add(new MercadoPagoProvisioningPair(matches[0], item));
+            else if (item.ExternalId.Equals(settings.PosExternalId.Trim(), StringComparison.OrdinalIgnoreCase))
+                selectionError = matches.Count == 0
+                    ? "O caixa PIX informado nao esta associado a uma loja visivel desta conta."
+                    : "O caixa PIX informado possui uma associacao de loja ambigua.";
+        }
 
         var requestedStore = inventory.Stores.FirstOrDefault(item =>
             item.ExternalId.Equals(settings.StoreExternalId.Trim(), StringComparison.OrdinalIgnoreCase));
-        var requestedPoint = usablePoints.FirstOrDefault(item =>
-            item.ExternalId.Equals(settings.PosExternalId.Trim(), StringComparison.OrdinalIgnoreCase));
+        var requestedPoint = usablePairs.FirstOrDefault(item =>
+            item.PointOfSale.ExternalId.Equals(settings.PosExternalId.Trim(), StringComparison.OrdinalIgnoreCase));
 
-        if (requestedPoint is not null && storesById.TryGetValue(requestedPoint.StoreId, out var pointStore))
+        if (requestedPoint is not null)
         {
-            if (requestedStore is not null && !requestedStore.Id.Equals(pointStore.Id, StringComparison.Ordinal))
+            if (requestedStore is not null && !requestedStore.Id.Equals(requestedPoint.Store.Id, StringComparison.Ordinal))
                 throw new SecurityException("O caixa PIX informado pertence a outra loja.");
-            store = pointStore;
-            pointOfSale = requestedPoint;
+            store = requestedPoint.Store;
+            pointOfSale = requestedPoint.PointOfSale;
             automaticallyRecovered = requestedStore is null;
             return true;
         }
 
         var candidates = requestedStore is null
-            ? usablePoints
-            : usablePoints.Where(item => item.StoreId.Equals(requestedStore.Id, StringComparison.Ordinal)).ToList();
+            ? usablePairs
+            : usablePairs.Where(item => item.Store.Id.Equals(requestedStore.Id, StringComparison.Ordinal)).ToList();
         if (candidates.Count > 1)
         {
             var nameMatches = candidates.Where(item =>
-                item.Name.Equals(settings.PosName.Trim(), StringComparison.OrdinalIgnoreCase)
-                && storesById[item.StoreId].Name.Equals(settings.StoreName.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+                item.PointOfSale.Name.Equals(settings.PosName.Trim(), StringComparison.OrdinalIgnoreCase)
+                && item.Store.Name.Equals(settings.StoreName.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
             if (nameMatches.Count == 1) candidates = nameMatches;
         }
 
-        if (candidates.Count == 1 && storesById.TryGetValue(candidates[0].StoreId, out var recoveredStore))
+        if (candidates.Count == 1)
         {
-            store = recoveredStore;
-            pointOfSale = candidates[0];
+            store = candidates[0].Store;
+            pointOfSale = candidates[0].PointOfSale;
             automaticallyRecovered = true;
             return true;
         }
 
         if (candidates.Count > 1)
         {
-            var ids = string.Join(", ", candidates.Select(item => item.ExternalId).Distinct(StringComparer.OrdinalIgnoreCase).Take(6));
+            var ids = string.Join(", ", candidates.Select(item => item.PointOfSale.ExternalId)
+                .Distinct(StringComparer.OrdinalIgnoreCase).Take(6));
             selectionError = $"Mais de um caixa PIX ativo foi encontrado ({ids}). Selecione o external_id correto na CONFIGURACAO PIX DO PROPRIETARIO; nenhuma cobranca foi criada.";
         }
         return false;
+    }
+
+    private static List<MercadoPagoStoreInfo> MatchingStores(IReadOnlyList<MercadoPagoStoreInfo> stores,
+        MercadoPagoPosInfo point)
+    {
+        var matches = new List<MercadoPagoStoreInfo>();
+        foreach (var store in stores)
+        {
+            var sameInternalStore = !string.IsNullOrWhiteSpace(point.StoreId)
+                && point.StoreId.Equals(store.Id, StringComparison.Ordinal);
+            var sameExternalStore = !string.IsNullOrWhiteSpace(point.ExternalStoreId)
+                && point.ExternalStoreId.Equals(store.ExternalId, StringComparison.OrdinalIgnoreCase);
+            if ((sameInternalStore || sameExternalStore)
+                && !matches.Any(item => item.Id.Equals(store.Id, StringComparison.Ordinal)))
+                matches.Add(store);
+        }
+        return matches;
     }
 
     internal static PixOwnerSettings BindAuthenticatedAccount(PixOwnerSettings settings, MercadoPagoInfrastructure inventory)
@@ -2766,7 +2805,8 @@ sealed class OwnerInfrastructureCoordinator
 }
 
 sealed record MercadoPagoStoreInfo(string Id, string ExternalId, string Name);
-sealed record MercadoPagoPosInfo(string Id, string ExternalId, string Name, string StoreId, string Status);
+sealed record MercadoPagoPosInfo(string Id, string ExternalId, string Name, string StoreId, string ExternalStoreId,
+    string Status);
 sealed record MercadoPagoInfrastructure(string AccountId, IReadOnlyList<MercadoPagoStoreInfo> Stores, IReadOnlyList<MercadoPagoPosInfo> PointsOfSale);
 sealed record MercadoPagoProvisioningPair(MercadoPagoStoreInfo Store, MercadoPagoPosInfo PointOfSale);
 sealed record MercadoPagoProvisioningDecision(string AccountId, string StoreExternalId, string PosExternalId,
@@ -2817,6 +2857,7 @@ sealed class PixPaths
         LicenseFile = Path.Combine(root, "turborama-pix.license");
         PublicOptionsFile = Path.Combine(root, "public-options.json");
         AgentStatusFile = Path.Combine(root, "agent-status.json");
+        StartupErrorFile = Path.Combine(root, "agent-startup-error.json");
         AgentStopRequestFile = Path.Combine(root, "agent-stop.request");
     }
 
@@ -2840,6 +2881,7 @@ sealed class PixPaths
     public string LicenseFile { get; }
     public string PublicOptionsFile { get; }
     public string AgentStatusFile { get; }
+    public string StartupErrorFile { get; }
     public string AgentStopRequestFile { get; }
     public string RequestFile(string id) => Path.Combine(Requests, $"{id}.request.json");
     public string SessionFile(string id) => Path.Combine(Sessions, $"{id}.session.json");
@@ -3194,6 +3236,36 @@ static class PixPublicContract
             state,
             updatedAtUnixSeconds = now.ToUnixTimeSeconds()
         });
+    }
+}
+
+static class PixStartupErrorContract
+{
+    public static void Publish(PixPaths? paths, PixDaemonDescriptor? identity, int exitCode, string message)
+    {
+        if (paths is null) return;
+        try
+        {
+            var safeMessage = (message ?? "").Trim();
+            if (safeMessage.Length > 1024)
+                safeMessage = safeMessage[..1024];
+            paths.WriteAtomically(paths.StartupErrorFile, new
+            {
+                schemaVersion = 1,
+                mode = "daemon",
+                processId = identity?.ProcessId ?? Environment.ProcessId,
+                processStartFileTimeUtc = identity?.ProcessStartFileTimeUtc ?? 0UL,
+                exitCode,
+                message = safeMessage,
+                updatedAtUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException
+            or JsonException or InvalidOperationException or NotSupportedException)
+        {
+            // O erro principal continua sendo escrito no stderr. Esta publicacao e apenas
+            // para a interface exibir a causa real quando o daemon fecha antes do status.
+        }
     }
 }
 
@@ -4963,7 +5035,8 @@ sealed class MercadoPagoPixProvider : IPixProvider
 
     private static MercadoPagoPosInfo ReadPos(JsonElement item)
         => new(GetScalarString(item, "id"), GetString(item, "external_id"), GetString(item, "name"),
-            GetScalarString(item, "store_id"), GetString(item, "status"));
+            GetScalarString(item, "store_id"), GetString(item, "external_store_id"),
+            GetString(item, "status"));
 
     private static string GetScalarString(JsonElement element, string property)
     {
@@ -6600,7 +6673,7 @@ static class PixSelfTest
             };
             var legacyInventory = new MercadoPagoInfrastructure("123456",
                 new[] { new MercadoPagoStoreInfo("987", "LZLOJA01", "TurboRama Teste") },
-                new[] { new MercadoPagoPosInfo("654", "LZPIXCAIXA01", "TurboRama Kiosk", "987", "active") });
+                new[] { new MercadoPagoPosInfo("654", "LZPIXCAIXA01", "TurboRama Kiosk", "987", "LZLOJA01", "active") });
 
             // Um User ID ja salvo vincula a maquina em qualquer estado. Nem um
             // cadastro ready nem um pending podem migrar silenciosamente para
@@ -6634,6 +6707,21 @@ static class PixSelfTest
                 || !recoveredAutomatically || recoveredStore.ExternalId != "LZLOJA01" || recoveredPoint.ExternalId != "LZPIXCAIXA01")
                 throw new InvalidOperationException("recuperacao automatica do PDV existente");
 
+            var externalStoreOnlyLegacyInventory = legacyInventory with
+            {
+                PointsOfSale = new[]
+                {
+                    new MercadoPagoPosInfo("654", "LZPIXCAIXA01", "TurboRama Kiosk", "", "LZLOJA01", "active")
+                }
+            };
+            if (!OwnerInfrastructureCoordinator.TryResolveExisting(legacySettings, externalStoreOnlyLegacyInventory,
+                    out var externalStoreRecoveredStore, out var externalStoreRecoveredPoint,
+                    out var externalStoreRecoveredAutomatically, out _)
+                || !externalStoreRecoveredAutomatically
+                || externalStoreRecoveredStore.ExternalId != "LZLOJA01"
+                || externalStoreRecoveredPoint.ExternalId != "LZPIXCAIXA01")
+                throw new InvalidOperationException("daemon nao recuperou PDV associado por external_store_id");
+
             // Caso observado no quiosque: a loja esta correta, mas foi
             // acrescentado "01" ao external_id do caixa. Como existe somente
             // um PDV ativo nessa loja, o agente deve corrigir o identificador
@@ -6652,8 +6740,8 @@ static class PixSelfTest
             {
                 PointsOfSale = new[]
                 {
-                    new MercadoPagoPosInfo("654", "LZPIXCAIXA01", "Caixa A", "987", "active"),
-                    new MercadoPagoPosInfo("655", "LZPIXCAIXA02", "Caixa B", "987", "active")
+                    new MercadoPagoPosInfo("654", "LZPIXCAIXA01", "Caixa A", "987", "LZLOJA01", "active"),
+                    new MercadoPagoPosInfo("655", "LZPIXCAIXA02", "Caixa B", "987", "LZLOJA01", "active")
                 }
             };
             if (OwnerInfrastructureCoordinator.TryResolveExisting(legacySettings, ambiguousInventory,
@@ -6725,7 +6813,8 @@ static class PixSelfTest
             throw new InvalidOperationException("IDs explicitos em conta vazia nao preservaram a barreira de inventario vazio");
 
         var uniqueStore = new MercadoPagoStoreInfo("987", "LZLOJA01", storeName);
-        var uniquePoint = new MercadoPagoPosInfo("654", "LZPIXCAIXA01", posName, uniqueStore.Id, "active");
+        var uniquePoint = new MercadoPagoPosInfo("654", "LZPIXCAIXA01", posName, uniqueStore.Id,
+            uniqueStore.ExternalId, "active");
         var uniqueInventory = new MercadoPagoInfrastructure(accountId,
             new[] { uniqueStore }, new[] { uniquePoint });
         var uniqueDecision = PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, "", posName, "",
@@ -6733,6 +6822,20 @@ static class PixSelfTest
         if (uniqueDecision.RequiresRemoteWrite || uniqueDecision.StoreExternalId != "LZLOJA01"
             || uniqueDecision.PosExternalId != "LZPIXCAIXA01")
             throw new InvalidOperationException("par unico compativel nao foi reutilizado sem criacao");
+
+        var externalStoreOnlyInventory = uniqueInventory with
+        {
+            PointsOfSale = new[]
+            {
+                uniquePoint with { StoreId = "", ExternalStoreId = uniqueStore.ExternalId }
+            }
+        };
+        var externalStoreOnlyDecision = PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, "", posName, "",
+            externalStoreOnlyInventory);
+        if (externalStoreOnlyDecision.RequiresRemoteWrite
+            || externalStoreOnlyDecision.StoreExternalId != "LZLOJA01"
+            || externalStoreOnlyDecision.PosExternalId != "LZPIXCAIXA01")
+            throw new InvalidOperationException("PDV compativel por external_store_id nao foi reutilizado");
 
         var statusOmittedDecision = PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, "", posName, "",
             uniqueInventory with
@@ -6753,7 +6856,8 @@ static class PixSelfTest
         // configurador deve criar somente um novo PDV, nunca outra loja.
         var legacyOnlyInventory = new MercadoPagoInfrastructure(accountId,
             new[] { uniqueStore },
-            new[] { new MercadoPagoPosInfo("653", "LZPIXCOMP", posName, uniqueStore.Id, "active") });
+            new[] { new MercadoPagoPosInfo("653", "LZPIXCOMP", posName, uniqueStore.Id,
+                uniqueStore.ExternalId, "active") });
         var repairDecision = PixOwnerProvisioner.DecideMercadoPagoProvisioning(storeName, "LZLOJA01",
             posName, "LZPIXCOMP", legacyOnlyInventory);
         if (repairDecision.CreateStore || !repairDecision.CreatePointOfSale
@@ -6801,7 +6905,7 @@ static class PixSelfTest
             new[]
             {
                 uniquePoint,
-                new MercadoPagoPosInfo("655", "LZPIXCOMP02", posName, "988", "active")
+                    new MercadoPagoPosInfo("655", "LZPIXCOMP02", posName, "988", "LZLOJA02", "active")
             });
         var ambiguityRejected = false;
         try
@@ -7098,6 +7202,21 @@ static class PixSelfTest
                 var savedReady = PixOwnerSettings.LoadIfPresent(uniquePaths.Root);
                 if (savedReady is null || !savedReady.SetupState.Equals("ready", StringComparison.Ordinal))
                     throw new InvalidOperationException("cadastro confirmado nao terminou em estado ready");
+                var sandboxRequestRoot = Path.Combine(paths.Root, "provisioning-appusr-forces-production");
+                var sandboxRequestPaths = new PixPaths(sandboxRequestRoot);
+                sandboxRequestPaths.EnsureDirectories();
+                var sandboxRequestHandler = new FakeMercadoPagoProvisioningHandler(uniqueInventory);
+                var sandboxRequestResult = PixOwnerProvisioner.ConfigureAsync(Request("sandbox"), fakeToken, options,
+                    sandboxRequestPaths, new PixSecretStore(sandboxRequestPaths.SecretFile), CancellationToken.None,
+                    sandboxRequestHandler).GetAwaiter().GetResult();
+                var sandboxRequestSaved = PixOwnerSettings.LoadIfPresent(sandboxRequestPaths.Root);
+                if (sandboxRequestResult.StoreExternalId != "LZLOJA01"
+                    || sandboxRequestResult.PosExternalId != "LZPIXCAIXA01"
+                    || sandboxRequestHandler.TotalPostCount != 0
+                    || sandboxRequestSaved is null
+                    || !sandboxRequestSaved.MercadoPagoEnvironment.Equals("production", StringComparison.Ordinal)
+                    || !sandboxRequestSaved.SetupState.Equals("ready", StringComparison.Ordinal))
+                    throw new InvalidOperationException("APP_USR enviado como TESTE nao foi salvo como PRODUCAO");
 
                 // Fluxo completo do erro real LZPIXCOMP: conserva a unica
                 // loja existente, cria exatamente um PDV novo e termina ready.
@@ -7186,6 +7305,7 @@ static class PixSelfTest
                 Path.Combine(paths.Root, "provisioning-environment-mismatch"),
                 Path.Combine(paths.Root, "provisioning-environment-unknown"),
                 Path.Combine(paths.Root, "provisioning-unique"),
+                Path.Combine(paths.Root, "provisioning-appusr-forces-production"),
                 Path.Combine(paths.Root, "provisioning-repair-legacy-pos"),
                 Path.Combine(paths.Root, "provisioning-health-failure"),
                 Path.Combine(paths.Root, "provisioning-coordinator-nonempty")
@@ -7492,6 +7612,7 @@ static class PixSelfTest
                         external_id = point.ExternalId,
                         name = point.Name,
                         store_id = point.StoreId,
+                        external_store_id = point.ExternalStoreId,
                         status = point.Status
                     }).ToArray()
                 });
@@ -7526,7 +7647,7 @@ static class PixSelfTest
                 if (_points.Any(point => point.ExternalId.Equals(externalId, StringComparison.OrdinalIgnoreCase)))
                     return JsonResponse(System.Net.HttpStatusCode.Conflict, new { message = "point already exists" });
                 var point = new MercadoPagoPosInfo((++_nextPointId).ToString(CultureInfo.InvariantCulture),
-                    externalId, name, storeId, "active");
+                    externalId, name, storeId, externalStoreId, "active");
                 _points.Add(point);
                 return JsonResponse(System.Net.HttpStatusCode.OK, new
                 {
@@ -7534,6 +7655,7 @@ static class PixSelfTest
                     external_id = point.ExternalId,
                     name = point.Name,
                     store_id = point.StoreId,
+                    external_store_id = point.ExternalStoreId,
                     status = point.Status
                 });
             }

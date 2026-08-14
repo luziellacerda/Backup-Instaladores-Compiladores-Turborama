@@ -38,6 +38,7 @@ public:
 	static PixOwnerSettings loadOwnerSettings();
 	static bool saveOwnerSettings(const PixOwnerSettings& settings, const std::string& newAccessToken, std::string& error);
 	static bool activateOnline(const PixOwnerSettings& settings, const std::string& activationCode, std::string& error);
+	static bool prepareOwnerSettingsForLocalActivation(PixOwnerSettings& settings, std::string& error);
 	static bool validateOwnerSettings(const PixOwnerSettings& settings, std::string& error);
 	static bool runSelfTest(std::string& error);
 	static bool runTrustSelfTest(std::string& error);
