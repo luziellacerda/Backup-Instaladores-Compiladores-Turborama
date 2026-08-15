@@ -1738,7 +1738,9 @@ function Run([string]$File, [string[]]$Arguments, [string]$Directory = $ProjectR
     if ($code -ne 0) { throw "Comando retornou codigo ${code}: $File" }
 }
 
-function Invoke-FrontendSelfTest([string]$Frontend) {
+function Invoke-FrontendSelfTest(
+    [string]$Frontend,
+    [string]$TestArgument = '--pix-agent-manager-self-test') {
     # The CMake target links against the locally versioned Windows runtimes;
     # they are intentionally not copied into the source bin directory.  Make
     # that exact set discoverable only for the smoke command, instead of
@@ -1757,7 +1759,7 @@ function Invoke-FrontendSelfTest([string]$Frontend) {
     $previousPath = $env:Path
     try {
         $env:Path = (($runtimeEntries.Directory + @($previousPath)) -join ';')
-        Run $Frontend @('--pix-agent-manager-self-test')
+        Run $Frontend @($TestArgument)
     }
     finally {
         $env:Path = $previousPath
@@ -2988,7 +2990,10 @@ LIMITES DESTA ENTREGA
 		}
 		$installedBridge = Join-Path $smoke '.emulationstation\pix\self-test-isolado'
 		Run (Join-Path $smoke 'pix-agent\runtime\dotnet.exe') @((Join-Path $smoke 'pix-agent\TurboRamaPixAgent.dll'),'--self-test','--bridge',$installedBridge) $smoke
-		Run (Join-Path $smoke 'emulationstation.exe') @('--pix-agent-trust-self-test') $smoke
+		# O overlay substitui somente o EXE. As DLLs do frontend pertencem ao kiosk
+		# existente e ficam fora do payload; use o mesmo conjunto versionado que ja
+		# validou o binario compilado, sem copiar ou alterar essas DLLs no fixture.
+		Invoke-FrontendSelfTest (Join-Path $smoke 'emulationstation.exe') '--pix-agent-trust-self-test'
 		Assert-SmokeOutOfScopeUnchanged 'Autotestes dos componentes instalados'
 		Assert-SmokeMaintenanceLockUnchanged 'Autotestes dos componentes instalados'
     }
