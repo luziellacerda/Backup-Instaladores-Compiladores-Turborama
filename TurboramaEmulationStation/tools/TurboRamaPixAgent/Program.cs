@@ -5651,6 +5651,7 @@ static class PixSelfTest
         {
             var paths = new PixPaths(bridge);
             paths.EnsureDirectories();
+            WindowsFileSecurity.RunSelfTest(Path.Combine(sandbox, "acl-self-test"));
             return Run(options with { BridgeDirectory = bridge }, paths, new PixSigningKeyStore(paths.SigningKeyFile));
         }
         finally
@@ -8071,24 +8072,36 @@ static class WindowsFileSecurity
     {
         if (!OperatingSystem.IsWindows()) return;
         if (!Directory.Exists(directory)) throw new DirectoryNotFoundException("Pasta PIX nao foi encontrada.");
+        // O instalador elevado entrega esta pasta com owner SYSTEM, DACL
+        // protegida e somente SYSTEM/Administrators/usuario do quiosque como
+        // escritores. O processo normal do quiosque possui Modify, nao
+        // WRITE_DAC; portanto uma ACL ja segura deve ser somente validada.
+        // Tentar regrava-la em toda inicializacao produz ERROR_ACCESS_DENIED
+        // mesmo sem qualquer adulteracao.
+        if (HasSecureAcl(directory, directory: true)) return;
         // A conta corrente e explicita: uma instalacao elevada pode deixar
         // Administrators como proprietario, enquanto o quiosque roda com um
         // usuario normal. BU pode somente atravessar a pasta e nao herda
         // permissao de leitura/escrita para os arquivos.
         var user = CurrentUserSid();
         ApplyDacl(directory, $"D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;{user})(A;;GRGX;;;BU)");
+        if (!HasSecureAcl(directory, directory: true))
+            throw new SecurityException("A ACL da pasta PIX permaneceu insegura apos a protecao.");
     }
 
     public static void HardenCredentialFile(string file, bool allowBuiltinUsersRead)
     {
         if (!OperatingSystem.IsWindows()) return;
         if (!File.Exists(file)) throw new FileNotFoundException("Arquivo de credencial nao foi encontrado.", file);
+        if (HasSecureAcl(file, directory: false)) return;
         // SY=SYSTEM, BA=Administrators e a conta que executa o agente.
         var user = CurrentUserSid();
         var sddl = allowBuiltinUsersRead
             ? $"D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;{user})(A;;GR;;;BU)"
             : $"D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;{user})";
         ApplyDacl(file, sddl);
+        if (!HasSecureAcl(file, directory: false))
+            throw new SecurityException($"A ACL de {Path.GetFileName(file)} permaneceu insegura apos a protecao.");
     }
 
     public static void HardenCredentialFileIfPresent(string file)
@@ -8102,6 +8115,99 @@ static class WindowsFileSecurity
         if (string.IsNullOrWhiteSpace(sid) || !sid.StartsWith("S-1-", StringComparison.Ordinal))
             throw new SecurityException("A identidade Windows do servico PIX nao pode ser determinada.");
         return sid;
+    }
+
+    private static bool HasSecureAcl(string path, bool directory)
+    {
+        FileSystemSecurity security = directory
+            ? new DirectoryInfo(path).GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner)
+            : new FileInfo(path).GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner);
+        if (!security.AreAccessRulesProtected) return false;
+
+        var current = new SecurityIdentifier(CurrentUserSid());
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        var owner = security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+        if (owner is null || (!owner.Equals(current) && !owner.Equals(system) && !owner.Equals(administrators)))
+            return false;
+
+        var requiredInheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+        var currentCanModify = false;
+        var systemHasFullControl = false;
+        var administratorsHaveFullControl = false;
+        foreach (FileSystemAccessRule rule in security.GetAccessRules(includeExplicit: true, includeInherited: true,
+            targetType: typeof(SecurityIdentifier)))
+        {
+            if (rule.IdentityReference is not SecurityIdentifier sid) return false;
+            var writes = (rule.FileSystemRights & WriterRights) != 0;
+            if (rule.AccessControlType == AccessControlType.Deny)
+            {
+                if (writes && (sid.Equals(current) || sid.Equals(system) || sid.Equals(administrators)))
+                    return false;
+                continue;
+            }
+            if (!writes) continue;
+            if (!sid.Equals(current) && !sid.Equals(system) && !sid.Equals(administrators))
+                return false;
+
+            var inheritanceOk = !directory || (rule.InheritanceFlags & requiredInheritance) == requiredInheritance;
+            if (sid.Equals(current) && inheritanceOk
+                && (rule.FileSystemRights & FileSystemRights.Modify) == FileSystemRights.Modify)
+                currentCanModify = true;
+            if (sid.Equals(system) && inheritanceOk
+                && (rule.FileSystemRights & FileSystemRights.FullControl) == FileSystemRights.FullControl)
+                systemHasFullControl = true;
+            if (sid.Equals(administrators) && inheritanceOk
+                && (rule.FileSystemRights & FileSystemRights.FullControl) == FileSystemRights.FullControl)
+                administratorsHaveFullControl = true;
+        }
+        return currentCanModify && systemHasFullControl && administratorsHaveFullControl;
+    }
+
+    private const FileSystemRights WriterRights = FileSystemRights.WriteData | FileSystemRights.AppendData
+        | FileSystemRights.CreateFiles | FileSystemRights.CreateDirectories
+        | FileSystemRights.WriteExtendedAttributes | FileSystemRights.WriteAttributes
+        | FileSystemRights.DeleteSubdirectoriesAndFiles | FileSystemRights.Delete
+        | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership;
+
+    public static void RunSelfTest(string root)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        Directory.CreateDirectory(root);
+        var user = CurrentUserSid();
+        var modify = $"0x{unchecked((uint)FileSystemRights.Modify):X8}";
+        ApplyDacl(root, $"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;{modify};;;{user})");
+        if (!HasSecureAcl(root, directory: true))
+            throw new InvalidOperationException("ACL segura com Modify do quiosque foi rejeitada");
+        var directoryBefore = ReadSecurityDescriptor(root, directory: true);
+        HardenBridgeDirectory(root);
+        if (!string.Equals(directoryBefore, ReadSecurityDescriptor(root, directory: true), StringComparison.Ordinal))
+            throw new InvalidOperationException("ACL segura da pasta foi regravada sem necessidade");
+
+        var file = Path.Combine(root, "credential.dat");
+        File.WriteAllText(file, "self-test", Encoding.UTF8);
+        ApplyDacl(file, $"D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;{modify};;;{user})");
+        if (!HasSecureAcl(file, directory: false))
+            throw new InvalidOperationException("ACL segura de arquivo com Modify do quiosque foi rejeitada");
+        var fileBefore = ReadSecurityDescriptor(file, directory: false);
+        HardenCredentialFile(file, allowBuiltinUsersRead: false);
+        if (!string.Equals(fileBefore, ReadSecurityDescriptor(file, directory: false), StringComparison.Ordinal))
+            throw new InvalidOperationException("ACL segura do arquivo foi regravada sem necessidade");
+
+        ApplyDacl(root, $"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;{modify};;;{user})(A;OICI;{modify};;;AU)");
+        if (HasSecureAcl(root, directory: true))
+            throw new InvalidOperationException("ACL com escritor nao autorizado foi aceita");
+        HardenBridgeDirectory(root);
+        if (!HasSecureAcl(root, directory: true))
+            throw new InvalidOperationException("ACL insegura nao foi corrigida");
+    }
+
+    private static string ReadSecurityDescriptor(string path, bool directory)
+    {
+        FileSystemSecurity security = directory
+            ? new DirectoryInfo(path).GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner)
+            : new FileInfo(path).GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner);
+        return security.GetSecurityDescriptorSddlForm(AccessControlSections.Access | AccessControlSections.Owner);
     }
 
     private static void ApplyDacl(string path, string sddl)
