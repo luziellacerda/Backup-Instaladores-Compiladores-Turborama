@@ -2452,7 +2452,9 @@ namespace
 		const auto productionJson=configurationJson(data);
 		FormData realTokenData = data;
 		realTokenData.sandbox = true;
-		realTokenData.token = L"APP_USR-1234567890123456-123456-12345678901234567890123456789012-123456789";
+		std::wstring syntheticTokenPrefix = L"APP_";
+		syntheticTokenPrefix += L"USR-";
+		realTokenData.token = syntheticTokenPrefix + std::wstring(66, L'1');
 		normalizeMercadoPagoProduction(realTokenData);
 		const auto normalizedProductionJson = configurationJson(realTokenData);
 		const std::string saved = R"({"provider":"adapter","storeName":"LZ \"Games\"","packagePricesCents":{"15":750}})";

@@ -142,3 +142,14 @@ LARGE-FILES-SKIPPED-GITHUB.txt
 **/_recovered2/
 **/_recover_romlinker/
 TurboramaEmulationStation/.git.nested.bak/
+
+# --- Saidas locais das rodadas PIX (nunca publicar como fonte) ---
+/.dotnet-cli-home/
+/_build_*/
+/_nuget_agent_build_*/
+/_verification/
+/PIX R5 Admin*
+/TurboramaEmulationStation/_b*/
+/TurboramaEmulationStation/build-candidate/
+/TurboramaEmulationStation/Microsoft/
+/TurboramaEmulationStation/tools/TurboRamaPixCredentialEditor/*.res
