@@ -3,6 +3,31 @@
 <theme>
    <formatVersion>7</formatVersion>
    <variables>
+      <gc-title-pos>0.410 0.780</gc-title-pos>
+      <gc-title-size>0.305 0.065</gc-title-size>
+      <gc-title-font-size>0.0315</gc-title-font-size>
+      <gc-title-alignment>right</gc-title-alignment>
+      <gc-title-next-x>0.427</gc-title-next-x>
+      <gc-title-prev-x>0.393</gc-title-prev-x>
+      <gc-title-x>0.410</gc-title-x>
+      <gc-magazine-opacity-outer-far>0.35</gc-magazine-opacity-outer-far>
+      <gc-magazine-opacity-outer-near>0.55</gc-magazine-opacity-outer-near>
+      <gc-magazine-opacity-far>0.75</gc-magazine-opacity-far>
+      <gc-magazine-opacity-near>0.95</gc-magazine-opacity-near>
+      <gc-carousel-min-opacity>0.30</gc-carousel-min-opacity>
+      <gc-carousel-transition-speed>330</gc-carousel-transition-speed>
+      <gc-carousel-inactive-color>FFFFFFC2</gc-carousel-inactive-color>
+      <gc-carousel-inactive-saturation>0.48</gc-carousel-inactive-saturation>
+      <gc-carousel-active-y>0.415</gc-carousel-active-y>
+      <gc-carousel-active-scale>1.240</gc-carousel-active-scale>
+      <gc-carousel-active-tilt>-3</gc-carousel-active-tilt>
+      <gc-carousel-deactive-tilt>2</gc-carousel-deactive-tilt>
+      <gc-carousel-page-turn-enabled>false</gc-carousel-page-turn-enabled>
+      <gc-ps5-hud-opacity>1</gc-ps5-hud-opacity>
+      <gc-ps5-hud-y-shift>-0.085</gc-ps5-hud-y-shift>
+      <gc-ps5-hud-a>30D5FFFF</gc-ps5-hud-a>
+      <gc-ps5-hud-b>FFFFFFFF</gc-ps5-hud-b>
+      <gc-ps5-hud-c>0070F0FF</gc-ps5-hud-c>
       <gc-design-name>TURBORAMA GERAL</gc-design-name>
       <gc-highlight-label>EM DESTAQUE</gc-highlight-label>
       <gc-library-label>BIBLIOTECA LOCAL  /  BOX3D</gc-library-label>
@@ -11,6 +36,15 @@
       <gc-accent-b>E50914FF</gc-accent-b>
       <gc-accent-c>FFB300FF</gc-accent-c>
       <gc-accent-soft>FFF1A8FF</gc-accent-soft>
+
+      <gc-footer-line-a>FF0000FF</gc-footer-line-a>
+      <gc-footer-line-b>00FF00FF</gc-footer-line-b>
+      <gc-footer-line-c>0000FFFF</gc-footer-line-c>
+      <gc-footer-line-d>FFFFFFFF</gc-footer-line-d>
+      <gc-footer-glow-a>FF000058</gc-footer-glow-a>
+      <gc-footer-glow-b>00FF0058</gc-footer-glow-b>
+      <gc-footer-glow-c>0000FF58</gc-footer-glow-c>
+      <gc-footer-glow-d>FFFFFF58</gc-footer-glow-d>
 
       <gc-base>050505FF</gc-base>
       <gc-top>050505F8</gc-top>

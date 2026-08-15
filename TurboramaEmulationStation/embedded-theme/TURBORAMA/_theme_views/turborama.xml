@@ -25,12 +25,6 @@ https://githugam.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X
          <linearSmooth>true</linearSmooth>
       </image>
 
-
-
-
-
-
-
       <imagegrid name="gamegrid">
          <imageSource>${subset.grid-origin}</imageSource>
          <imageSource ifSubset="grid-origin:fanart|default">fanart</imageSource>

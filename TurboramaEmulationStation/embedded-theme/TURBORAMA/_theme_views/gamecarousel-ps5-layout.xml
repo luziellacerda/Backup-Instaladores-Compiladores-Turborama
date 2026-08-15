@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<theme>
+   <formatVersion>7</formatVersion>
+
+   <!-- PS5 proof layout: title overlays only the lower-left video area. -->
+   <view name="gamecarousel">
+      <image name="ps5GameTitleBackdrop" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.235 0.816</pos>
+         <size>0.470 0.076</size>
+         <color>050505E8</color>
+         <colorEnd>05050500</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <roundCorners>0.006</roundCorners>
+         <zIndex>80</zIndex>
+         <storyboard event="open">
+            <animation property="opacity" from="0" to="1" begin="260" duration="420" mode="easeOutCubic" />
+            <animation property="y" from="0.846" to="0.816" begin="260" duration="480" mode="easeOutCubic" />
+         </storyboard>
+         <storyboard event="activateNext">
+            <animation property="opacity" from="0.20" to="1" duration="210" mode="easeOut" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="opacity" from="0.20" to="1" duration="210" mode="easeOut" />
+         </storyboard>
+      </image>
+
+      <image name="ps5GameTitleRail" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.247 0.829</pos>
+         <size>0.004 0.048</size>
+         <color>E50914FF</color>
+         <roundCorners>0.002</roundCorners>
+         <zIndex>83</zIndex>
+         <storyboard event="open">
+            <animation property="scale" from="0.05" to="1" begin="340" duration="420" mode="easeOutCubic" />
+         </storyboard>
+      </image>
+
+      <text name="md_name">
+         <pos>0.260 0.825</pos>
+         <size>0.425 0.060</size>
+         <fontSize>0.028</fontSize>
+         <alignment>left</alignment>
+         <verticalAlignment>center</verticalAlignment>
+         <singleLineScroll>true</singleLineScroll>
+         <color>FFFFFFFF</color>
+         <glowColor>000000E8</glowColor>
+         <glowSize>1</glowSize>
+         <glowOffset>2 2</glowOffset>
+         <zIndex>84</zIndex>
+         <storyboard event="open">
+            <animation property="y" from="0.865" to="0.825" begin="340" duration="520" mode="easeOutCubic" />
+            <animation property="opacity" from="0" to="1" begin="340" duration="400" mode="easeOut" />
+         </storyboard>
+         <storyboard event="activateNext">
+            <animation property="opacity" from="0" to="1" duration="210" mode="easeOutCubic" />
+            <animation property="x" from="0.282" to="0.260" duration="250" mode="easeOutCubic" />
+            <animation property="y" from="0.842" to="0.825" duration="250" mode="easeOutCubic" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="opacity" from="0" to="1" duration="210" mode="easeOutCubic" />
+            <animation property="x" from="0.238" to="0.260" duration="250" mode="easeOutCubic" />
+            <animation property="y" from="0.842" to="0.825" duration="250" mode="easeOutCubic" />
+         </storyboard>
+      </text>
+
+      <image name="ps5CarouselFocus">
+         <size>0.176 0.322</size>
+         <pos>0.500 0.254</pos>
+      </image>
+   </view>
+</theme>

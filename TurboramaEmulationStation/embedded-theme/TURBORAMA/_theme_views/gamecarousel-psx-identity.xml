@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Identidade visual do PlayStation original aplicada ao layout compartilhado. -->
+<theme>
+   <formatVersion>7</formatVersion>
+
+   <view name="gamecarousel">
+      <image name="mediaSurface">
+         <color>000000E8</color>
+         <colorEnd>8F8F8F9C</colorEnd>
+         <gradientType>vertical</gradientType>
+      </image>
+      <image name="infoSurface">
+         <color>000000E8</color>
+         <colorEnd>8F8F8F9C</colorEnd>
+         <gradientType>vertical</gradientType>
+      </image>
+   </view>
+</theme>

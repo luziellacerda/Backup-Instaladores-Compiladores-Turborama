@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Layout compacto compartilhado por todos os sistemas. -->
+<theme>
+   <formatVersion>7</formatVersion>
+
+   <view name="screen">
+      <text name="clock">
+         <x>0.925</x>
+         <y>0.024</y>
+         <size>0.055 0.028</size>
+         <fontSize>0.022</fontSize>
+      </text>
+   </view>
+
+   <view name="gamecarousel">
+      <image name="brandRail">
+         <visible>false</visible>
+      </image>
+      <text name="systemIdentity">
+         <visible>false</visible>
+      </text>
+      <text name="clockCaption">
+         <visible>false</visible>
+      </text>
+      <text name="libraryCount">
+         <pos>0.730 0.025</pos>
+         <size>0.145 0.025</size>
+         <fontSize>0.014</fontSize>
+      </text>
+      <image name="clockDivider">
+         <pos>0.891 0.020</pos>
+         <size>0.001 0.037</size>
+      </image>
+
+      <text name="brandName">
+         <pos>0.455 0.854</pos>
+         <size>0.260 0.034</size>
+         <fontSize>0.0252</fontSize>
+         <alignment>right</alignment>
+         <glowColor>000000C0</glowColor>
+         <glowSize>0.65</glowSize>
+         <glowOffset>1 1</glowOffset>
+      </text>
+      <text name="libraryMode">
+         <pos>0.455 0.895</pos>
+         <size>0.260 0.028</size>
+         <fontSize>0.018</fontSize>
+         <alignment>right</alignment>
+         <glowColor>000000C0</glowColor>
+         <glowSize>0.55</glowSize>
+         <glowOffset>1 1</glowOffset>
+      </text>
+
+      <image name="headerSpectrum">
+         <pos>0.032 0.068</pos>
+      </image>
+
+      <image name="carouselDepth">
+         <pos>0 0.068</pos>
+         <size>1 0.280</size>
+      </image>
+
+      <text name="carouselEyebrow">
+         <pos>0.040 0.078</pos>
+      </text>
+      <text name="carouselNavigation">
+         <pos>0.790 0.078</pos>
+      </text>
+
+      <image name="gameNamesBackdrop" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0.5 0.5</origin>
+         <pos>0.4925 0.844</pos>
+         <size>0.495 0.158</size>
+         <color>000000FF</color>
+         <colorEnd>00000000</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <rotation>180</rotation>
+         <roundCorners>0.006</roundCorners>
+         <zIndex>81</zIndex>
+      </image>
+
+      <text name="md_name">
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <color>FFFFFFFF</color>
+         <glowColor>000000C0</glowColor>
+         <glowSize>0.65</glowSize>
+         <glowOffset>1 1</glowOffset>
+         <storyboard event="activateNext">
+            <animation property="color" from="D6D6D6FF" to="FFFFFFFF" duration="150" mode="easeOutCubic" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="color" from="D6D6D6FF" to="FFFFFFFF" duration="150" mode="easeOutCubic" />
+         </storyboard>
+      </text>
+      <image name="gameTitleRule" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.575 0.844</pos>
+         <size>0.140 0.002</size>
+         <color>FFFFFF8A</color>
+         <zIndex>83</zIndex>
+      </image>
+      <image name="gameTitleRuleAccent" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <pos>0.685 0.844</pos>
+         <size>0.030 0.002</size>
+         <color>${gc-accent-b}</color>
+         <zIndex>84</zIndex>
+         <storyboard event="activateNext">
+            <animation property="w" from="0.005" to="0.030" duration="180" mode="easeOutCubic" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="w" from="0.005" to="0.030" duration="180" mode="easeOutCubic" />
+         </storyboard>
+      </image>
+
+      <gamecarousel name="gamecarousel">
+         <pos>0.038 0.067</pos>
+         <size>0.924 0.285</size>
+         <logoSize>0.1172 0.760</logoSize>
+         <maxLogoCount>9</maxLogoCount>
+      </gamecarousel>
+
+      <image name="carouselAxis">
+         <pos>0.040 0.348</pos>
+      </image>
+
+      <image name="lowerStageFade" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0 0</origin>
+         <pos>0 0.318</pos>
+         <size>1 0.080</size>
+         <color>00000000</color>
+         <colorEnd>000000F5</colorEnd>
+         <gradientType>vertical</gradientType>
+         <zIndex>6</zIndex>
+      </image>
+      <image name="lowerStageBase" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0 0</origin>
+         <pos>0 0.398</pos>
+         <size>1 0.545</size>
+         <color>000000F5</color>
+         <zIndex>6</zIndex>
+      </image>
+
+      <image name="mediaShadow">
+         <pos>0.031 0.375</pos>
+         <size>0.713 0.555</size>
+      </image>
+      <image name="mediaSurface">
+         <pos>0.035 0.371</pos>
+         <size>0.705 0.552</size>
+         <color>000000FF</color>
+         <colorEnd>000000FF</colorEnd>
+      </image>
+      <image name="mediaTopLight">
+         <pos>0.035 0.36975</pos>
+      </image>
+      <image name="mediaSignal">
+         <pos>0.054 0.391</pos>
+      </image>
+      <text name="mediaCaption">
+         <pos>0.068 0.382</pos>
+      </text>
+      <text name="mediaStatusImage">
+         <pos>0.595 0.383</pos>
+      </text>
+      <text name="mediaStatusVideo">
+         <pos>0.595 0.383</pos>
+      </text>
+
+      <image name="selectedHeroPageOuterFar">
+         <size>0.138 0.382</size>
+         <offset>0.010 -0.031</offset>
+      </image>
+      <image name="selectedHeroPageOuterNear">
+         <size>0.148 0.408</size>
+         <offset>0.010 -0.031</offset>
+      </image>
+      <image name="selectedHeroPageFar">
+         <size>0.159 0.432</size>
+         <offset>0.010 -0.031</offset>
+      </image>
+      <image name="selectedHeroPageNear">
+         <size>0.170 0.456</size>
+         <offset>0.010 -0.030</offset>
+      </image>
+      <image name="selectedHeroCover">
+         <size>0.172 0.480</size>
+         <offset>0.018 -0.030</offset>
+      </image>
+      <screenshader name="selectedHeroNeonEdge">
+         <pos>0.037 0.422</pos>
+         <size>0.207 0.483</size>
+      </screenshader>
+
+      <image name="videoViewport">
+         <pos>0.4925 0.664</pos>
+         <size>0.495 0.518</size>
+      </image>
+      <video name="gameplayFolderVideo">
+         <pos>0.4925 0.664</pos>
+         <size>0.487 0.510</size>
+      </video>
+      <image name="selectedMediaMix">
+         <pos>0.4925 0.664</pos>
+         <size>0.487 0.510</size>
+      </image>
+      <text name="missingMediaMessage">
+         <pos>0.275 0.651</pos>
+      </text>
+
+      <image name="infoShadow">
+         <pos>0.751 0.375</pos>
+         <size>0.218 0.555</size>
+      </image>
+      <image name="infoSurface">
+         <pos>0.755 0.371</pos>
+         <size>0.210 0.552</size>
+         <color>000000FF</color>
+         <colorEnd>000000FF</colorEnd>
+      </image>
+      <image name="infoTopLight">
+         <pos>0.755 0.36975</pos>
+      </image>
+      <text name="infoCaption">
+         <pos>0.772 0.382</pos>
+         <size>0.110 0.034</size>
+         <fontSize>0.019</fontSize>
+      </text>
+      <text name="ratingStars">
+         <pos>0.884 0.382</pos>
+         <size>0.066 0.034</size>
+         <fontSize>0.018</fontSize>
+      </text>
+      <image name="infoHeadingLine">
+         <pos>0.772 0.418</pos>
+      </image>
+      <text name="descriptionLabel">
+         <pos>0.772 0.433</pos>
+         <size>0.120 0.027</size>
+         <fontSize>0.017</fontSize>
+      </text>
+      <text name="md_description">
+         <pos>0.772 0.458</pos>
+         <size>0.178 0.176</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.01905</fontSize>
+         <lineSpacing>1.16</lineSpacing>
+         <color>FFFFFFFF</color>
+      </text>
+      <text name="missingDescription">
+         <pos>0.772 0.458</pos>
+         <size>0.178 0.090</size>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
+         <fontSize>0.019</fontSize>
+         <lineSpacing>1.16</lineSpacing>
+      </text>
+      <text name="developerLabel,publisherLabel,genreLabel,releaseLabel">
+         <fontSize>0.0135</fontSize>
+         <color>D0D0D0FF</color>
+      </text>
+      <text name="md_developer,md_publisher,md_genre">
+         <fontSize>0.0173</fontSize>
+         <color>FFFFFFFF</color>
+      </text>
+      <datetime name="md_releasedate">
+         <fontSize>0.0173</fontSize>
+         <color>FFFFFFFF</color>
+      </datetime>
+      <text name="playersLabel,languageLabel,playCountLabel">
+         <fontSize>0.0125</fontSize>
+         <color>D0D0D0FF</color>
+      </text>
+      <text name="md_players,languageValue,md_playcount">
+         <fontSize>0.017</fontSize>
+         <color>FFFFFFFF</color>
+      </text>
+      <text name="gameTimeLabel">
+         <fontSize>0.0125</fontSize>
+         <color>D0D0D0FF</color>
+      </text>
+      <text name="gameTimeValue,lastPlayedValue">
+         <fontSize>0.0145</fontSize>
+         <color>FFFFFFFF</color>
+      </text>
+   </view>
+</theme>

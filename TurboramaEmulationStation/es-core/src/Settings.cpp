@@ -592,12 +592,15 @@ std::string Settings::getString(const std::string& name)
 
 bool Settings::setString(const std::string& name, const std::string& value)
 {
-	if (mStringMap.count(name) == 0 || mStringMap[name] != value)
+	// The commercial build always uses the protected embedded TurboRama theme.
+	const std::string resolvedValue = name == "ThemeSet" ? "__turborama__" : value;
+
+	if (mStringMap.count(name) == 0 || mStringMap[name] != resolvedValue)
 	{
-		if (value == "" && mStringMap.count(name) == 0)
+		if (resolvedValue == "" && mStringMap.count(name) == 0)
 			return false;
 
-		mStringMap[name] = value;
+		mStringMap[name] = resolvedValue;
 
 		if (std::find(settings_dont_save.cbegin(), settings_dont_save.cend(), name) == settings_dont_save.cend())
 			mWasChanged = true;

@@ -1,15 +1,8 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Visual PS5 compartilhado. Nomes do sistema e cores do rodape ficam intactos. -->
 <theme>
    <formatVersion>7</formatVersion>
    <variables>
-      <gc-footer-line-a>8F96A3FF</gc-footer-line-a>
-      <gc-footer-line-b>FFFFFFFF</gc-footer-line-b>
-      <gc-footer-line-c>8F96A3FF</gc-footer-line-c>
-      <gc-footer-line-d>FFFFFFFF</gc-footer-line-d>
-      <gc-footer-glow-a>8F96A358</gc-footer-glow-a>
-      <gc-footer-glow-b>FFFFFF58</gc-footer-glow-b>
-      <gc-footer-glow-c>8F96A358</gc-footer-glow-c>
-      <gc-footer-glow-d>FFFFFF58</gc-footer-glow-d>
       <gc-title-pos>0.410 0.780</gc-title-pos>
       <gc-title-size>0.305 0.065</gc-title-size>
       <gc-title-font-size>0.0315</gc-title-font-size>
@@ -17,10 +10,12 @@
       <gc-title-next-x>0.427</gc-title-next-x>
       <gc-title-prev-x>0.393</gc-title-prev-x>
       <gc-title-x>0.410</gc-title-x>
+
       <gc-magazine-opacity-outer-far>0.35</gc-magazine-opacity-outer-far>
       <gc-magazine-opacity-outer-near>0.55</gc-magazine-opacity-outer-near>
       <gc-magazine-opacity-far>0.75</gc-magazine-opacity-far>
       <gc-magazine-opacity-near>0.95</gc-magazine-opacity-near>
+
       <gc-carousel-min-opacity>0.30</gc-carousel-min-opacity>
       <gc-carousel-transition-speed>330</gc-carousel-transition-speed>
       <gc-carousel-inactive-color>FFFFFFC2</gc-carousel-inactive-color>
@@ -30,18 +25,18 @@
       <gc-carousel-active-tilt>-3</gc-carousel-active-tilt>
       <gc-carousel-deactive-tilt>2</gc-carousel-deactive-tilt>
       <gc-carousel-page-turn-enabled>false</gc-carousel-page-turn-enabled>
+
       <gc-ps5-hud-opacity>1</gc-ps5-hud-opacity>
       <gc-ps5-hud-y-shift>-0.085</gc-ps5-hud-y-shift>
       <gc-ps5-hud-a>30D5FFFF</gc-ps5-hud-a>
       <gc-ps5-hud-b>FFFFFFFF</gc-ps5-hud-b>
       <gc-ps5-hud-c>0070F0FF</gc-ps5-hud-c>
-      <gc-design-name>PLAYSTATION 5</gc-design-name>
-      <gc-highlight-label>PLAYSTATION 5  /  DESTAQUES</gc-highlight-label>
-      <gc-library-label>PS5  /  BIBLIOTECA LOCAL</gc-library-label>
+
       <gc-accent-a>FFFFFFFF</gc-accent-a>
       <gc-accent-b>E50914FF</gc-accent-b>
       <gc-accent-c>FFB300FF</gc-accent-c>
       <gc-accent-soft>FFF1A8FF</gc-accent-soft>
+
       <gc-base>050505FF</gc-base>
       <gc-top>050505F8</gc-top>
       <gc-top-end>08080838</gc-top-end>
@@ -56,6 +51,7 @@
       <gc-band>141414E6</gc-band>
       <gc-band-end>1B1B1BE0</gc-band-end>
       <gc-footer>050505FC</gc-footer>
+
       <gc-fanart-opacity>0.44</gc-fanart-opacity>
       <gc-fanart-exposure>0.74</gc-fanart-exposure>
       <gc-fanart-saturation>0.66</gc-fanart-saturation>

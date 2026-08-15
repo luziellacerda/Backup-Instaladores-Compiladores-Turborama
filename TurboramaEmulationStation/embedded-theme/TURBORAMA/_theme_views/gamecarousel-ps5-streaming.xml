@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<theme>
+   <formatVersion>7</formatVersion>
+
+   <!-- PS5 streaming layer restricted to the header and upper carousel. -->
+   <view name="gamecarousel">
+      <image name="md_fanart">
+         <storyboard event="open">
+            <animation property="scale" from="1.085" to="1.000" duration="1250" mode="easeOutCubic" />
+            <animation property="opacity" from="0.20" to="0.58" duration="720" mode="easeOutCubic" />
+         </storyboard>
+         <storyboard event="activateNext">
+            <animation property="x" from="0.515" to="0.500" duration="420" mode="easeOutCubic" />
+            <animation property="opacity" from="0.30" to="0.58" duration="360" mode="easeOut" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="x" from="0.485" to="0.500" duration="420" mode="easeOutCubic" />
+            <animation property="opacity" from="0.30" to="0.58" duration="360" mode="easeOut" />
+         </storyboard>
+      </image>
+
+      <image name="globalDimmer">
+         <color>0000008C</color>
+      </image>
+
+      <image name="ps5StreamingWash" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0 0</origin>
+         <pos>0 0</pos>
+         <size>0.58 1</size>
+         <color>E509142E</color>
+         <colorEnd>00000000</colorEnd>
+         <gradientType>horizontal</gradientType>
+         <zIndex>5</zIndex>
+         <storyboard event="open">
+            <animation property="opacity" from="0" to="1" duration="900" mode="easeOutCubic" />
+         </storyboard>
+      </image>
+
+      <image name="ps5CarouselFocus" extra="static">
+         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         <origin>0.5 0.5</origin>
+         <pos>0.500 0.258</pos>
+         <size>0.142 0.286</size>
+         <color>E5091400</color>
+         <roundCorners>0.012</roundCorners>
+         <zIndex>7</zIndex>
+         <storyboard event="open">
+            <animation property="color" from="E5091400" to="E5091438" begin="180" duration="520" mode="easeOutCubic" />
+            <animation property="scale" from="0.82" to="1" begin="180" duration="520" mode="easeOutCubic" />
+         </storyboard>
+         <storyboard event="activateNext">
+            <animation property="x" from="0.515" to="0.500" duration="260" mode="easeOutCubic" />
+            <animation property="scale" from="0.88" to="1" duration="260" mode="easeOutCubic" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="x" from="0.485" to="0.500" duration="260" mode="easeOutCubic" />
+            <animation property="scale" from="0.88" to="1" duration="260" mode="easeOutCubic" />
+         </storyboard>
+      </image>
+
+      <image name="brandRail">
+         <color>E50914FF</color>
+         <colorEnd>B20710FF</colorEnd>
+         <storyboard event="open">
+            <animation property="scale" from="0.05" to="1" duration="420" mode="easeOutCubic" />
+         </storyboard>
+      </image>
+
+      <text name="brandName">
+         <color>E50914FF</color>
+         <storyboard event="open">
+            <animation property="x" from="0.031" to="0.047" duration="520" mode="easeOutCubic" />
+            <animation property="opacity" from="0" to="1" duration="380" mode="easeOut" />
+         </storyboard>
+      </text>
+
+      <text name="systemIdentity">
+         <color>F5F5F1FF</color>
+         <storyboard event="open">
+            <animation property="x" from="0.031" to="0.047" begin="80" duration="520" mode="easeOutCubic" />
+            <animation property="opacity" from="0" to="1" begin="80" duration="400" mode="easeOut" />
+         </storyboard>
+      </text>
+
+      <text name="md_name">
+         <alignment>left</alignment>
+         <fontSize>0.031</fontSize>
+         <pos>0.230 0.022</pos>
+         <storyboard event="open">
+            <animation property="y" from="0.006" to="0.022" begin="100" duration="560" mode="easeOutCubic" />
+            <animation property="opacity" from="0" to="1" begin="100" duration="440" mode="easeOut" />
+         </storyboard>
+         <storyboard event="activateNext">
+            <animation property="opacity" from="0" to="1" duration="210" mode="easeOutCubic" />
+            <animation property="x" from="0.252" to="0.230" duration="250" mode="easeOutCubic" />
+         </storyboard>
+         <storyboard event="activatePrev">
+            <animation property="opacity" from="0" to="1" duration="210" mode="easeOutCubic" />
+            <animation property="x" from="0.208" to="0.230" duration="250" mode="easeOutCubic" />
+         </storyboard>
+      </text>
+
+      <image name="headerSpectrum">
+         <color>E50914FF</color>
+         <colorEnd>FFFFFF00</colorEnd>
+         <storyboard event="open">
+            <animation property="scale" from="0.02" to="1" duration="780" mode="easeOutCubic" />
+            <animation property="opacity" from="0" to="1" duration="480" mode="easeOut" />
+         </storyboard>
+      </image>
+
+      <image name="carouselDepth">
+         <color>181818E8</color>
+         <colorEnd>050505F2</colorEnd>
+         <storyboard event="open">
+            <animation property="opacity" from="0" to="1" duration="650" mode="easeOut" />
+         </storyboard>
+      </image>
+
+      <text name="carouselEyebrow">
+         <color>E50914FF</color>
+         <storyboard event="open">
+            <animation property="x" from="0.020" to="0.040" begin="180" duration="520" mode="easeOutCubic" />
+            <animation property="opacity" from="0" to="1" begin="180" duration="380" mode="easeOut" />
+         </storyboard>
+      </text>
+
+      <text name="carouselNavigation">
+         <color>F5F5F1FF</color>
+         <storyboard event="open">
+            <animation property="x" from="0.810" to="0.790" begin="220" duration="520" mode="easeOutCubic" />
+            <animation property="opacity" from="0" to="1" begin="220" duration="380" mode="easeOut" />
+         </storyboard>
+      </text>
+
+      <image name="carouselAxis">
+         <color>E50914FF</color>
+         <colorEnd>FFFFFF00</colorEnd>
+         <storyboard event="open">
+            <animation property="scale" from="0.02" to="1" begin="260" duration="720" mode="easeOutCubic" />
+            <animation property="opacity" from="0" to="1" begin="260" duration="440" mode="easeOut" />
+         </storyboard>
+      </image>
+   </view>
+</theme>

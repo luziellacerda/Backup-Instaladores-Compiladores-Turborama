@@ -2,29 +2,40 @@
 <theme>
    <formatVersion>7</formatVersion>
    <variables>
+      <gc-footer-line-a>E60012FF</gc-footer-line-a>
+      <gc-footer-line-b>FFFFFFFF</gc-footer-line-b>
+      <gc-footer-line-c>E60012FF</gc-footer-line-c>
+      <gc-footer-line-d>FFFFFFFF</gc-footer-line-d>
+      <gc-footer-glow-a>E6001258</gc-footer-glow-a>
+      <gc-footer-glow-b>FFFFFF58</gc-footer-glow-b>
+      <gc-footer-glow-c>E6001258</gc-footer-glow-c>
+      <gc-footer-glow-d>FFFFFF58</gc-footer-glow-d>
       <gc-design-name>PLAYSTATION 3</gc-design-name>
       <gc-highlight-label>PLAYSTATION 3  /  DESTAQUES</gc-highlight-label>
       <gc-library-label>PS3  /  BIBLIOTECA LOCAL</gc-library-label>
       <gc-accent-a>FFFFFFFF</gc-accent-a>
-      <gc-accent-b>E50914FF</gc-accent-b>
-      <gc-accent-c>FFB300FF</gc-accent-c>
-      <gc-accent-soft>FFF1A8FF</gc-accent-soft>
-      <gc-base>050505FF</gc-base>
-      <gc-top>050505F8</gc-top>
-      <gc-top-end>08080838</gc-top-end>
-      <gc-bottom>08080838</gc-bottom>
-      <gc-bottom-end>030303FB</gc-bottom-end>
-      <gc-side>030303F2</gc-side>
-      <gc-side-end>10101012</gc-side-end>
-      <gc-carousel>10101078</gc-carousel>
-      <gc-carousel-end>050505B8</gc-carousel-end>
-      <gc-panel>0A0A0AF6</gc-panel>
-      <gc-panel-end>181818F4</gc-panel-end>
-      <gc-band>141414E6</gc-band>
-      <gc-band-end>1B1B1BE0</gc-band-end>
-      <gc-footer>050505FC</gc-footer>
-      <gc-fanart-opacity>0.44</gc-fanart-opacity>
-      <gc-fanart-exposure>0.74</gc-fanart-exposure>
-      <gc-fanart-saturation>0.66</gc-fanart-saturation>
+      <gc-accent-b>E60012FF</gc-accent-b>
+      <gc-accent-c>FF4B55FF</gc-accent-c>
+      <gc-accent-soft>FF9CA3FF</gc-accent-soft>
+      <gc-ps5-hud-a>E60012FF</gc-ps5-hud-a>
+      <gc-ps5-hud-b>FFFFFFFF</gc-ps5-hud-b>
+      <gc-ps5-hud-c>FF4B55FF</gc-ps5-hud-c>
+      <gc-base>080203FF</gc-base>
+      <gc-top>1C0608F8</gc-top>
+      <gc-top-end>E6001238</gc-top-end>
+      <gc-bottom>26090D78</gc-bottom>
+      <gc-bottom-end>080203FB</gc-bottom-end>
+      <gc-side>140406F2</gc-side>
+      <gc-side-end>E6001212</gc-side-end>
+      <gc-carousel>5C071078</gc-carousel>
+      <gc-carousel-end>080203B8</gc-carousel-end>
+      <gc-panel>120507F6</gc-panel>
+      <gc-panel-end>661D25F4</gc-panel-end>
+      <gc-band>260A0FE6</gc-band>
+      <gc-band-end>781824E0</gc-band-end>
+      <gc-footer>080203FC</gc-footer>
+      <gc-fanart-opacity>0.42</gc-fanart-opacity>
+      <gc-fanart-exposure>0.76</gc-fanart-exposure>
+      <gc-fanart-saturation>0.62</gc-fanart-saturation>
    </variables>
 </theme>

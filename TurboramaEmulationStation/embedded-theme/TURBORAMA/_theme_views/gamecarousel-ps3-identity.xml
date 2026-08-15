@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Identidade visual PS3 aplicada sobre o layout compartilhado. -->
+<theme>
+   <formatVersion>7</formatVersion>
+
+   <view name="gamecarousel">
+      <image name="mediaSurface">
+         <color>000000E8</color>
+         <colorEnd>A4132296</colorEnd>
+         <gradientType>vertical</gradientType>
+      </image>
+      <image name="infoSurface">
+         <color>000000E8</color>
+         <colorEnd>A4132296</colorEnd>
+         <gradientType>vertical</gradientType>
+      </image>
+   </view>
+</theme>

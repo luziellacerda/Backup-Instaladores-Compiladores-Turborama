@@ -2,6 +2,14 @@
 <theme>
    <formatVersion>7</formatVersion>
    <variables>
+      <gc-footer-line-a>107C10FF</gc-footer-line-a>
+      <gc-footer-line-b>FFFFFFFF</gc-footer-line-b>
+      <gc-footer-line-c>107C10FF</gc-footer-line-c>
+      <gc-footer-line-d>FFFFFFFF</gc-footer-line-d>
+      <gc-footer-glow-a>107C1058</gc-footer-glow-a>
+      <gc-footer-glow-b>FFFFFF58</gc-footer-glow-b>
+      <gc-footer-glow-c>107C1058</gc-footer-glow-c>
+      <gc-footer-glow-d>FFFFFF58</gc-footer-glow-d>
       <gc-design-name>XBOX</gc-design-name>
       <gc-highlight-label>XBOX  /  ORIGINAIS</gc-highlight-label>
       <gc-library-label>XBOX  /  BIBLIOTECA LOCAL</gc-library-label>

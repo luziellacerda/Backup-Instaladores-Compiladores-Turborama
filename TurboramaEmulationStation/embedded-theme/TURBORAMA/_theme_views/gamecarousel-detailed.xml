@@ -107,6 +107,98 @@
          <zIndex>5</zIndex>
       </image>
 
+      <!-- Feixe volumetrico diagonal feito apenas com camadas nativas. -->
+      <container name="topDiagonalSweep" extra="static">
+         <origin>0.5 0</origin>
+         <rotationOrigin>0.5 0</rotationOrigin>
+         <pos>0.92 -0.28</pos>
+         <size>0.440 1.620</size>
+         <rotation>32</rotation>
+         <opacity>0.52</opacity>
+         <zIndex>5.5</zIndex>
+         <storyboard repeat="forever">
+            <animation property="opacity" from="0.52" to="0.76" duration="1700" mode="easeInOut" />
+            <animation property="opacity" from="0.76" to="0.61" begin="1700" duration="900" mode="easeInOut" />
+            <animation property="opacity" from="0.61" to="0.84" begin="2600" duration="130" mode="easeOut" />
+            <animation property="opacity" from="0.84" to="0.67" begin="2730" duration="210" mode="easeIn" />
+            <animation property="opacity" from="0.67" to="0.77" begin="2940" duration="100" mode="easeOut" />
+            <animation property="opacity" from="0.77" to="0.63" begin="3040" duration="280" mode="easeIn" />
+            <animation property="opacity" from="0.63" to="0.74" begin="3320" duration="1100" mode="easeInOut" />
+            <animation property="opacity" from="0.74" to="0.52" begin="4420" duration="1400" mode="easeInOut" />
+         </storyboard>
+
+         <image name="topDiagonalOuterLeft"
+                pos="0 0"
+                size="0.500 1"
+                color="176BFF00"
+                colorEnd="176BFF58"
+                gradientType="horizontal"
+                zIndex="1">
+            <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         </image>
+         <image name="topDiagonalOuterRight"
+                pos="0.500 0"
+                size="0.500 1"
+                color="176BFF58"
+                colorEnd="176BFF00"
+                gradientType="horizontal"
+                zIndex="1">
+            <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         </image>
+
+         <image name="topDiagonalGlowLeft"
+                pos="0 0"
+                size="0.500 1"
+                color="30D5FF00"
+                colorEnd="30D5FFB8"
+                gradientType="horizontal"
+                zIndex="2">
+            <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         </image>
+         <image name="topDiagonalGlowRight"
+                pos="0.500 0"
+                size="0.500 1"
+                color="30D5FFB8"
+                colorEnd="30D5FF00"
+                gradientType="horizontal"
+                zIndex="2">
+            <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+         </image>
+
+         <container name="topDiagonalInnerBloom"
+                    pos="0 0"
+                    size="1 1"
+                    opacity="0.42"
+                    zIndex="3">
+            <storyboard repeat="forever">
+               <animation property="opacity" from="0.32" to="0.58" duration="980" mode="easeInOut" />
+               <animation property="opacity" from="0.58" to="0.40" begin="980" duration="720" mode="easeInOut" />
+               <animation property="opacity" from="0.40" to="0.66" begin="1700" duration="120" mode="easeOut" />
+               <animation property="opacity" from="0.66" to="0.36" begin="1820" duration="500" mode="easeIn" />
+               <animation property="opacity" from="0.36" to="0.48" begin="2320" duration="1300" mode="easeInOut" />
+               <animation property="opacity" from="0.48" to="0.32" begin="3620" duration="1000" mode="easeInOut" />
+            </storyboard>
+            <image name="topDiagonalInnerLeft"
+                   pos="0.300 0"
+                   size="0.200 1"
+                   color="E6FAFF00"
+                   colorEnd="F2FDFFB0"
+                   gradientType="horizontal"
+                   zIndex="1">
+               <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+            </image>
+            <image name="topDiagonalInnerRight"
+                   pos="0.500 0"
+                   size="0.200 1"
+                   color="F2FDFFB0"
+                   colorEnd="E6FAFF00"
+                   gradientType="horizontal"
+                   zIndex="1">
+               <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+            </image>
+         </container>
+      </container>
+
       <!-- ============================================================ -->
       <!-- CABEÇALHO                                                     -->
       <!-- ============================================================ -->
@@ -153,12 +245,12 @@
       </text>
 
       <text name="md_name">
-         <pos>0.230 0.022</pos>
-         <size>0.470 0.061</size>
+         <pos>${gc-title-pos}</pos>
+         <size>${gc-title-size}</size>
          <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
-         <fontSize>0.029</fontSize>
+         <fontSize>${gc-title-font-size}</fontSize>
          <color>FFFFFFFF</color>
-         <alignment>center</alignment>
+         <alignment>${gc-title-alignment}</alignment>
          <verticalAlignment>center</verticalAlignment>
          <singleLineScroll>true</singleLineScroll>
          <glowColor>000000A0</glowColor>
@@ -167,11 +259,11 @@
          <zIndex>84</zIndex>
          <storyboard event="activateNext">
             <animation property="opacity" from="0.12" to="1" duration="180" mode="easeOutCubic" />
-            <animation property="x" from="0.247" to="0.230" duration="210" mode="easeOutCubic" />
+            <animation property="x" from="${gc-title-next-x}" to="${gc-title-x}" duration="210" mode="easeOutCubic" />
          </storyboard>
          <storyboard event="activatePrev">
             <animation property="opacity" from="0.12" to="1" duration="180" mode="easeOutCubic" />
-            <animation property="x" from="0.213" to="0.230" duration="210" mode="easeOutCubic" />
+            <animation property="x" from="${gc-title-prev-x}" to="${gc-title-x}" duration="210" mode="easeOutCubic" />
          </storyboard>
       </text>
 
@@ -289,8 +381,8 @@
          <scaledLogoSpacing>0.940</scaledLogoSpacing>
          <maxLogoCount>8</maxLogoCount>
          <logoAlignment>center</logoAlignment>
-         <minLogoOpacity>0.44</minLogoOpacity>
-         <transitionSpeed>285</transitionSpeed>
+         <minLogoOpacity>${gc-carousel-min-opacity}</minLogoOpacity>
+         <transitionSpeed>${gc-carousel-transition-speed}</transitionSpeed>
          <defaultTransition>slide</defaultTransition>
          <imageSource>boxart</imageSource>
          <color>00000000</color>
@@ -313,24 +405,16 @@
                       linearSmooth="true">
                   <path>firstfile(directory({game:path}) + "/media/box3/" + {game:stem} + ".png", directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</path>
                   <visible>exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</visible>
-                  <color>FFFFFF00</color>
-                  <zIndex>12030</zIndex>
-                  <shader>
-                     <path>${themePath}/_theme_inc/box3d-outline.glsl</path>
-                     <enabled>false</enabled>
-                     <outlineWidth>3.8</outlineWidth>
-                     <speed>0.0038</speed>
-                     <outlineColorA>${gc-accent-c}</outlineColorA>
-                     <outlineColorB>${gc-accent-soft}</outlineColorB>
-                  </shader>
+                  <color>00000000</color>
+                  <zIndex>12015</zIndex>
                   <storyboard event="activate">
-                     <animation property="color" to="FFFFFFFF" duration="150" mode="easeOut" />
-                     <animation property="shader.enabled" from="0" to="1" duration="1" />
-                     <animation property="y" to="0.450" duration="210" mode="easeOutCubic" />
+                     <animation property="color" to="00000088" begin="170" duration="150" mode="easeOut" />
+                     <animation property="scale" from="1.00" to="1.055" begin="150" duration="180" mode="easeOutCubic" />
+                     <animation property="y" to="${gc-carousel-active-y}" duration="230" mode="easeOutCubic" />
                   </storyboard>
                   <storyboard event="deactivate">
-                     <animation property="color" to="FFFFFF00" duration="100" mode="easeOut" />
-                     <animation property="shader.enabled" to="0" begin="100" duration="1" />
+                     <animation property="color" to="00000000" duration="120" mode="easeOut" />
+                     <animation property="scale" to="1.00" duration="150" mode="easeOut" />
                      <animation property="y" to="0.50" duration="150" mode="easeOut" />
                   </storyboard>
                </image>
@@ -342,18 +426,50 @@
                       linearSmooth="true">
                   <path>firstfile(directory({game:path}) + "/media/box3/" + {game:stem} + ".png", directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</path>
                   <visible>exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</visible>
-                  <color>FFFFFFB5</color>
-                  <saturation>0.60</saturation>
+                  <color>${gc-carousel-inactive-color}</color>
+                  <saturation>${gc-carousel-inactive-saturation}</saturation>
                   <zIndex>12020</zIndex>
                   <storyboard event="activate">
                      <animation property="color" to="FFFFFFFF" duration="190" mode="easeOutCubic" />
                      <animation property="saturation" to="1" duration="190" mode="easeOutCubic" />
-                     <animation property="y" to="0.450" duration="210" mode="easeOutCubic" />
+                     <animation property="opacity" from="0.18" to="1" begin="115" duration="185" mode="easeOutCubic" />
+                     <animation property="y" to="${gc-carousel-active-y}" duration="230" mode="easeOutCubic" />
                   </storyboard>
                   <storyboard event="deactivate">
-                     <animation property="color" to="FFFFFFB5" duration="150" mode="easeOut" />
-                     <animation property="saturation" to="0.60" duration="150" mode="easeOut" />
+                     <animation property="color" to="${gc-carousel-inactive-color}" duration="180" mode="easeOut" />
+                     <animation property="saturation" to="${gc-carousel-inactive-saturation}" duration="180" mode="easeOut" />
+                     <animation property="opacity" from="1" to="0.22" duration="110" mode="easeIn" />
+                     <animation property="opacity" from="0.22" to="1" begin="110" duration="150" mode="easeOutCubic" />
                      <animation property="y" to="0.50" duration="150" mode="easeOut" />
+                  </storyboard>
+               </image>
+
+               <image name="turningBox3d"
+                      pos="0.040 0.50"
+                      origin="0 0.5"
+                      rotationOrigin="0 0.5"
+                      size="0.920 0.910"
+                      linearSmooth="true">
+                  <path>firstfile(directory({game:path}) + "/media/box3/" + {game:stem} + ".png", directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</path>
+                  <visible>${gc-carousel-page-turn-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png"))</visible>
+                  <color>FFFFFFFF</color>
+                  <opacity>0</opacity>
+                  <zIndex>12032</zIndex>
+                  <storyboard event="activate">
+                     <animation property="opacity" from="1" to="1" duration="1" />
+                     <animation property="w" from="0.070" to="0.920" duration="310" mode="easeOutCubic" />
+                     <animation property="rotation" from="-8" to="0" duration="310" mode="easeOutCubic" />
+                     <animation property="color" from="404040FF" to="FFFFFFFF" duration="270" mode="easeOutCubic" />
+                     <animation property="y" from="0.50" to="${gc-carousel-active-y}" duration="230" mode="easeOutCubic" />
+                     <animation property="opacity" from="1" to="0" begin="270" duration="55" mode="easeOut" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="opacity" from="1" to="1" duration="1" />
+                     <animation property="w" from="0.920" to="0.070" duration="220" mode="easeInCubic" />
+                     <animation property="rotation" from="0" to="8" duration="220" mode="easeInCubic" />
+                     <animation property="color" from="FFFFFFFF" to="383838FF" duration="205" mode="easeIn" />
+                     <animation property="y" from="${gc-carousel-active-y}" to="0.50" duration="180" mode="easeOut" />
+                     <animation property="opacity" from="1" to="0" begin="190" duration="40" mode="easeOut" />
                   </storyboard>
                </image>
 
@@ -365,24 +481,16 @@
                       linearSmooth="true">
                   <path>firstfile({game:thumbnail}, {game:boxart})</path>
                   <visible>!exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; (exists({game:thumbnail}) || exists({game:boxart}))</visible>
-                  <color>FFFFFF00</color>
-                  <zIndex>12030</zIndex>
-                  <shader>
-                     <path>${themePath}/_theme_inc/box3d-outline.glsl</path>
-                     <enabled>false</enabled>
-                     <outlineWidth>3.8</outlineWidth>
-                     <speed>0.0038</speed>
-                     <outlineColorA>${gc-accent-c}</outlineColorA>
-                     <outlineColorB>${gc-accent-soft}</outlineColorB>
-                  </shader>
+                  <color>00000000</color>
+                  <zIndex>12015</zIndex>
                   <storyboard event="activate">
-                     <animation property="color" to="FFFFFFFF" duration="150" mode="easeOut" />
-                     <animation property="shader.enabled" from="0" to="1" duration="1" />
-                     <animation property="y" to="0.450" duration="210" mode="easeOutCubic" />
+                     <animation property="color" to="00000088" begin="170" duration="150" mode="easeOut" />
+                     <animation property="scale" from="1.00" to="1.055" begin="150" duration="180" mode="easeOutCubic" />
+                     <animation property="y" to="${gc-carousel-active-y}" duration="230" mode="easeOutCubic" />
                   </storyboard>
                   <storyboard event="deactivate">
-                     <animation property="color" to="FFFFFF00" duration="100" mode="easeOut" />
-                     <animation property="shader.enabled" to="0" begin="100" duration="1" />
+                     <animation property="color" to="00000000" duration="120" mode="easeOut" />
+                     <animation property="scale" to="1.00" duration="150" mode="easeOut" />
                      <animation property="y" to="0.50" duration="150" mode="easeOut" />
                   </storyboard>
                </image>
@@ -394,20 +502,187 @@
                       linearSmooth="true">
                   <path>firstfile({game:thumbnail}, {game:boxart})</path>
                   <visible>!exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; (exists({game:thumbnail}) || exists({game:boxart}))</visible>
-                  <color>FFFFFFB5</color>
-                  <saturation>0.60</saturation>
+                  <color>${gc-carousel-inactive-color}</color>
+                  <saturation>${gc-carousel-inactive-saturation}</saturation>
                   <zIndex>12020</zIndex>
                   <storyboard event="activate">
                      <animation property="color" to="FFFFFFFF" duration="190" mode="easeOutCubic" />
                      <animation property="saturation" to="1" duration="190" mode="easeOutCubic" />
-                     <animation property="y" to="0.450" duration="210" mode="easeOutCubic" />
+                     <animation property="opacity" from="0.18" to="1" begin="115" duration="185" mode="easeOutCubic" />
+                     <animation property="y" to="${gc-carousel-active-y}" duration="230" mode="easeOutCubic" />
                   </storyboard>
                   <storyboard event="deactivate">
-                     <animation property="color" to="FFFFFFB5" duration="150" mode="easeOut" />
-                     <animation property="saturation" to="0.60" duration="150" mode="easeOut" />
+                     <animation property="color" to="${gc-carousel-inactive-color}" duration="180" mode="easeOut" />
+                     <animation property="saturation" to="${gc-carousel-inactive-saturation}" duration="180" mode="easeOut" />
+                     <animation property="opacity" from="1" to="0.22" duration="110" mode="easeIn" />
+                     <animation property="opacity" from="0.22" to="1" begin="110" duration="150" mode="easeOutCubic" />
                      <animation property="y" to="0.50" duration="150" mode="easeOut" />
                   </storyboard>
                </image>
+
+               <image name="turningFlatCover"
+                      pos="0.080 0.50"
+                      origin="0 0.5"
+                      rotationOrigin="0 0.5"
+                      size="0.840 0.950"
+                      linearSmooth="true">
+                  <path>firstfile({game:thumbnail}, {game:boxart})</path>
+                  <visible>${gc-carousel-page-turn-enabled} &amp;&amp; !exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; (exists({game:thumbnail}) || exists({game:boxart}))</visible>
+                  <color>FFFFFFFF</color>
+                  <opacity>0</opacity>
+                  <zIndex>12032</zIndex>
+                  <storyboard event="activate">
+                     <animation property="opacity" from="1" to="1" duration="1" />
+                     <animation property="w" from="0.065" to="0.840" duration="310" mode="easeOutCubic" />
+                     <animation property="rotation" from="-8" to="0" duration="310" mode="easeOutCubic" />
+                     <animation property="color" from="404040FF" to="FFFFFFFF" duration="270" mode="easeOutCubic" />
+                     <animation property="y" from="0.50" to="${gc-carousel-active-y}" duration="230" mode="easeOutCubic" />
+                     <animation property="opacity" from="1" to="0" begin="270" duration="55" mode="easeOut" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="opacity" from="1" to="1" duration="1" />
+                     <animation property="w" from="0.840" to="0.065" duration="220" mode="easeInCubic" />
+                     <animation property="rotation" from="0" to="8" duration="220" mode="easeInCubic" />
+                     <animation property="color" from="FFFFFFFF" to="383838FF" duration="205" mode="easeIn" />
+                     <animation property="y" from="${gc-carousel-active-y}" to="0.50" duration="180" mode="easeOut" />
+                     <animation property="opacity" from="1" to="0" begin="190" duration="40" mode="easeOut" />
+                  </storyboard>
+               </image>
+
+               <image name="pageFoldShade"
+                      pos="0.090 0.50"
+                      origin="0.5 0.5"
+                      size="0.060 0.865">
+                  <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                  <visible>${gc-carousel-page-turn-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") || exists({game:thumbnail}) || exists({game:boxart}))</visible>
+                  <color>000000B0</color>
+                  <colorEnd>FFFFFF20</colorEnd>
+                  <gradientType>horizontal</gradientType>
+                  <opacity>0</opacity>
+                  <zIndex>12034</zIndex>
+                  <storyboard event="activate">
+                     <animation property="opacity" from="0.85" to="0" duration="300" mode="easeOut" />
+                     <animation property="x" from="0.090" to="0.900" duration="300" mode="easeOutCubic" />
+                     <animation property="y" from="0.50" to="${gc-carousel-active-y}" duration="230" mode="easeOutCubic" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="opacity" from="0.72" to="0" duration="215" mode="easeIn" />
+                     <animation property="x" from="0.900" to="0.090" duration="215" mode="easeInCubic" />
+                     <animation property="y" from="${gc-carousel-active-y}" to="0.50" duration="180" mode="easeOut" />
+                  </storyboard>
+               </image>
+
+               <image name="hudDiagnosticMarker" pos="0.10 0.10" size="0.80 0.10" color="FF00FFFF" opacity="0" zIndex="13000">
+                  <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+               </image>
+
+               <!-- HUD PS5 nativo para OpenGL 2.1. Mantem a capa e o modelo
+                    originais; somente linhas, pulso e varredura recebem foco. -->
+               <container name="ps5HudFrame"
+                          pos="0 0"
+                          size="1 1"
+                          opacity="0"
+                          zIndex="12036">
+                  <storyboard event="activate">
+                     <animation property="opacity" to="${gc-ps5-hud-opacity}" duration="90" mode="easeOut" />
+                     <animation property="y" to="${gc-ps5-hud-y-shift}" duration="230" mode="easeOutCubic" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="opacity" to="0" duration="90" mode="easeOut" />
+                     <animation property="y" to="0" duration="150" mode="easeOut" />
+                  </storyboard>
+
+                  <!-- Cantos de mira: moldura aberta, limpa e tecnologica. -->
+                  <image name="hudTlH" pos="0.016 0.022" size="0.235 0.014" color="${gc-ps5-hud-b}" colorEnd="${gc-ps5-hud-a}" gradientType="horizontal" zIndex="12038">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                  </image>
+                  <image name="hudTlV" pos="0.016 0.022" size="0.014 0.220" color="${gc-ps5-hud-b}" colorEnd="${gc-ps5-hud-a}" gradientType="vertical" zIndex="12038">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                  </image>
+                  <image name="hudTrH" pos="0.749 0.022" size="0.235 0.014" color="${gc-ps5-hud-a}" colorEnd="${gc-ps5-hud-b}" gradientType="horizontal" zIndex="12038">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                  </image>
+                  <image name="hudTrV" pos="0.970 0.022" size="0.014 0.220" color="${gc-ps5-hud-b}" colorEnd="${gc-ps5-hud-a}" gradientType="vertical" zIndex="12038">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                  </image>
+                  <image name="hudBlH" pos="0.016 0.964" size="0.235 0.014" color="${gc-ps5-hud-b}" colorEnd="${gc-ps5-hud-a}" gradientType="horizontal" zIndex="12038">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                  </image>
+                  <image name="hudBlV" pos="0.016 0.758" size="0.014 0.220" color="${gc-ps5-hud-a}" colorEnd="${gc-ps5-hud-b}" gradientType="vertical" zIndex="12038">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                  </image>
+                  <image name="hudBrH" pos="0.749 0.964" size="0.235 0.014" color="${gc-ps5-hud-a}" colorEnd="${gc-ps5-hud-b}" gradientType="horizontal" zIndex="12038">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                  </image>
+                  <image name="hudBrV" pos="0.970 0.758" size="0.014 0.220" color="${gc-ps5-hud-a}" colorEnd="${gc-ps5-hud-b}" gradientType="vertical" zIndex="12038">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                  </image>
+
+                  <!-- Pulso dos cantos sem alterar tamanho ou proporcao da capa. -->
+                  <image name="hudPulseTop" pos="0.295 0.022" size="0.410 0.008" color="30D5FF18" colorEnd="FFFFFFFF" gradientType="horizontal" opacity="0.28" zIndex="12037">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                     <storyboard event="activate" repeat="forever">
+                        <animation property="opacity" from="0.18" to="0.92" duration="720" mode="easeInOut" autoreverse="true" />
+                        <animation property="scale" from="0.92" to="1.04" duration="960" mode="easeInOut" autoreverse="true" />
+                     </storyboard>
+                     <storyboard event="deactivate">
+                        <animation property="opacity" to="0" duration="80" />
+                     </storyboard>
+                  </image>
+
+                  <!-- Feixe holografico atravessa apenas a capa selecionada. -->
+                  <image name="hudSweepGlow" pos="-0.180 -0.030" size="0.150 1.060" rotation="-9" color="30D5FF00" colorEnd="FFFFFFA8" gradientType="horizontal" opacity="0" zIndex="12039">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                     <storyboard event="activate" repeat="forever">
+                        <animation property="x" from="-0.180" to="1.080" begin="260" duration="760" mode="easeInOut" />
+                        <animation property="opacity" from="0" to="0.48" begin="260" duration="150" mode="easeOut" />
+                        <animation property="opacity" from="0.48" to="0" begin="790" duration="230" mode="easeIn" />
+                        <animation property="opacity" from="0" to="0" begin="1020" duration="580" />
+                     </storyboard>
+                     <storyboard event="deactivate">
+                        <animation property="opacity" to="0" duration="60" />
+                        <animation property="x" to="-0.180" duration="1" />
+                     </storyboard>
+                  </image>
+                  <image name="hudSweepCore" pos="-0.100 -0.020" size="0.014 1.040" rotation="-9" color="FFFFFFFF" opacity="0" zIndex="12040">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                     <storyboard event="activate" repeat="forever">
+                        <animation property="x" from="-0.100" to="1.155" begin="260" duration="760" mode="easeInOut" />
+                        <animation property="opacity" from="0" to="0.94" begin="260" duration="110" mode="easeOut" />
+                        <animation property="opacity" from="0.94" to="0" begin="820" duration="200" mode="easeIn" />
+                        <animation property="opacity" from="0" to="0" begin="1020" duration="580" />
+                     </storyboard>
+                     <storyboard event="deactivate">
+                        <animation property="opacity" to="0" duration="60" />
+                        <animation property="x" to="-0.100" duration="1" />
+                     </storyboard>
+                  </image>
+
+                  <!-- Telemetria: corredor vertical e ponto de energia. -->
+                  <image name="hudRightRunner" pos="0.973 -0.180" size="0.010 0.180" color="FFFFFFFF" colorEnd="30D5FF00" gradientType="vertical" opacity="0" zIndex="12041">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                     <storyboard event="activate" repeat="forever">
+                        <animation property="y" from="-0.180" to="1.020" begin="80" duration="920" mode="easeInOut" />
+                        <animation property="opacity" from="0" to="1" begin="80" duration="140" mode="easeOut" />
+                        <animation property="opacity" from="1" to="0" begin="760" duration="240" mode="easeIn" />
+                        <animation property="opacity" from="0" to="0" begin="1000" duration="420" />
+                     </storyboard>
+                     <storyboard event="deactivate">
+                        <animation property="opacity" to="0" duration="60" />
+                     </storyboard>
+                  </image>
+                  <image name="hudEnergyNode" pos="0.946 0.010" size="0.038 0.038" rotation="45" color="${gc-ps5-hud-b}" opacity="0.30" zIndex="12042">
+                     <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
+                     <storyboard event="activate" repeat="forever">
+                        <animation property="opacity" from="0.28" to="1" duration="480" mode="easeInOut" autoreverse="true" />
+                        <animation property="scale" from="0.62" to="1.22" duration="480" mode="easeInOut" autoreverse="true" />
+                        <animation property="rotation" from="45" to="225" duration="1900" mode="linear" />
+                     </storyboard>
+                     <storyboard event="deactivate">
+                        <animation property="opacity" to="0" duration="80" />
+                     </storyboard>
+                  </image>
+               </container>
 
                <text name="missingCoverName"
                      pos="0.12 0.20"
@@ -425,14 +700,14 @@
                </text>
 
                <storyboard event="activate">
-                  <animation property="scale" to="1.180" duration="210" mode="easeOutCubic" />
-                  <animation property="rotation" to="-9" duration="70" mode="easeOut" />
-                  <animation property="rotation" from="-9" to="0" begin="70" duration="180" mode="easeOutCubic" />
+                  <animation property="scale" to="${gc-carousel-active-scale}" duration="230" mode="easeOutCubic" />
+                  <animation property="rotation" to="${gc-carousel-active-tilt}" duration="80" mode="easeOut" />
+                  <animation property="rotation" from="${gc-carousel-active-tilt}" to="0" begin="80" duration="170" mode="easeOutCubic" />
                </storyboard>
                <storyboard event="deactivate">
-                  <animation property="scale" to="1" duration="155" mode="easeOutCubic" />
-                  <animation property="rotation" to="5" duration="70" mode="easeIn" />
-                  <animation property="rotation" from="5" to="0" begin="70" duration="85" mode="easeOutCubic" />
+                  <animation property="scale" to="1" duration="180" mode="easeOutCubic" />
+                  <animation property="rotation" to="${gc-carousel-deactive-tilt}" duration="70" mode="easeIn" />
+                  <animation property="rotation" from="${gc-carousel-deactive-tilt}" to="0" begin="70" duration="110" mode="easeOutCubic" />
                </storyboard>
             </container>
          </itemTemplate>
@@ -572,12 +847,12 @@
          <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
          <linearSmooth>true</linearSmooth>
          <color>FFFFFFFF</color>
-         <opacity>0.16</opacity>
+         <opacity>${gc-magazine-opacity-outer-far}</opacity>
          <rotation>-8.5</rotation>
          <roundCorners>0.004</roundCorners>
          <zIndex>29</zIndex>
          <storyboard event="activateNext">
-            <animation property="opacity" from="0.01" to="0.16" duration="400" mode="easeOutCubic" />
+            <animation property="opacity" from="0.01" to="${gc-magazine-opacity-outer-far}" duration="400" mode="easeOutCubic" />
             <animation property="x" from="0.040" to="0.088" duration="400" mode="easeOutQuint" />
             <animation property="y" from="0.742" to="0.714" duration="400" mode="easeOutCubic" />
             <animation property="scale" from="0.62" to="1" duration="420" mode="easeOutQuint" />
@@ -585,7 +860,7 @@
             <animation property="saturation" from="0.10" to="0.46" duration="420" mode="easeOut" />
          </storyboard>
          <storyboard event="activatePrev">
-            <animation property="opacity" from="0.01" to="0.16" duration="400" mode="easeOutCubic" />
+            <animation property="opacity" from="0.01" to="${gc-magazine-opacity-outer-far}" duration="400" mode="easeOutCubic" />
             <animation property="x" from="0.182" to="0.088" duration="400" mode="easeOutQuint" />
             <animation property="y" from="0.656" to="0.714" duration="400" mode="easeOutCubic" />
             <animation property="scale" from="0.62" to="1" duration="420" mode="easeOutQuint" />
@@ -602,12 +877,12 @@
          <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
          <linearSmooth>true</linearSmooth>
          <color>6B6B6BFF</color>
-         <opacity>0.24</opacity>
+         <opacity>${gc-magazine-opacity-outer-near}</opacity>
          <rotation>-7.0</rotation>
          <roundCorners>0.004</roundCorners>
          <zIndex>30</zIndex>
          <storyboard event="activateNext">
-            <animation property="opacity" from="0.01" to="0.24" duration="370" mode="easeOutCubic" />
+            <animation property="opacity" from="0.01" to="${gc-magazine-opacity-outer-near}" duration="370" mode="easeOutCubic" />
             <animation property="x" from="0.055" to="0.099" duration="370" mode="easeOutQuint" />
             <animation property="y" from="0.736" to="0.709" duration="370" mode="easeOutCubic" />
             <animation property="scale" from="0.67" to="1" duration="390" mode="easeOutQuint" />
@@ -615,7 +890,7 @@
             <animation property="saturation" from="0.14" to="0.54" duration="390" mode="easeOut" />
          </storyboard>
          <storyboard event="activatePrev">
-            <animation property="opacity" from="0.01" to="0.24" duration="370" mode="easeOutCubic" />
+            <animation property="opacity" from="0.01" to="${gc-magazine-opacity-outer-near}" duration="370" mode="easeOutCubic" />
             <animation property="x" from="0.176" to="0.099" duration="370" mode="easeOutQuint" />
             <animation property="y" from="0.662" to="0.709" duration="370" mode="easeOutCubic" />
             <animation property="scale" from="0.67" to="1" duration="390" mode="easeOutQuint" />
@@ -632,12 +907,12 @@
          <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
          <linearSmooth>true</linearSmooth>
          <color>A3A3A3FF</color>
-         <opacity>0.34</opacity>
+         <opacity>${gc-magazine-opacity-far}</opacity>
          <rotation>-5.5</rotation>
          <roundCorners>0.004</roundCorners>
          <zIndex>31</zIndex>
          <storyboard event="activateNext">
-            <animation property="opacity" from="0.02" to="0.34" duration="340" mode="easeOutCubic" />
+            <animation property="opacity" from="0.02" to="${gc-magazine-opacity-far}" duration="340" mode="easeOutCubic" />
             <animation property="x" from="0.070" to="0.110" duration="340" mode="easeOutQuint" />
             <animation property="y" from="0.726" to="0.704" duration="340" mode="easeOutCubic" />
             <animation property="scale" from="0.72" to="1" duration="360" mode="easeOutQuint" />
@@ -645,7 +920,7 @@
             <animation property="saturation" from="0.20" to="0.62" duration="360" mode="easeOut" />
          </storyboard>
          <storyboard event="activatePrev">
-            <animation property="opacity" from="0.02" to="0.34" duration="340" mode="easeOutCubic" />
+            <animation property="opacity" from="0.02" to="${gc-magazine-opacity-far}" duration="340" mode="easeOutCubic" />
             <animation property="x" from="0.176" to="0.110" duration="340" mode="easeOutQuint" />
             <animation property="y" from="0.666" to="0.704" duration="340" mode="easeOutCubic" />
             <animation property="scale" from="0.72" to="1" duration="360" mode="easeOutQuint" />
@@ -662,12 +937,12 @@
          <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
          <linearSmooth>true</linearSmooth>
          <color>E6E6E6FF</color>
-         <opacity>0.60</opacity>
+         <opacity>${gc-magazine-opacity-near}</opacity>
          <rotation>-2.7</rotation>
          <roundCorners>0.004</roundCorners>
          <zIndex>32</zIndex>
          <storyboard event="activateNext">
-            <animation property="opacity" from="0.04" to="0.60" duration="300" mode="easeOutCubic" />
+            <animation property="opacity" from="0.04" to="${gc-magazine-opacity-near}" duration="300" mode="easeOutCubic" />
             <animation property="x" from="0.088" to="0.121" duration="300" mode="easeOutQuint" />
             <animation property="y" from="0.720" to="0.699" duration="300" mode="easeOutCubic" />
             <animation property="scale" from="0.80" to="1" duration="320" mode="easeOutQuint" />
@@ -675,7 +950,7 @@
             <animation property="saturation" from="0.30" to="0.78" duration="320" mode="easeOut" />
          </storyboard>
          <storyboard event="activatePrev">
-            <animation property="opacity" from="0.04" to="0.60" duration="300" mode="easeOutCubic" />
+            <animation property="opacity" from="0.04" to="${gc-magazine-opacity-near}" duration="300" mode="easeOutCubic" />
             <animation property="x" from="0.166" to="0.121" duration="300" mode="easeOutQuint" />
             <animation property="y" from="0.673" to="0.699" duration="300" mode="easeOutCubic" />
             <animation property="scale" from="0.80" to="1" duration="320" mode="easeOutQuint" />
@@ -1129,24 +1404,70 @@
          <zIndex>96</zIndex>
       </image>
 
-      <image name="footerSpectrum" extra="static">
-         <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
-         <pos>0 0.9410</pos>
-         <size>1 0.0038</size>
-         <color>FFFFFFFF</color>
-         <colorEnd>FFFFFFFF</colorEnd>
-         <gradientType>horizontal</gradientType>
-         <shader>
-            <path>${themePath}/_theme_inc/hud-line-spectrum.glsl</path>
-            <enabled>true</enabled>
-            <speed>0.0042</speed>
-            <intensity>1.14</intensity>
-            <colorA>${gc-accent-a}</colorA>
-            <colorB>${gc-accent-b}</colorB>
-            <colorC>${gc-accent-c}</colorC>
-         </shader>
+      <rectangle name="footerSpectrumTrack" extra="static" ifHelpPrompts="true">
+         <pos>0 0.9407</pos>
+         <size>1 0.0018</size>
+         <color>161616FF</color>
+         <zIndex>97</zIndex>
+      </rectangle>
+
+      <rectangle name="footerGlowLeft" extra="static" ifHelpPrompts="true">
+         <pos>0.498 0.9384</pos>
+         <size>0.002 0.0064</size>
+         <color>${gc-footer-glow-a}</color>
+         <zIndex>98</zIndex>
+         <storyboard repeat="forever">
+            <animation property="x" from="0.498" to="0" duration="1800" mode="easeInOut" />
+            <animation property="w" from="0.002" to="0.500" duration="1800" mode="easeInOut" />
+            <animation property="color" from="${gc-footer-glow-a}" to="${gc-footer-glow-b}" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-glow-b}" to="${gc-footer-glow-c}" begin="450" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-glow-c}" to="${gc-footer-glow-d}" begin="900" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-glow-d}" to="${gc-footer-glow-a}" begin="1350" duration="450" mode="linear" />
+         </storyboard>
+      </rectangle>
+
+      <rectangle name="footerGlowRight" extra="static" ifHelpPrompts="true">
+         <pos>0.500 0.9384</pos>
+         <size>0.002 0.0064</size>
+         <color>${gc-footer-glow-a}</color>
+         <zIndex>98</zIndex>
+         <storyboard repeat="forever">
+            <animation property="w" from="0.002" to="0.500" duration="1800" mode="easeInOut" />
+            <animation property="color" from="${gc-footer-glow-a}" to="${gc-footer-glow-b}" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-glow-b}" to="${gc-footer-glow-c}" begin="450" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-glow-c}" to="${gc-footer-glow-d}" begin="900" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-glow-d}" to="${gc-footer-glow-a}" begin="1350" duration="450" mode="linear" />
+         </storyboard>
+      </rectangle>
+
+      <rectangle name="footerCoreLeft" extra="static" ifHelpPrompts="true">
+         <pos>0.498 0.9405</pos>
+         <size>0.002 0.0022</size>
+         <color>${gc-footer-line-a}</color>
          <zIndex>99</zIndex>
-      </image>
+         <storyboard repeat="forever">
+            <animation property="x" from="0.498" to="0" duration="1800" mode="easeInOut" />
+            <animation property="w" from="0.002" to="0.500" duration="1800" mode="easeInOut" />
+            <animation property="color" from="${gc-footer-line-a}" to="${gc-footer-line-b}" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-line-b}" to="${gc-footer-line-c}" begin="450" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-line-c}" to="${gc-footer-line-d}" begin="900" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-line-d}" to="${gc-footer-line-a}" begin="1350" duration="450" mode="linear" />
+         </storyboard>
+      </rectangle>
+
+      <rectangle name="footerCoreRight" extra="static" ifHelpPrompts="true">
+         <pos>0.500 0.9405</pos>
+         <size>0.002 0.0022</size>
+         <color>${gc-footer-line-a}</color>
+         <zIndex>99</zIndex>
+         <storyboard repeat="forever">
+            <animation property="w" from="0.002" to="0.500" duration="1800" mode="easeInOut" />
+            <animation property="color" from="${gc-footer-line-a}" to="${gc-footer-line-b}" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-line-b}" to="${gc-footer-line-c}" begin="450" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-line-c}" to="${gc-footer-line-d}" begin="900" duration="450" mode="linear" />
+            <animation property="color" from="${gc-footer-line-d}" to="${gc-footer-line-a}" begin="1350" duration="450" mode="linear" />
+         </storyboard>
+      </rectangle>
 
       <text name="footerSystem" extra="true">
          <text>'' + {system:name}.upper() + '  /  ' + {system:total} + ' ITENS'</text>
@@ -1161,11 +1482,15 @@
       </text>
 
       <helpsystem name="help">
-         <pos>0.025 0.960</pos>
-         <fontPath>${themePath}/_theme_inc/fonts/SST Roman.ttf</fontPath>
-         <fontSize>0.017</fontSize>
-         <textColor>E5E5E5FF</textColor>
-         <iconColor>${gc-accent-b}</iconColor>
+         <pos>0.018 0.955</pos>
+         <origin>0 0</origin>
+         <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+         <fontSize>0.0205</fontSize>
+         <textColor>F6F6F6FF</textColor>
+         <iconColor>FFFFFFFF</iconColor>
+         <glowColor>000000A0</glowColor>
+         <glowSize>1</glowSize>
+         <glowOffset>2 2</glowOffset>
       </helpsystem>
    </view>
 </theme>

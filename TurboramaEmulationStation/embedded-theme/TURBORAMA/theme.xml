@@ -474,11 +474,14 @@ https://github.com/LZ-RETRO-PC-2026/es-theme-PlayStation-X
 <!-- INCLUDES GENERALES -->
 
 	<include>./_theme_views/Tuboramadetailed.xml</include>
-	<!-- A paleta geral sempre carrega primeiro. Quando existe um XML para
-	     ${system.theme}, ele substitui somente cores e identidade visual. -->
+	<!-- O sistema define somente seus textos e as cores exclusivas da barra. -->
 	<include>./_theme_views/gamecarousel-systems/general.xml</include>
 	<include>./_theme_views/gamecarousel-systems/${system.theme}.xml</include>
+	<!-- Todo o restante da tela usa o design PS5 aprovado. -->
+	<include>./_theme_views/gamecarousel-ps5-global-design.xml</include>
+	<include>./_theme_views/gamecarousel-ps5-focus.xml</include>
 	<include>./_theme_views/gamecarousel-detailed.xml</include>
+	<include>./_theme_views/gamecarousel-ps5-compact.xml</include>
 	<include>./_theme_views/grid.xml</include>
 	<include ifSubset="overlay-gamelist-arts:YES">${themePath}/_theme_options/gamelist-overlay.xml</include>
 	<include>./_theme_views/turborama.xml</include>

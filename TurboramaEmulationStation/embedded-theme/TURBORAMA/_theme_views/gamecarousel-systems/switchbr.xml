@@ -2,6 +2,14 @@
 <theme>
    <formatVersion>7</formatVersion>
    <variables>
+      <gc-footer-line-a>E60012FF</gc-footer-line-a>
+      <gc-footer-line-b>FFFFFFFF</gc-footer-line-b>
+      <gc-footer-line-c>00C3E3FF</gc-footer-line-c>
+      <gc-footer-line-d>FFFFFFFF</gc-footer-line-d>
+      <gc-footer-glow-a>E6001258</gc-footer-glow-a>
+      <gc-footer-glow-b>FFFFFF58</gc-footer-glow-b>
+      <gc-footer-glow-c>00C3E358</gc-footer-glow-c>
+      <gc-footer-glow-d>FFFFFF58</gc-footer-glow-d>
       <gc-design-name>NINTENDO SWITCH</gc-design-name>
       <gc-highlight-label>NINTENDO SWITCH  /  DESTAQUES</gc-highlight-label>
       <gc-library-label>SWITCH  /  BIBLIOTECA</gc-library-label>

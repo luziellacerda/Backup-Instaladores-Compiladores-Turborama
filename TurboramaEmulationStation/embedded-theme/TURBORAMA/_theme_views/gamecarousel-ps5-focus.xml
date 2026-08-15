@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+   Template de foco compartilhado por todos os sistemas.
+   - Uma unica imagem por jogo: elimina as camadas de dobra que nao funcionavam.
+   - Moldura e viewport fixos: toda capa ocupa exatamente a mesma celula.
+   - size fixo + clipChildren: toda imagem assume exatamente o tamanho da celula.
+   - Efeito Neon Sweep: profundidade, pulso e um feixe de luz atravessam a selecao.
+-->
+<theme>
+   <formatVersion>7</formatVersion>
+
+   <view name="gamecarousel">
+      <gamecarousel name="gamecarousel">
+         <itemTemplate>
+            <container pos="0 0" size="1 1" clipChildren="false">
+               <scaleOrigin>0.5 0.5</scaleOrigin>
+                <rotationOrigin>0.5 0.5</rotationOrigin>
+                <zIndex>12010</zIndex>
+
+                <container name="selectedPulseGroup"
+                           pos="0 0"
+                           size="1 1"
+                           clipChildren="false"
+                           zIndex="12010">
+                   <scaleOrigin>0.5 0.5</scaleOrigin>
+
+                <!-- Corpo permanente da celula: elimina o aspecto solto e sem vida. -->
+                <rectangle name="cellBody"
+                          pos="0.085 0.018"
+                          size="0.830 0.964"
+                          color="070707F2"
+                          colorEnd="181818F2"
+                          gradientType="vertical"
+                          borderColor="3A3A3ACC"
+                          borderSize="0.008"
+                          roundCorners="0.030"
+                          opacity="0.94"
+                          zIndex="12011" />
+
+               <!-- Contorno estavel das celulas inativas. -->
+               <rectangle name="cellAura"
+                          pos="0.093 0.026"
+                          size="0.814 0.948"
+                          color="00000000"
+                          borderColor="FFFFFF30"
+                          borderSize="0.006"
+                          roundCorners="0.026"
+                          opacity="0.16"
+                          zIndex="12012" />
+
+               <!-- Pulso exterior do item selecionado. -->
+               <rectangle name="focusPulse"
+                          pos="0.081 0.014"
+                          size="0.838 0.972"
+                          color="00000000"
+                          borderColor="${gc-accent-b}"
+                          borderSize="0.010"
+                          roundCorners="0.030"
+                          opacity="0"
+                          zIndex="12035">
+                  <storyboard event="activate">
+                     <animation property="opacity" from="0" to="0.72" duration="180" mode="easeOut" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="opacity" to="0" duration="120" mode="easeOut" />
+                  </storyboard>
+               </rectangle>
+
+               <!-- Linha interna branca para manter o foco limpo em qualquer sistema. -->
+               <rectangle name="focusInnerFrame"
+                          pos="0.088 0.038"
+                          size="0.824 0.914"
+                          color="00000000"
+                          borderColor="FFFFFFD0"
+                          borderSize="0.005"
+                          roundCorners="0.024"
+                          opacity="0"
+                          zIndex="12019">
+                  <storyboard event="activate">
+                     <animation property="opacity" from="0" to="0.58" duration="180" mode="easeOut" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="opacity" to="0" duration="120" mode="easeOut" />
+                  </storyboard>
+               </rectangle>
+
+               <!-- Janela fixa. minSize preenche sem deformar e o container recorta. -->
+               <container name="coverViewport"
+                          pos="0.095 0.045"
+                          size="0.810 0.900"
+                          clipChildren="true"
+                          zIndex="12020">
+                  <image name="uniformCover"
+                         pos="0.5 0.5"
+                         origin="0.5 0.5"
+                         size="1 1"
+                         linearSmooth="true"
+                         roundCorners="0.018"
+                         color="FFFFFFC8"
+                         saturation="0.66"
+                         zIndex="12021">
+                     <path>firstfile({game:image}, directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:boxart}, directory({game:path}) + "/media/box3/" + {game:stem} + ".png", directory({game:path}) + "/media/box3d/" + {game:stem} + ".png", {game:thumbnail})</path>
+                     <visible>exists({game:image}) || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:boxart}) || exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") || exists({game:thumbnail})</visible>
+                     <storyboard event="activate">
+                        <animation property="color" to="FFFFFFFF" duration="190" mode="easeOutCubic" />
+                        <animation property="saturation" to="1" duration="190" mode="easeOutCubic" />
+                     </storyboard>
+                     <storyboard event="deactivate">
+                        <animation property="color" to="FFFFFFC8" duration="170" mode="easeOut" />
+                        <animation property="saturation" to="0.66" duration="170" mode="easeOut" />
+                        <animation property="scale" to="1" duration="150" mode="easeOut" />
+                     </storyboard>
+                  </image>
+
+                  <!-- Luz discreta aplicada dentro do mesmo quadro. -->
+                  <rectangle name="coverShine"
+                             pos="0 0"
+                             size="1 0.32"
+                             color="FFFFFF24"
+                             colorEnd="FFFFFF00"
+                             gradientType="vertical"
+                             opacity="0"
+                             zIndex="12024">
+                     <storyboard event="activate">
+                        <animation property="opacity" from="0" to="0.34" duration="180" mode="easeOut" />
+                        <animation property="opacity" from="0.34" to="0.10" begin="180" duration="260" mode="easeOut" />
+                     </storyboard>
+                     <storyboard event="deactivate">
+                        <animation property="opacity" to="0" duration="100" mode="easeOut" />
+                     </storyboard>
+                  </rectangle>
+
+                  <!-- Iluminacao superior direita: anima sem alterar o tamanho da capa. -->
+                  <rectangle name="cornerLight"
+                             pos="0.560 -0.050"
+                             size="0.470 0.340"
+                             color="FFFFFF00"
+                             colorEnd="FFFFFFFF"
+                             gradientType="horizontal"
+                             rotation="8"
+                             roundCorners="0.080"
+                             opacity="0.12"
+                             zIndex="12025">
+                     <storyboard event="activate" repeat="forever">
+                        <animation property="x" from="0.545" to="0.575" duration="1750" mode="easeInOut" autoreverse="true" />
+                        <animation property="y" from="-0.060" to="-0.030" duration="1950" mode="easeInOut" autoreverse="true" />
+                        <animation property="rotation" from="6" to="9" duration="2200" mode="easeInOut" autoreverse="true" />
+                     </storyboard>
+                     <storyboard event="deactivate">
+                        <animation property="opacity" to="0.12" duration="180" mode="easeOut" />
+                     </storyboard>
+                     <storyboard event="scroll" repeat="forever">
+                        <animation property="x" from="0.545" to="0.580" duration="2100" mode="easeInOut" autoreverse="true" />
+                     </storyboard>
+                  </rectangle>
+
+                  <rectangle name="cornerLightEdge"
+                             pos="0.765 0.018"
+                             size="0.205 0.026"
+                             color="FFFFFFFF"
+                             colorEnd="${gc-accent-b}"
+                             gradientType="horizontal"
+                             roundCorners="0.009"
+                             opacity="0.20"
+                             zIndex="12026">
+                     <storyboard event="activate" repeat="forever">
+                        <animation property="x" from="0.650" to="0.765" duration="900" mode="easeOutCubic" />
+                        <animation property="w" from="0.075" to="0.205" duration="900" mode="easeOutQuint" />
+                     </storyboard>
+                     <storyboard event="deactivate">
+                        <animation property="opacity" to="0.20" duration="150" mode="easeOut" />
+                     </storyboard>
+                  </rectangle>
+
+                  <!-- Ponto de energia acompanha a extremidade da linha superior. -->
+                  <rectangle name="cornerSpark"
+                             pos="0.930 0.009"
+                             size="0.032 0.032"
+                             color="FFFFFFFF"
+                             roundCorners="0.016"
+                             opacity="0.18"
+                             zIndex="12027">
+                     <storyboard event="activate">
+                        <animation property="opacity" from="0.18" to="0.58" duration="180" mode="easeOut" />
+                     </storyboard>
+                     <storyboard event="deactivate">
+                        <animation property="opacity" to="0.18" duration="130" mode="easeOut" />
+                        <animation property="scale" to="1" duration="130" mode="easeOut" />
+                     </storyboard>
+                  </rectangle>
+
+                  <!-- Feixe que cruza a capa ao receber o foco. -->
+                  <rectangle name="neonSweep"
+                             pos="-0.240 -0.080"
+                             size="0.245 1.160"
+                             color="FFFFFF00"
+                             colorEnd="FFFFFFFF"
+                             gradientType="horizontal"
+                             rotation="-8"
+                             opacity="0"
+                             zIndex="12026">
+                     <storyboard event="activate" repeat="forever">
+                        <animation property="x" from="-0.240" to="1.080" begin="520" duration="760" mode="easeOutCubic" />
+                        <animation property="opacity" from="0" to="0.42" begin="520" duration="180" mode="easeOut" />
+                        <animation property="opacity" from="0.42" to="0" begin="980" duration="300" mode="easeIn" />
+                        <animation property="opacity" from="0" to="0" begin="1280" duration="900" />
+                     </storyboard>
+                     <storyboard event="deactivate">
+                        <animation property="opacity" to="0" duration="70" mode="easeOut" />
+                        <animation property="x" to="-0.240" duration="1" />
+                     </storyboard>
+                  </rectangle>
+               </container>
+
+               <!-- Barra nativa do motor: carrega, reinicia e troca de cor sem shader. -->
+               <rectangle name="focusRailTrack"
+                          pos="0.095 0.956"
+                          size="0.810 0.018"
+                          color="07131FD8"
+                          roundCorners="0.009"
+                          opacity="0"
+                          zIndex="12029">
+                  <storyboard event="activate">
+                     <animation property="opacity" from="0" to="0.62" duration="140" mode="easeOut" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="opacity" to="0" duration="90" mode="easeOut" />
+                  </storyboard>
+               </rectangle>
+
+               <rectangle name="focusRail"
+                          pos="0.095 0.956"
+                          size="0.040 0.018"
+                          color="FF0000FF"
+                          roundCorners="0.009"
+                          opacity="0"
+                          zIndex="12030">
+                  <storyboard event="activate" repeat="forever">
+                     <animation property="opacity" from="1" to="1" duration="1" />
+                     <animation property="w" from="0.040" to="0.810" duration="1650" mode="easeInOut" />
+                     <animation property="color" from="FF0000FF" to="00FF00FF" duration="412" mode="linear" />
+                     <animation property="color" from="00FF00FF" to="0000FFFF" begin="412" duration="413" mode="linear" />
+                     <animation property="color" from="0000FFFF" to="FFFFFFFF" begin="825" duration="412" mode="linear" />
+                     <animation property="color" from="FFFFFFFF" to="FF0000FF" begin="1237" duration="413" mode="linear" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="opacity" to="0" duration="90" mode="easeOut" />
+                     <animation property="w" to="0.040" duration="1" />
+                  </storyboard>
+               </rectangle>
+
+               <rectangle name="focusRailHead"
+                          pos="0.110 0.955"
+                          size="0.025 0.020"
+                          color="FF0000FF"
+                          roundCorners="0.010"
+                          opacity="0"
+                          zIndex="12031">
+                  <storyboard event="activate" repeat="forever">
+                     <animation property="x" from="0.110" to="0.880" duration="1650" mode="easeInOut" />
+                     <animation property="opacity" from="1" to="1" duration="1" />
+                     <animation property="color" from="FF0000FF" to="00FF00FF" duration="412" mode="linear" />
+                     <animation property="color" from="00FF00FF" to="0000FFFF" begin="412" duration="413" mode="linear" />
+                     <animation property="color" from="0000FFFF" to="FFFFFFFF" begin="825" duration="412" mode="linear" />
+                     <animation property="color" from="FFFFFFFF" to="FF0000FF" begin="1237" duration="413" mode="linear" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="opacity" to="0" duration="70" mode="easeOut" />
+                     <animation property="x" to="0.110" duration="1" />
+                  </storyboard>
+               </rectangle>
+
+               <text name="missingCoverName"
+                     pos="0.095 0.045"
+                     size="0.810 0.900"
+                     alignment="center"
+                     verticalAlignment="center"
+                     multiLine="true">
+                  <text>{game:name}</text>
+                  <visible>!exists({game:image}) &amp;&amp; !exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") &amp;&amp; !exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") &amp;&amp; !exists({game:thumbnail}) &amp;&amp; !exists({game:boxart}) &amp;&amp; !exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</visible>
+                  <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+                  <fontSize>0.017</fontSize>
+                  <lineSpacing>1.08</lineSpacing>
+                   <color>E5E5E5FF</color>
+                   <zIndex>12022</zIndex>
+                </text>
+
+                   <storyboard event="activate" repeat="forever">
+                      <animation property="scale" from="0.992" to="1.008" duration="1100" mode="easeInOut" autoreverse="true" />
+                   </storyboard>
+                   <storyboard event="deactivate">
+                      <animation property="scale" to="1" duration="180" mode="easeOut" />
+                   </storyboard>
+
+                </container>
+
+               <storyboard event="activate">
+                  <animation property="scale" to="1.20" duration="220" mode="easeOutCubic" />
+               </storyboard>
+               <storyboard event="deactivate">
+                  <animation property="scale" to="1" duration="210" mode="easeOutCubic" />
+                  <animation property="rotation" to="0" duration="160" mode="easeOut" />
+               </storyboard>
+            </container>
+         </itemTemplate>
+      </gamecarousel>
+   </view>
+</theme>
