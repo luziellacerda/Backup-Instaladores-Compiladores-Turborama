@@ -125,6 +125,53 @@ sealed class OnlineApiException : Exception
     public string Code { get; }
 }
 
+// A indisponibilidade do servidor nunca pode transformar uma instalacao ainda
+// nao validada em autorizada. O quiosque e os creditos locais continuam
+// independentes; esta politica controla somente novas cobrancas PIX.
+sealed class OnlineLicenseAvailabilityPolicy
+{
+    private readonly bool _onlineLicensingEnabled;
+    private bool _confirmedInThisProcess;
+    private bool _explicitlyDenied;
+
+    public OnlineLicenseAvailabilityPolicy(bool onlineLicensingEnabled)
+    {
+        _onlineLicensingEnabled = onlineLicensingEnabled;
+        AllowsNewPix = !onlineLicensingEnabled;
+    }
+
+    public bool AllowsNewPix { get; private set; }
+    public string LastError { get; private set; } = "";
+
+    public void Confirmed()
+    {
+        if (!_onlineLicensingEnabled) return;
+        _confirmedInThisProcess = true;
+        _explicitlyDenied = false;
+        AllowsNewPix = true;
+        LastError = "";
+    }
+
+    public void ExplicitlyDenied(string error)
+    {
+        if (!_onlineLicensingEnabled) return;
+        _explicitlyDenied = true;
+        AllowsNewPix = false;
+        LastError = error ?? "";
+    }
+
+    public bool TransientFailure(string error)
+    {
+        if (!_onlineLicensingEnabled) return true;
+        AllowsNewPix = _confirmedInThisProcess && !_explicitlyDenied;
+        LastError = error ?? "";
+        return AllowsNewPix;
+    }
+
+    public static bool IsTransientStatus(int statusCode)
+        => statusCode is 408 or 425 or 429 or >= 500;
+}
+
 // A solicitacao final de ativacao pode ter chegado ao servidor mesmo quando a
 // resposta se perde no caminho. Esse caso nao pode ser tratado como uma recusa
 // comum: o cliente precisa tentar abrir uma sessao com a mesma chave antes de

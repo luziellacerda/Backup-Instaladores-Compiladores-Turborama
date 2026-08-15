@@ -7,6 +7,34 @@ static class OnlineProtocolSelfTest
 {
     public static void Run(PixOptions baseOptions)
     {
+        var disabledPolicy = new OnlineLicenseAvailabilityPolicy(onlineLicensingEnabled: false);
+        if (!disabledPolicy.AllowsNewPix || !disabledPolicy.TransientFailure("offline"))
+            throw new InvalidOperationException("licenciamento desativado bloqueou o provedor local");
+
+        var enabledPolicy = new OnlineLicenseAvailabilityPolicy(onlineLicensingEnabled: true);
+        if (enabledPolicy.AllowsNewPix || enabledPolicy.TransientFailure("primeiro contato indisponivel"))
+            throw new InvalidOperationException("licenca on-line iniciou liberada sem confirmacao");
+        enabledPolicy.Confirmed();
+        if (!enabledPolicy.AllowsNewPix || !enabledPolicy.TransientFailure("queda temporaria"))
+            throw new InvalidOperationException("queda temporaria descartou confirmacao da execucao");
+        enabledPolicy.ExplicitlyDenied("revogada");
+        if (enabledPolicy.AllowsNewPix || enabledPolicy.TransientFailure("servidor indisponivel"))
+            throw new InvalidOperationException("falha temporaria reabriu licenca explicitamente recusada");
+        enabledPolicy.Confirmed();
+        if (!enabledPolicy.AllowsNewPix)
+            throw new InvalidOperationException("nova confirmacao nao reabriu a licenca");
+        if (!OnlineLicenseAvailabilityPolicy.IsTransientStatus(408)
+            || !OnlineLicenseAvailabilityPolicy.IsTransientStatus(425)
+            || !OnlineLicenseAvailabilityPolicy.IsTransientStatus(429)
+            || !OnlineLicenseAvailabilityPolicy.IsTransientStatus(500)
+            || !OnlineLicenseAvailabilityPolicy.IsTransientStatus(599)
+            || OnlineLicenseAvailabilityPolicy.IsTransientStatus(400)
+            || OnlineLicenseAvailabilityPolicy.IsTransientStatus(401)
+            || OnlineLicenseAvailabilityPolicy.IsTransientStatus(403)
+            || OnlineLicenseAvailabilityPolicy.IsTransientStatus(404)
+            || OnlineLicenseAvailabilityPolicy.IsTransientStatus(409))
+            throw new InvalidOperationException("classificacao HTTP da licenca on-line e insegura");
+
         var localOwner = new PixOwnerSettings
         {
             Enabled = true,

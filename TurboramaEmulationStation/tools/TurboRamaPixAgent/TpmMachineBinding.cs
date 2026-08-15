@@ -29,6 +29,8 @@ sealed class TpmCngMachineBinding : IPixMachineSecretBinding
     // v2 inclui uso de decriptacao. A chave v1, criada apenas para assinatura,
     // nao e reutilizada nem sobrescrita silenciosamente.
     private const string KeyPrefix = "TurboRama.PixAgent.Binding.v2";
+    private const string ImplementationTypeProperty = "Impl Type";
+    private const int HardwareImplementationFlag = 0x00000001;
     private static readonly CngProvider PlatformProvider = CngProvider.MicrosoftPlatformCryptoProvider;
     private readonly object _gate = new();
 
@@ -154,6 +156,24 @@ sealed class TpmCngMachineBinding : IPixMachineSecretBinding
                 | CngExportPolicies.AllowArchiving | CngExportPolicies.AllowPlaintextArchiving)) != 0
             || (key.KeyUsage & CngKeyUsages.Decryption) == 0)
             throw new SecurityException("a chave do vínculo PIX não é uma chave RSA persistente do TPM");
+
+        byte[] implementation;
+        try
+        {
+            implementation = key.GetProperty(ImplementationTypeProperty, CngPropertyOptions.None).GetValue()
+                ?? throw new SecurityException("o provedor TPM nao informou o tipo de implementacao");
+        }
+        catch (CryptographicException ex)
+        {
+            throw new SecurityException("o provedor TPM nao comprovou implementacao em hardware", ex);
+        }
+        try
+        {
+            if (implementation.Length < sizeof(int)
+                || (BitConverter.ToInt32(implementation, 0) & HardwareImplementationFlag) == 0)
+                throw new SecurityException("a chave declarada como TPM nao esta em hardware");
+        }
+        finally { CryptographicOperations.ZeroMemory(implementation); }
 
         using var rsa = new RSACng(key);
         var publicKey = rsa.ExportSubjectPublicKeyInfo();

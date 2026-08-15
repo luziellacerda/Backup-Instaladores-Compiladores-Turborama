@@ -455,9 +455,8 @@ if (command.MercadoPagoInventory || !string.IsNullOrWhiteSpace(command.MercadoPa
 
 var engine = new PixEngine(options, paths, provider, signingKeys, validateCommercialLicense);
 var onlineLicense = options.OnlineLicensingEnabled ? new OnlineLicenseClient(options) : null;
-var licenseAllowsPix = true;
+var licenseAvailability = new OnlineLicenseAvailabilityPolicy(onlineLicense is not null);
 var nextLicenseCheck = DateTimeOffset.MinValue;
-var lastLicenseError = "";
 
 if (!string.IsNullOrWhiteSpace(command.ApproveId))
 {
@@ -541,35 +540,48 @@ try
                 try
                 {
                     await onlineLicense.CheckHealthAsync(cancellation.Token);
-                    if (!licenseAllowsPix || !string.IsNullOrWhiteSpace(lastLicenseError))
+                    if (!licenseAvailability.AllowsNewPix
+                        || !string.IsNullOrWhiteSpace(licenseAvailability.LastError))
                         Console.WriteLine("Licenca TurboRama Online confirmada novamente.");
-                    licenseAllowsPix = true;
-                    lastLicenseError = "";
+                    licenseAvailability.Confirmed();
                     nextLicenseCheck = now.AddSeconds(60);
                 }
-                catch (OnlineApiException ex) when (ex.StatusCode is 401 or 403 or 409)
+                catch (OnlineApiException ex) when (
+                    OnlineLicenseAvailabilityPolicy.IsTransientStatus(ex.StatusCode))
                 {
-                    licenseAllowsPix = false;
+                    var previousError = licenseAvailability.LastError;
+                    var preserved = licenseAvailability.TransientFailure(ex.Message);
+                    nextLicenseCheck = now.AddSeconds(30);
+                    if (!ex.Message.Equals(previousError, StringComparison.Ordinal))
+                        Console.Error.WriteLine(preserved
+                            ? "Servidor de licenca temporariamente indisponivel; a autorizacao confirmada nesta execucao foi preservada."
+                            : "Servidor de licenca indisponivel antes da confirmacao desta execucao; somente novas cobrancas PIX permanecem bloqueadas.");
+                }
+                catch (OnlineApiException ex)
+                {
+                    var previousError = licenseAvailability.LastError;
+                    licenseAvailability.ExplicitlyDenied(ex.Message);
                     nextLicenseCheck = now.AddSeconds(15);
-                    if (!ex.Message.Equals(lastLicenseError, StringComparison.Ordinal))
+                    if (!ex.Message.Equals(previousError, StringComparison.Ordinal))
                         Console.Error.WriteLine($"Licenca TurboRama recusada: {ex.Message}");
-                    lastLicenseError = ex.Message;
                 }
                 catch (SecurityException ex)
                 {
-                    licenseAllowsPix = false;
+                    var previousError = licenseAvailability.LastError;
+                    licenseAvailability.ExplicitlyDenied(ex.Message);
                     nextLicenseCheck = now.AddSeconds(15);
-                    if (!ex.Message.Equals(lastLicenseError, StringComparison.Ordinal))
+                    if (!ex.Message.Equals(previousError, StringComparison.Ordinal))
                         Console.Error.WriteLine($"Licenca TurboRama recusada: {ex.Message}");
-                    lastLicenseError = ex.Message;
                 }
-                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException
-                    || ex is OnlineApiException { StatusCode: >= 500 })
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
                 {
+                    var previousError = licenseAvailability.LastError;
+                    var preserved = licenseAvailability.TransientFailure(ex.Message);
                     nextLicenseCheck = now.AddSeconds(30);
-                    if (!ex.Message.Equals(lastLicenseError, StringComparison.Ordinal))
-                        Console.Error.WriteLine("Servidor de licenca temporariamente indisponivel; a autorizacao local foi preservada.");
-                    lastLicenseError = ex.Message;
+                    if (!ex.Message.Equals(previousError, StringComparison.Ordinal))
+                        Console.Error.WriteLine(preserved
+                            ? "Servidor de licenca temporariamente indisponivel; a autorizacao confirmada nesta execucao foi preservada."
+                            : "Servidor de licenca indisponivel antes da confirmacao desta execucao; somente novas cobrancas PIX permanecem bloqueadas.");
                 }
             }
 
@@ -613,10 +625,10 @@ try
                 }
                 nextHealthCheck = DateTimeOffset.UtcNow.AddSeconds(providerHealthy ? 60 : 10);
             }
-            var readyForNewPix = providerHealthy && licenseAllowsPix;
+            var readyForNewPix = providerHealthy && licenseAvailability.AllowsNewPix;
             heartbeat?.Update(provider.Name == "mock" || secrets.TryLoad().IsAvailable,
                 readyForNewPix, readyForNewPix ? "online"
-                    : !licenseAllowsPix ? "license_denied"
+                    : !licenseAvailability.AllowsNewPix ? "license_denied"
                     : baseConfigurationUsesLegacyTestPdv || ownerSetupPendingWithoutCoordinator || ownerInfrastructure is { Ready: false }
                         ? "owner_setup_pending" : "provider_unavailable");
             if (readyForNewPix) await engine.RunOnceAsync(cancellation.Token,
