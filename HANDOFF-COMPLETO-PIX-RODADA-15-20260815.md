@@ -1,8 +1,11 @@
 # HANDOFF completo TurboRama PIX - rodada 15
 
-Data da validação: 15/08/2026  
-Ambiente desta rodada: Windows, conta `Admin`  
-Branch Windows obrigatória: `PIX-SERVIDOR-AUTORIDADE-20260815`  
+Data da validação: 15/08/2026
+
+Ambiente desta rodada: Windows, conta `Admin`
+
+Branch Windows obrigatória: `PIX-SERVIDOR-AUTORIDADE-20260815`
+
 Repositório: `Backup-Instaladores-Compiladores-Turborama`
 
 Este documento é a referência atual. Quando houver conflito com handoffs antigos,
