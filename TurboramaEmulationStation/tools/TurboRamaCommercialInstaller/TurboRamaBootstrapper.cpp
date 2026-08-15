@@ -48,9 +48,18 @@ namespace
 	const char kMagic[16] = { 'T','R','P','I','X','V','1','4','P','A','C','K','A','G','E','\0' };
 	constexpr int kAuxiliaryTreeUnconfirmedExitCode = 42;
 
-	constexpr bool preserveStagingForInstallerResult(int result)
+	constexpr bool expectedIsolatedSmokeFailure(int result)
 	{
-		return result != 0;
+		// O compilador provoca estes quatro retornos de forma intencional e
+		// verifica o rollback antes de seguir. O processo interno ja confirmou a
+		// arvore do 7-Zip vazia; conservar quatro copias de 1,6 GB faria o proprio
+		// laboratorio ficar sem espaco antes do teste valido.
+		return result == 24 || result == 18 || result == 13 || result == 15;
+	}
+
+	constexpr bool preserveStagingForInstallerResult(int result, bool smoke)
+	{
+		return result != 0 && !(smoke && expectedIsolatedSmokeFailure(result));
 	}
 
 	constexpr int classifyInstallerProcessResult(DWORD waitResult, bool exitCodeRead,
@@ -76,11 +85,17 @@ namespace
 				== kAuxiliaryTreeUnconfirmedExitCode;
 	}
 
-	static_assert(preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode)
-		&& !preserveStagingForInstallerResult(0)
-		&& preserveStagingForInstallerResult(41)
-		&& preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode + 1),
-		"Qualquer falha do instalador interno preserva staging e diagnostico.");
+	static_assert(preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode, true)
+		&& !preserveStagingForInstallerResult(0, false)
+		&& preserveStagingForInstallerResult(13, false)
+		&& !preserveStagingForInstallerResult(13, true)
+		&& !preserveStagingForInstallerResult(15, true)
+		&& !preserveStagingForInstallerResult(18, true)
+		&& !preserveStagingForInstallerResult(24, true)
+		&& preserveStagingForInstallerResult(25, true)
+		&& preserveStagingForInstallerResult(41, true)
+		&& preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode + 1, true),
+		"Producao preserva falhas; o smoke limpa somente retornos injetados conhecidos.");
 	static_assert(validateInstallerProcessResultContract(),
 		"O bootstrapper so pode liberar cleanup depois de confirmar o termino do instalador interno.");
 
@@ -732,9 +747,16 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
 			&& first != second && first.rfind(L"stage-", 0) == 0 && second.rfind(L"stage-", 0) == 0
 			&& validateIsolatedSmokeTargetContract()
 			&& validateInstallerProcessResultContract()
-			&& preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode)
-			&& !preserveStagingForInstallerResult(0) && preserveStagingForInstallerResult(41)
-			&& preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode + 1) ? 0 : 41;
+			&& preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode, true)
+			&& !preserveStagingForInstallerResult(0, false)
+			&& preserveStagingForInstallerResult(13, false)
+			&& !preserveStagingForInstallerResult(13, true)
+			&& !preserveStagingForInstallerResult(15, true)
+			&& !preserveStagingForInstallerResult(18, true)
+			&& !preserveStagingForInstallerResult(24, true)
+			&& preserveStagingForInstallerResult(25, true)
+			&& preserveStagingForInstallerResult(41, true)
+			&& preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode + 1, true) ? 0 : 41;
 	}
 	const bool elevated = isProcessElevated();
 	if (elevated && environmentValue(L"TURBORAMA_INSTALLER_SILENT_TEST") == L"1")
@@ -850,7 +872,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
 	CloseHandle(sevenZipLock);
 	CloseHandle(installerLock);
 	CloseHandle(staging.lock);
-	if (preserveStagingForInstallerResult(result))
+	if (preserveStagingForInstallerResult(result, smoke))
 	{
 		const std::wstring message = L"Uma ferramenta auxiliar da instalacao nao confirmou o encerramento de toda a arvore de processos. "
 			L"Para impedir rollback ou limpeza enquanto ainda pode haver arquivos em uso, o staging e o rollback foram preservados em:\n\n"
@@ -859,6 +881,13 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
 		MessageBoxW(nullptr, message.c_str(), kTitle, MB_OK | MB_ICONERROR);
 		return result;
 	}
-	removeTree(staging.path);
+	if (!removeTree(staging.path))
+	{
+		MessageBoxW(nullptr,
+			L"O processo interno terminou, mas o staging nao pode ser removido integralmente. "
+			L"A validacao foi recusada para evitar acumulo ou mistura de artefatos.",
+			kTitle, MB_OK | MB_ICONERROR);
+		return 29;
+	}
 	return result;
 }
