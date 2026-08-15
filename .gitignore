@@ -36,6 +36,7 @@ TurboramaEmulationStation/tools/TurboRamaScreenScraper/config.json
 TurboramaEmulationStation/tools/TurboRamaScreenScraper/download-log.txt
 TurboramaEmulationStation/build-pix-commercial-v14/
 TurboramaEmulationStation/PIX-COMERCIAL/GERADO-v14/
+TurboramaEmulationStation/PIX-COMERCIAL/GERADO-v25/
 
 # --- Nested git (nao versionar como submodule) ---
 **/.git/
