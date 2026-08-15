@@ -56,6 +56,12 @@ namespace
 		return position == std::wstring::npos ? L"." : copy.substr(0, position);
 	}
 
+	std::wstring leafOf(const std::wstring& path)
+	{
+		const size_t position = path.find_last_of(L"\\/");
+		return position == std::wstring::npos ? path : path.substr(position + 1);
+	}
+
 	std::wstring normalized(const std::wstring& value)
 	{
 		std::vector<wchar_t> full(32768);
@@ -86,14 +92,23 @@ namespace
 		return matches;
 	}
 
-	std::wstring isolatedSmokeTarget()
+	std::wstring isolatedSmokeTarget(const std::wstring& stagingSource)
 	{
-		PWSTR localAppData = nullptr;
-		if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &localAppData))
-			|| localAppData == nullptr) return {};
-		const std::wstring target = normalized(join(localAppData, L"Temp\\TurboRama-v25-smoke\\install"));
-		CoTaskMemFree(localAppData);
-		return target;
+		const std::wstring base = parentOf(stagingSource);
+		const std::wstring stage = leafOf(stagingSource);
+		if (_wcsicmp(leafOf(base).c_str(), L"TurboRama-v25-smoke") != 0
+			|| stage.size() != 38 || stage.rfind(L"stage-", 0) != 0)
+			return {};
+		return normalized(join(base, L"install"));
+	}
+
+	bool validateIsolatedSmokeTargetContract()
+	{
+		const std::wstring valid = L"H:\\fixture\\TurboRama-v25-smoke\\stage-0123456789abcdef0123456789abcdef";
+		const std::wstring invalid = L"H:\\fixture\\other\\stage-0123456789abcdef0123456789abcdef";
+		return isolatedSmokeTarget(valid)
+			== normalized(L"H:\\fixture\\TurboRama-v25-smoke\\install")
+			&& isolatedSmokeTarget(invalid).empty();
 	}
 
 	bool hasSuffix(const std::wstring& value, const std::wstring& suffix)
@@ -7229,6 +7244,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		if (!validatePixStateAtomicRestoreSelfTest()) return 64;
 		if (!validateTestOnlyDirectoryPinScope()) return 65;
 		if (!validateSecurityOnlyHandleShareSelfTest()) return 67;
+		if (!validateIsolatedSmokeTargetContract()) return 68;
 		return 0;
 	}
 	if (hasSingleArgument(L"--validate-installed-kiosk-identity"))
@@ -7246,7 +7262,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 	const bool elevated = isProcessElevated();
 	const std::wstring requestedTarget = bootstrap.isolatedSmoke && !elevated
 		? environmentValue(L"TURBORAMA_INSTALL_TARGET") : std::wstring();
-	const std::wstring expectedSmokeTarget = isolatedSmokeTarget();
+	const std::wstring expectedSmokeTarget = isolatedSmokeTarget(source);
 	const bool silentTest = bootstrap.isolatedSmoke && !elevated
 		&& environmentValue(L"TURBORAMA_INSTALLER_SILENT_TEST") == L"1"
 		&& !expectedSmokeTarget.empty() && normalized(requestedTarget) == expectedSmokeTarget

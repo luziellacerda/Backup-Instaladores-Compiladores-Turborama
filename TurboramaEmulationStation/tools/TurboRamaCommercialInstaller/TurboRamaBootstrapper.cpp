@@ -95,6 +95,12 @@ namespace
 		return position == std::wstring::npos ? L"." : path.substr(0, position);
 	}
 
+	std::wstring leafOf(const std::wstring& path)
+	{
+		const size_t position = path.find_last_of(L"\\/");
+		return position == std::wstring::npos ? path : path.substr(position + 1);
+	}
+
 	std::wstring normalized(const std::wstring& value)
 	{
 		std::vector<wchar_t> full(32768, L'\0');
@@ -128,14 +134,31 @@ namespace
 		return matches;
 	}
 
-	std::wstring isolatedSmokeTarget()
+	std::wstring isolatedSmokeTarget(const std::wstring& module)
 	{
-		PWSTR localAppData = nullptr;
-		if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &localAppData))
-			|| localAppData == nullptr) return {};
-		const std::wstring target = normalized(join(localAppData, L"Temp\\TurboRama-v25-smoke\\install"));
-		CoTaskMemFree(localAppData);
-		return target;
+		// O smoke so pode atingir a arvore irma do candidato temporario exato.
+		// Isso mantem todos os bytes descartaveis na unidade escolhida pelo build e
+		// impede que um pacote ja promovido entre em modo de teste.
+		const std::wstring generated = parentOf(module);
+		const std::wstring pixCommercial = parentOf(generated);
+		const std::wstring pack = parentOf(pixCommercial);
+		const std::wstring build = parentOf(pack);
+		const std::wstring boundary = parentOf(build);
+		if (_wcsicmp(leafOf(generated).c_str(), L"GERADO-v25") != 0
+			|| _wcsicmp(leafOf(pixCommercial).c_str(), L"PIX-COMERCIAL") != 0
+			|| _wcsicmp(leafOf(pack).c_str(), L"pack") != 0
+			|| _wcsicmp(leafOf(build).c_str(), L"TurboRama-v25-build") != 0)
+			return {};
+		return normalized(join(boundary, L"TurboRama-v25-smoke\\install"));
+	}
+
+	bool validateIsolatedSmokeTargetContract()
+	{
+		const std::wstring candidate = L"H:\\fixture\\TurboRama-v25-build\\pack\\PIX-COMERCIAL\\GERADO-v25\\INSTALAR-TURBORAMA-PIX-COMERCIAL-v25-ULTRA-FINAL.exe";
+		const std::wstring canonical = L"H:\\fixture\\TurboramaEmulationStation\\PIX-COMERCIAL\\GERADO-v25\\INSTALAR-TURBORAMA-PIX-COMERCIAL-v25-ULTRA-FINAL.exe";
+		return isolatedSmokeTarget(candidate)
+			== normalized(L"H:\\fixture\\TurboRama-v25-smoke\\install")
+			&& isolatedSmokeTarget(canonical).empty();
 	}
 
 	bool isProcessElevated()
@@ -154,7 +177,7 @@ namespace
 	{
 		if (environmentValue(L"TURBORAMA_INSTALLER_SILENT_TEST") != L"1") return false;
 		const std::wstring target = normalized(environmentValue(L"TURBORAMA_INSTALL_TARGET"));
-		const std::wstring expectedTarget = isolatedSmokeTarget();
+		const std::wstring expectedTarget = isolatedSmokeTarget(module);
 		if (expectedTarget.empty() || target != expectedTarget) return false;
 		const std::wstring image = normalized(module);
 		const std::wstring imageSuffix = L"\\pix-comercial\\gerado-v25\\instalar-turborama-pix-comercial-v25-ultra-final.exe";
@@ -707,6 +730,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
 		const std::wstring second = randomName();
 		return validateStagingDescriptorShape() && first.size() == 38 && second.size() == 38
 			&& first != second && first.rfind(L"stage-", 0) == 0 && second.rfind(L"stage-", 0) == 0
+			&& validateIsolatedSmokeTargetContract()
 			&& validateInstallerProcessResultContract()
 			&& preserveStagingForInstallerResult(kAuxiliaryTreeUnconfirmedExitCode)
 			&& !preserveStagingForInstallerResult(0) && preserveStagingForInstallerResult(41)
