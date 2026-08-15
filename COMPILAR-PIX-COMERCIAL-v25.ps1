@@ -1776,8 +1776,7 @@ function Import-VsEnvironment([string]$VsDevCmd) {
         if ($separator -le 0) { continue }
         $name = $line.Substring(0, $separator)
         $value = $line.Substring($separator + 1)
-        if ($name -ceq 'PATH') { $vsPath = $value; continue }
-        if ($name -ieq 'Path') { continue }
+        if ($name -ieq 'Path') { $vsPath = $value; continue }
         Set-Item -Path "Env:$name" -Value $value
     }
     if ([string]::IsNullOrWhiteSpace($vsPath)) { throw 'PATH do Visual Studio nao foi retornado.' }

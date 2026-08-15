@@ -148,6 +148,10 @@ Arquivos alterados:
 - Parser dos dois scripts: zero erros.
 - Teste valido em `H:\TurboRamaTemp\pack-boundary-selftest-20260814`: codigo `0`, pacote criado em H.
 - Teste com destino fora da fronteira: codigo `1`, mensagem de recusa e nenhum arquivo criado.
+- O preflight seguinte encontrou Visual Studio instalado, mas `Import-VsEnvironment` descartava a
+  variavel retornada como `Path=` porque aceitava apenas `PATH=` com caixa exata.
+- A importacao agora reconhece `Path` sem diferenciar maiusculas e minusculas, preservando o valor
+  devolvido pelo ambiente oficial do Visual Studio.
 
 ## 11. Regra de conclusao
 
