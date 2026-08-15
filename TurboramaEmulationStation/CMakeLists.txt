@@ -281,6 +281,18 @@ if(MSVC)
             " /LTCG /GUARD:CF /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /CETCOMPAT /OPT:REF /OPT:ICF /INCREMENTAL:NO /Brepro")
     endif()
 
+	if(NOT "${TURBORAMA_PIX_BUNDLE_SHA256}" STREQUAL "")
+		string(LENGTH "${TURBORAMA_PIX_BUNDLE_SHA256}" TURBORAMA_PIX_BUNDLE_SHA256_LENGTH)
+		if(NOT TURBORAMA_PIX_BUNDLE_SHA256_LENGTH EQUAL 64 OR
+			TURBORAMA_PIX_BUNDLE_SHA256 MATCHES "[^0-9A-Fa-f]")
+			message(FATAL_ERROR "Commercial PIX bundle digest must contain exactly 64 hexadecimal characters")
+		endif()
+		string(TOUPPER "${TURBORAMA_PIX_BUNDLE_SHA256}" TURBORAMA_PIX_BUNDLE_SHA256_NORMALIZED)
+		add_definitions(-DTURBORAMA_PIX_BUNDLE_SHA256=${TURBORAMA_PIX_BUNDLE_SHA256_NORMALIZED})
+	elseif(TURBORAMA_COMMERCIAL_HARDENING)
+		message(FATAL_ERROR "Commercial PIX hardening requires a complete bundle digest")
+	endif()
+
     if(TURBORAMA_REQUIRE_SIGNED_PIX)
         string(LENGTH "${TURBORAMA_PIX_SIGNER_THUMBPRINT}" TURBORAMA_PIX_SIGNER_THUMBPRINT_LENGTH)
         if(NOT TURBORAMA_PIX_SIGNER_THUMBPRINT_LENGTH EQUAL 40 OR
@@ -288,22 +300,13 @@ if(MSVC)
             message(FATAL_ERROR "Commercial PIX signing thumbprint must contain exactly 40 hexadecimal characters")
         endif()
         string(TOUPPER "${TURBORAMA_PIX_SIGNER_THUMBPRINT}" TURBORAMA_PIX_SIGNER_THUMBPRINT_NORMALIZED)
-		string(LENGTH "${TURBORAMA_PIX_BUNDLE_SHA256}" TURBORAMA_PIX_BUNDLE_SHA256_LENGTH)
-		if(NOT TURBORAMA_PIX_BUNDLE_SHA256_LENGTH EQUAL 64 OR
-			TURBORAMA_PIX_BUNDLE_SHA256 MATCHES "[^0-9A-Fa-f]")
-			message(FATAL_ERROR "Commercial PIX bundle digest must contain exactly 64 hexadecimal characters")
-		endif()
-		string(TOUPPER "${TURBORAMA_PIX_BUNDLE_SHA256}" TURBORAMA_PIX_BUNDLE_SHA256_NORMALIZED)
         add_definitions(-DTURBORAMA_REQUIRE_SIGNED_PIX=1)
         # PixBinaryTrust stringizes this public thumbprint at compile time.
         # Keep the macro as bare hexadecimal text so quotes do not become
         # part of the value being compared with the signing certificate.
         add_definitions(-DTURBORAMA_PIX_SIGNER_THUMBPRINT=${TURBORAMA_PIX_SIGNER_THUMBPRINT_NORMALIZED})
-		add_definitions(-DTURBORAMA_PIX_BUNDLE_SHA256=${TURBORAMA_PIX_BUNDLE_SHA256_NORMALIZED})
     elseif(NOT "${TURBORAMA_PIX_SIGNER_THUMBPRINT}" STREQUAL "")
         message(FATAL_ERROR "A PIX signer thumbprint was supplied without TURBORAMA_REQUIRE_SIGNED_PIX")
-	elseif(NOT "${TURBORAMA_PIX_BUNDLE_SHA256}" STREQUAL "")
-		message(FATAL_ERROR "A PIX bundle digest was supplied without TURBORAMA_REQUIRE_SIGNED_PIX")
     endif()
 endif()
 
