@@ -125,6 +125,7 @@ $CandidateOutputRoot = Join-Path $CandidateContainerRoot 'GERADO-v25'
 $ReleaseHistoryRoot = Join-Path $WorkspaceRoot 'release-backups'
 $OutputRoot = $CandidateOutputRoot
 $AgentProject = Join-Path $ProjectRoot 'tools\TurboRamaPixAgent\TurboRamaPixAgent.csproj'
+$AgentSettingsTemplate = Join-Path (Split-Path -Parent $AgentProject) 'appsettings.example.json'
 $LicenseIssuerProject = Join-Path $ProjectRoot 'tools\TurboRamaPixLicenseIssuer\TurboRamaPixLicenseIssuer.csproj'
 $InstallerSource = Join-Path $ProjectRoot 'tools\TurboRamaCommercialInstaller'
 $PackScript = Join-Path $InstallerSource 'Build-TurboRamaPackage.ps1'
@@ -2131,11 +2132,10 @@ function Prepare-CommercialAgentBundle([string]$Dotnet) {
     Run $Dotnet $arguments
     Assert-CommercialPayloadTree $AgentOutput 'Saida do agente PIX'
 
-    $agentSettingsTemplate = Join-Path (Split-Path -Parent $AgentProject) 'appsettings.example.json'
     $agentSettingsOutput = Join-Path $AgentOutput 'appsettings.json'
-    Require-File $agentSettingsTemplate 'Template seguro do appsettings PIX'
-    Copy-Item -LiteralPath $agentSettingsTemplate -Destination $agentSettingsOutput -Force
-    if ((Get-FileHash -LiteralPath $agentSettingsTemplate -Algorithm SHA256).Hash -ne
+    Require-File $AgentSettingsTemplate 'Template seguro do appsettings PIX'
+    Copy-Item -LiteralPath $AgentSettingsTemplate -Destination $agentSettingsOutput -Force
+    if ((Get-FileHash -LiteralPath $AgentSettingsTemplate -Algorithm SHA256).Hash -ne
         (Get-FileHash -LiteralPath $agentSettingsOutput -Algorithm SHA256).Hash) {
         throw 'appsettings.json distribuido diverge do template seguro versionado.'
     }
@@ -2328,7 +2328,7 @@ try {
         Copy-Item -LiteralPath $notice -Destination (Join-Path $thirdPartyNotices (Split-Path -Leaf $notice)) -Force
     }
     Copy-Tree $AgentOutput (Join-Path $ArchiveRoot 'pix-agent')
-    if ((Get-FileHash -LiteralPath $agentSettingsTemplate -Algorithm SHA256).Hash -ne
+    if ((Get-FileHash -LiteralPath $AgentSettingsTemplate -Algorithm SHA256).Hash -ne
         (Get-FileHash -LiteralPath (Join-Path $ArchiveRoot 'pix-agent\appsettings.json') -Algorithm SHA256).Hash) {
         throw 'O payload alterou o appsettings seguro do agente PIX.'
     }
@@ -2945,7 +2945,7 @@ LIMITES DESTA ENTREGA
 		}
 		$installedSettings = Join-Path $smoke 'pix-agent\appsettings.json'
 		if ((Get-FileHash -LiteralPath $installedSettings -Algorithm SHA256).Hash -ne
-			(Get-FileHash -LiteralPath $agentSettingsTemplate -Algorithm SHA256).Hash) {
+			(Get-FileHash -LiteralPath $AgentSettingsTemplate -Algorithm SHA256).Hash) {
 			throw 'A instalacao isolada alterou ou substituiu o appsettings seguro do agente PIX.'
 		}
 		$installedAgentTreeFingerprint = @(Get-DirectoryTreeFingerprint (Join-Path $smoke 'pix-agent') 'pix-agent')
