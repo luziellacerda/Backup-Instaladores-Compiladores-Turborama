@@ -355,10 +355,10 @@ namespace
 		std::string signature;
 	};
 
-	// Este contrato aceita somente provedores locais de pagamento publicados pelo
-	// agente. O TurboRama Online licencia a maquina, mas nunca cria a cobranca nem
-	// aparece como provedor em um credito assinado.
-	constexpr const char* kSupportedProviderPattern = "mercadopago|mock|adapter";
+	// Este contrato aceita somente provedores publicados pelo agente. No perfil
+	// on-line, o servidor TurboRama cria a cobranca sem expor o segredo Mercado
+	// Pago ao gabinete e identifica o resultado como turborama-online.
+	constexpr const char* kSupportedProviderPattern = "mercadopago|turborama-online|mock|adapter";
 
 	bool validBeneficiary(const std::string& type, const std::string& id)
 	{
@@ -462,6 +462,9 @@ namespace
 		std::string parsedProvider;
 		if (!extractString("{\"provider\":\"adapter\"}", "provider",
 			kSupportedProviderPattern, parsedProvider) || parsedProvider != "adapter") return false;
+		parsedProvider.clear();
+		if (!extractString("{\"provider\":\"turborama-online\"}", "provider",
+			kSupportedProviderPattern, parsedProvider) || parsedProvider != "turborama-online") return false;
 		parsedProvider.clear();
 		if (extractString("{\"provider\":\"desconhecido\"}", "provider",
 			kSupportedProviderPattern, parsedProvider)) return false;
