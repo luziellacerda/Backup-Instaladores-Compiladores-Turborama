@@ -3594,12 +3594,10 @@ namespace
 			|| !validateOpenedFilesystemObject(targetDirectory, target, true,
 				&transaction.targetIdentity)
 			|| !openTargetMutationGuard(transaction)) return false;
-		transaction.entries.resize(4);
+		transaction.entries.resize(2);
 		transaction.entries[0].leaf = L"emulationstation.exe";
-		transaction.entries[1].leaf = L"CONFIGURAR-USER-TOKEN-PIX.exe";
-		transaction.entries[2].leaf = L"CONFIGURAR-ACCESS-TOKEN-PIX.exe";
-		transaction.entries[3].leaf = L"pix-agent";
-		transaction.entries[3].directory = true;
+		transaction.entries[1].leaf = L"pix-agent";
+		transaction.entries[1].directory = true;
 		for (size_t index = 0; index < transaction.entries.size(); ++index)
 		{
 			auto& entry = transaction.entries[index];
@@ -4600,12 +4598,6 @@ namespace
 		// contem exclusivamente objetos do EmulationStation selecionado em D:.
 		if (!appendSecurityPlanEntry(plan, join(target, L"emulationstation.exe"), false, false,
 			KioskPermission::ReadExecute, false, true, failure)) return false;
-		for (const auto& relative : {
-			L"CONFIGURAR-USER-TOKEN-PIX.exe", L"CONFIGURAR-ACCESS-TOKEN-PIX.exe" })
-		{
-			if (!appendSecurityPlanEntry(plan, join(target, relative), false, false,
-				KioskPermission::ReadExecute, false, false, failure)) return false;
-		}
 		if (!appendSecurityPlanEntry(plan, join(target, L"pix-agent"), true, true,
 			KioskPermission::ReadExecute, true, false, failure)) return false;
 		const std::wstring emulationstationData = join(target, L".emulationstation");
@@ -4802,10 +4794,7 @@ namespace
 		SecurityFailure* failure)
 	{
 		std::vector<SecurityBackup> snapshot;
-		for (const auto& relative : {
-			L"emulationstation.exe",
-			L"CONFIGURAR-USER-TOKEN-PIX.exe",
-			L"CONFIGURAR-ACCESS-TOKEN-PIX.exe" })
+		for (const auto& relative : { L"emulationstation.exe" })
 		{
 			const std::wstring path = join(target, relative);
 			if (!captureSecurityBackup(path, false, snapshot, failure))
@@ -6641,15 +6630,13 @@ namespace
 		removeTree(root);
 		bool ok = ensureDirectory(pix) && ensureDirectory(agent)
 			&& writeUtf8FileForSelfTest(join(target, L"emulationstation.exe"), L"es")
-			&& writeUtf8FileForSelfTest(join(target, L"CONFIGURAR-USER-TOKEN-PIX.exe"), L"user")
-			&& writeUtf8FileForSelfTest(join(target, L"CONFIGURAR-ACCESS-TOKEN-PIX.exe"), L"access")
 			&& writeUtf8FileForSelfTest(join(agent, L"TurboRamaPixAgent.dll"), L"agent")
 			&& writeUtf8FileForSelfTest(join(pix, L"state.json"), L"{}\n");
 		std::vector<SecurityBackup> before;
 		if (ok) ok = captureSecurityTree(target, true, before);
 		std::vector<InstallationSecurityContext::PlanEntry> plan;
 		SecurityFailure failure;
-		if (ok) ok = buildInstallationSecurityPlan(target, plan, &failure) && plan.size() == 5;
+		if (ok) ok = buildInstallationSecurityPlan(target, plan, &failure) && plan.size() == 3;
 		const std::wstring targetPrefix = normalized(target) + L"\\";
 		const std::wstring forbidden = normalized(L"C:\\TurboRama");
 		if (ok)
@@ -6677,9 +6664,7 @@ namespace
 		target = join(root, L"target");
 		if (!ensureDirectory(join(staged, L"pix-agent\\runtime"))
 			|| !ensureDirectory(join(target, L"pix-agent\\runtime"))) return false;
-		for (const auto& relative : {
-			L"emulationstation.exe", L"CONFIGURAR-USER-TOKEN-PIX.exe",
-			L"CONFIGURAR-ACCESS-TOKEN-PIX.exe" })
+		for (const auto& relative : { L"emulationstation.exe" })
 		{
 			if (!writeUtf8FileForSelfTest(join(staged, relative),
 				L"new:" + std::wstring(relative) + L"\n")
@@ -7533,9 +7518,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		|| (!silentTest && !secureStagedTree(stagedPayload))
 		|| !exists(join(stagedPayload, L"emulationstation.exe"))
 		|| !exists(join(stagedPayload, L"pix-agent\\TurboRamaPixAgent.dll"))
-		|| !exists(join(stagedPayload, L"pix-agent\\runtime\\dotnet.exe"))
-		|| !exists(join(stagedPayload, L"CONFIGURAR-ACCESS-TOKEN-PIX.exe"))
-		|| !exists(join(stagedPayload, L"CONFIGURAR-USER-TOKEN-PIX.exe")))
+		|| !exists(join(stagedPayload, L"pix-agent\\runtime\\dotnet.exe")))
 	{
 		closePinned();
 		return 10;
@@ -7569,8 +7552,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 
 	const std::wstring privateDotnet = join(target, L"pix-agent\\runtime\\dotnet.exe");
 	const std::wstring standaloneAgent = join(target, L"pix-agent\\TurboRamaPixAgent.exe");
-	const std::wstring userConfigurator = join(target, L"CONFIGURAR-USER-TOKEN-PIX.exe");
-	const std::wstring accessConfigurator = join(target, L"CONFIGURAR-ACCESS-TOKEN-PIX.exe");
 	std::vector<std::wstring> processPaths;
 	auto addProcessPath = [&](const std::wstring& path)
 	{
@@ -7581,8 +7562,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 	addProcessPath(launcherProcess);
 	addProcessPath(layout.wrapperExecutable);
 	addProcessPath(targetExecutable);
-	addProcessPath(userConfigurator);
-	addProcessPath(accessConfigurator);
 	addProcessPath(privateDotnet);
 	addProcessPath(standaloneAgent);
 	auto quiesceExactProcesses = [&]()
@@ -7598,7 +7577,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 	if (stopPrepared)
 	{
 		for (const auto& path : { launcherProcess, layout.wrapperExecutable,
-			targetExecutable, userConfigurator, accessConfigurator })
+			targetExecutable })
 			if (!stopExactProcessAndConfirm(path, !silentTest)) { stopPrepared = false; break; }
 	}
 	if (stopPrepared && directoryExists(join(target, L".emulationstation\\pix")))
@@ -7676,7 +7655,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		closePinned();
 		if (!silentTest) MessageBoxW(nullptr,
 			restored
-				? L"A preparacao atomica dos quatro artefatos falhou antes da publicacao. Os temporarios foram removidos e o estado PIX anterior foi restaurado."
+				? L"A preparacao atomica do EmulationStation e do agente PIX falhou antes da publicacao. Os temporarios foram removidos e o estado PIX anterior foi restaurado."
 				: L"A preparacao atomica falhou e a recuperacao ou limpeza ficou incompleta. Nao inicie o TurboRama.",
 			kTitle, MB_OK | MB_ICONERROR);
 		return restored ? 12 : 14;
@@ -7721,7 +7700,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		closePinned();
 		if (!silentTest) MessageBoxW(nullptr,
 			restored
-				? L"A troca dos quatro artefatos falhou. O conjunto anterior e o estado PIX foram restaurados."
+				? L"A troca do EmulationStation e do agente PIX falhou. O conjunto anterior e o estado PIX foram restaurados."
 				: L"A troca falhou e o rollback ficou incompleto. Nao inicie o TurboRama.",
 			kTitle, MB_OK | MB_ICONERROR);
 		return restored ? 13 : 14;
@@ -7872,8 +7851,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 
 	const std::wstring completionMessage = std::wstring(
 		L"CANDIDATO INTERNO INSTALADO. NAO LIBERAR PARA VENDA.\n\n")
-		+ L"Foram trocados somente o EmulationStation, os dois configuradores e o pix-agent em:\n"
+		+ L"Foram trocados somente o EmulationStation e o pix-agent em:\n"
 		+ target + L"\n\n"
+		+ L"Os dois configuradores administrativos nao foram instalados no gabinete.\n\n"
 		+ L"Factory Pack, wrapper, Launcher, servicos, cache, .runtime, ROMs e temas foram preservados e permaneceram fora do escopo. "
 			L"Nenhum servico foi parado ou reiniciado.\n\n"
 		+ L"O arquivo legado REPARAR-INSTALACAO-TURBORAMA.ps1, se ja existia em D:, foi preservado sem ser executado ou instalado.\n\n"

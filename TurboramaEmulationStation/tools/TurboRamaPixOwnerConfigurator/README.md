@@ -1,32 +1,25 @@
 # CONFIGURAR-USER-TOKEN-PIX
 
-Configurador comercial do proprietário PIX com interface LZ Games.
+Programa portatil de manutencao do administrador LZ Games.
 
-Ele identifica a conta pelo Access Token, cria/reaproveita Loja e PDV do
-Mercado Pago e grava o mesmo `owner-settings.json` consumido pelo
-EmulationStation. Também configura provedores bancários que implementem o
-contrato de adaptador TurboRama.
+O programa:
 
-No gabinete atual, o programa deve ser executado pela conta `Admin` indicada
-simultaneamente em `turborama.json` e no AutoLogon. A validação compara os SIDs
-reais antes de transmitir a credencial.
+- consulta a conta, as lojas e os PDVs reais diretamente no Mercado Pago;
+- permite selecionar um unico PDV ativo;
+- pode remover somente cadastros antigos gerenciados pelo TurboRama, mediante confirmacao;
+- valida o Access Token e o PDV no servidor LZ Games;
+- envia a credencial somente por HTTPS para `painelpix.lzgames.com.br`;
+- usa um codigo bancario de uso unico, emitido pelo painel e valido por 15 minutos.
 
-`VER CADASTROS` consulta a conta sem modificar recursos. Quando existem vários
-pares Loja/PDV, o programa marca `[ATUAL NESTE PC]` somente quando os IDs salvos
-localmente correspondem exatamente ao inventário retornado. O operador pode:
+O programa nao depende da conta Windows do kiosk, nao para o agente PIX e nao
+grava Access Token, `secret.dat` ou `owner-settings.json` no gabinete. O servidor
+mantem apenas uma conexao Mercado Pago ativa por cliente; um novo cadastro
+substitui a conexao anterior desse cliente.
 
-- usar somente o par selecionado; ou
-- usar o par selecionado e remover os outros pares gerenciados pelo TurboRama.
+Ele deve ficar somente com o administrador. Nao faz parte do payload instalado
+no kiosk e deve ser removido da maquina depois da manutencao.
 
-A segunda opção exige confirmação explícita. Ela preserva o par escolhido e
-qualquer recurso que não use os prefixos `LZLOJA`/`LZPIX`. A exclusão segue os
-endpoints oficiais: primeiro o PDV e somente depois uma loja antiga que tenha
-ficado sem nenhum PDV.
-
-O segredo é enviado ao agente por um pipe anônimo e não é gravado em JSON,
-linha de comando ou log.
-
-Autoteste:
+Autoteste local, sem rede e sem cobranca:
 
 ```text
 CONFIGURAR-USER-TOKEN-PIX.exe --self-test

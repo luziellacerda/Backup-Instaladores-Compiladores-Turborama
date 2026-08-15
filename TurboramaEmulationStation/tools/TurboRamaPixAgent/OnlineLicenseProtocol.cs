@@ -142,6 +142,10 @@ sealed record OnlineOrderResponse(
     string Status);
 
 sealed record OnlineErrorResponse(int SchemaVersion, string Code, string Message);
+sealed record OnlineMercadoPagoEnrollmentRequest(int SchemaVersion, string CustomerId,
+    string EnrollmentCode, string ExternalPosId, string AccessToken);
+sealed record OnlineMercadoPagoEnrollmentResult(int SchemaVersion, string Status, string CustomerId,
+    string ExternalPosId);
 
 static class OnlineLicenseProtocol
 {

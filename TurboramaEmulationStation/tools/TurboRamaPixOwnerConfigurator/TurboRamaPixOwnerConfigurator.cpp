@@ -60,20 +60,25 @@ namespace
 	constexpr int ID_INVENTORY_REFRESH = 507;
 	constexpr int ID_INVENTORY_CLOSE = 508;
 	constexpr int ID_INVENTORY_USE_AND_CLEAN = 509;
+	constexpr int ID_SERVER_URL = 600;
+	constexpr int ID_CUSTOMER_ID = 601;
+	constexpr int ID_ENROLLMENT_CODE = 602;
 	constexpr UINT WM_CONFIGURED = WM_APP + 25;
 	constexpr UINT WM_IDENTITY_CHECKED = WM_APP + 26;
 	constexpr UINT WM_INVENTORY_READY = WM_APP + 27;
 	const wchar_t* kClassName = L"TurboRamaPixOwnerConfigurator";
 	const wchar_t* kInventoryClassName = L"TurboRamaPixInventoryManager";
 	const wchar_t* kTitle = L"LZ Games - Configuração Comercial PIX";
-	constexpr int kClientWidth = 1040;
-	constexpr int kClientHeight = 680;
-	constexpr int kStatusCardTop = 604;
-	constexpr int kStatusCardBottom = 626;
+	constexpr int kClientWidth = 980;
+	constexpr int kClientHeight = 700;
+	constexpr int kStatusCardTop = 610;
+	constexpr int kStatusCardBottom = 638;
+	constexpr const wchar_t* kDefaultServerUrl = L"https://painelpix.lzgames.com.br";
 
 	HWND gWindow{}, gProvider{}, gEnvironment{}, gToken{}, gShow{}, gStore{}, gPos{}, gStoreExternal{}, gPosExternal{};
 	HWND gCep{}, gNumber{}, gReference{};
 	HWND gAdapterUrl{}, gAdapterId{}, gStatus{}, gConfigure{}, gManage{}, gLoad{}, gClose{};
+	HWND gServerUrl{}, gCustomerId{}, gEnrollmentCode{};
 	HWND gPrice15{}, gPrice30{}, gPrice45{}, gPrice60{}, gPrice120{};
 	std::vector<HWND> gMercadoPagoLabels, gAdapterLabels;
 	HFONT gTitleFont{}, gHeaderFont{}, gFont{}, gSmallFont{}, gMonoFont{}, gHeroFont{}, gStepFont{};
@@ -90,6 +95,7 @@ namespace
 		std::wstring selectedAccountId, selectedStoreId, selectedPosId;
 		std::wstring cep, number, reference, adapterUrl, adapterId;
 		std::wstring p15, p30, p45, p60, p120;
+		std::wstring serverUrl, customerId, enrollmentCode;
 	};
 
 	struct WorkerResult { bool ok{}; std::wstring message; };
@@ -139,6 +145,8 @@ namespace
 	};
 	void updateProvider();
 	bool isLegacyTestPosId(const std::wstring& value);
+	bool validExternalId(const std::wstring& value, size_t maximum);
+	std::string jsonEscape(const std::wstring& value);
 
 	std::wstring trim(std::wstring value)
 	{
@@ -475,6 +483,127 @@ namespace
 		if (result.status < 200 || result.status >= 300)
 		{
 			error = L"Mercado Pago recusou a chamada: " + apiError(result);
+			return false;
+		}
+		return true;
+	}
+
+	bool validEnrollmentIdentifier(const std::wstring& value, size_t minimum, size_t maximum)
+	{
+		return value.size() >= minimum && value.size() <= maximum
+			&& std::all_of(value.begin(), value.end(), [](wchar_t ch) {
+				return (ch >= L'0' && ch <= L'9') || (ch >= L'A' && ch <= L'Z')
+					|| (ch >= L'a' && ch <= L'z') || ch == L'-' || ch == L'_';
+			});
+	}
+
+	bool sendMercadoPagoEnrollment(const FormData& data, std::wstring& error)
+	{
+		// O destino comercial e fixo. Isso impede que uma URL digitada por engano
+		// receba o Access Token. O HTTPS continua validado pelo WinHTTP.
+		if (_wcsicmp(trim(data.serverUrl).c_str(), kDefaultServerUrl) != 0)
+		{
+			error = L"O servidor informado nao e o servidor comercial LZ Games autorizado.";
+			return false;
+		}
+		if (!validEnrollmentIdentifier(data.customerId, 4, 64)
+			|| !validEnrollmentIdentifier(data.enrollmentCode, 32, 128)
+			|| !validExternalId(data.posExternalId, 40) || data.posExternalId.empty())
+		{
+			error = L"Cliente, codigo bancario ou ID externo do PDV e invalido.";
+			return false;
+		}
+
+		std::ostringstream json;
+		json << "{\"schemaVersion\":1,\"customerId\":\"" << jsonEscape(data.customerId)
+			<< "\",\"enrollmentCode\":\"" << jsonEscape(data.enrollmentCode)
+			<< "\",\"externalPosId\":\"" << jsonEscape(data.posExternalId)
+			<< "\",\"accessToken\":\"" << jsonEscape(data.token) << "\"}";
+		std::string body = json.str();
+		HttpResult result;
+		HINTERNET session = WinHttpOpen(L"TurboRama PIX Bank Enrollment/25",
+			WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+		if (!session)
+		{
+			SecureZeroMemory(body.data(), body.size());
+			error = L"O Windows nao abriu a conexao HTTPS com o servidor LZ Games.";
+			return false;
+		}
+		WinHttpSetTimeouts(session, 10000, 15000, 15000, 45000);
+		HINTERNET connection = WinHttpConnect(session, L"painelpix.lzgames.com.br", INTERNET_DEFAULT_HTTPS_PORT, 0);
+		HINTERNET request = connection ? WinHttpOpenRequest(connection, L"POST", L"/v1/enrollment/mercadopago",
+			nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE) : nullptr;
+		if (!request)
+		{
+			if (connection) WinHttpCloseHandle(connection);
+			WinHttpCloseHandle(session);
+			SecureZeroMemory(body.data(), body.size());
+			error = L"Nao foi possivel preparar a conexao com o servidor LZ Games.";
+			return false;
+		}
+		DWORD disable = WINHTTP_DISABLE_REDIRECTS;
+		WinHttpSetOption(request, WINHTTP_OPTION_DISABLE_FEATURE, &disable, sizeof(disable));
+		const wchar_t* headers = L"Content-Type: application/json\r\nAccept: application/json\r\n";
+		const BOOL sent = WinHttpSendRequest(request, headers, (DWORD)-1L, body.data(),
+			(DWORD)body.size(), (DWORD)body.size(), 0);
+		SecureZeroMemory(body.data(), body.size());
+		if (!sent || !WinHttpReceiveResponse(request, nullptr))
+		{
+			WinHttpCloseHandle(request); WinHttpCloseHandle(connection); WinHttpCloseHandle(session);
+			error = L"O servidor LZ Games nao respondeu. Nenhuma credencial foi salva no gabinete.";
+			return false;
+		}
+		DWORD statusSize = sizeof(result.status);
+		WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+			WINHTTP_HEADER_NAME_BY_INDEX, &result.status, &statusSize, WINHTTP_NO_HEADER_INDEX);
+		for (;;)
+		{
+			DWORD available = 0;
+			if (!WinHttpQueryDataAvailable(request, &available) || available == 0) break;
+			if (result.body.size() + available > 65536)
+			{
+				WinHttpCloseHandle(request); WinHttpCloseHandle(connection); WinHttpCloseHandle(session);
+				error = L"A resposta do servidor excedeu o limite seguro.";
+				return false;
+			}
+			const size_t offset = result.body.size();
+			result.body.resize(offset + available);
+			DWORD read = 0;
+			if (!WinHttpReadData(request, result.body.data() + offset, available, &read))
+			{
+				WinHttpCloseHandle(request); WinHttpCloseHandle(connection); WinHttpCloseHandle(session);
+				error = L"A resposta do servidor nao pode ser lida.";
+				return false;
+			}
+			result.body.resize(offset + read);
+		}
+		WinHttpCloseHandle(request); WinHttpCloseHandle(connection); WinHttpCloseHandle(session);
+		if (result.status >= 300 && result.status < 400)
+		{
+			error = L"A API foi redirecionada para o login Cloudflare. Libere somente /v1/* para o protocolo criptografico dos gabinetes.";
+			return false;
+		}
+
+		JsonNode response;
+		if (!parseJson(result.body, response) || response.kind != JsonKind::Object)
+		{
+			error = L"O servidor retornou uma resposta invalida.";
+			return false;
+		}
+		if (result.status < 200 || result.status >= 300)
+		{
+			const std::wstring code = scalarText(response.member("code"));
+			error = code.empty()
+				? L"O servidor recusou o cadastro (HTTP " + std::to_wstring(result.status) + L")."
+				: L"O servidor recusou o cadastro. Codigo: " + code + L".";
+			return false;
+		}
+		const std::wstring status = scalarText(response.member("status"));
+		const std::wstring customer = scalarText(response.member("customerId"));
+		const std::wstring point = scalarText(response.member("externalPosId"));
+		if (status != L"ACTIVE" || customer != data.customerId || point != data.posExternalId)
+		{
+			error = L"A confirmacao do servidor nao corresponde ao cadastro enviado.";
 			return false;
 		}
 		return true;
@@ -1376,6 +1505,47 @@ namespace
 		return true;
 	}
 
+	bool collectServerEnrollment(FormData& data, std::wstring& error)
+	{
+		data.adapter = false;
+		data.sandbox = false;
+		data.serverUrl = textOf(gServerUrl);
+		data.customerId = textOf(gCustomerId);
+		data.enrollmentCode = textOf(gEnrollmentCode);
+		data.token = textOf(gToken);
+		data.storeName = textOf(gStore);
+		data.posName = textOf(gPos);
+		data.storeExternalId = textOf(gStoreExternal);
+		data.posExternalId = textOf(gPosExternal);
+		if (_wcsicmp(data.serverUrl.c_str(), kDefaultServerUrl) != 0)
+		{
+			error = L"Use somente o servidor comercial LZ Games exibido no programa.";
+			return false;
+		}
+		if (!validEnrollmentIdentifier(data.customerId, 4, 64))
+		{
+			error = L"Informe o Cliente ID exatamente como aparece no painel LZ Games.";
+			return false;
+		}
+		if (!validEnrollmentIdentifier(data.enrollmentCode, 32, 128))
+		{
+			error = L"Informe o codigo bancario de uso unico gerado no painel. Ele vale por 15 minutos.";
+			return false;
+		}
+		if (!looksLikeProductionMercadoPagoToken(data.token) || data.token.size() < 40)
+		{
+			error = L"Cole o Access Token completo de producao do Mercado Pago, iniciado por APP_USR-.";
+			return false;
+		}
+		if (data.posExternalId.empty() || !validExternalId(data.posExternalId, 40)
+			|| isLegacyTestPosId(data.posExternalId))
+		{
+			error = L"Consulte os cadastros e selecione um PDV ativo com ID externo valido.";
+			return false;
+		}
+		return true;
+	}
+
 	std::string configurationJson(const FormData& data)
 	{
 		std::ostringstream json;
@@ -1600,7 +1770,7 @@ namespace
 		return false;
 	}
 
-	WorkerResult configure(FormData data)
+	WorkerResult legacyConfigureLocal(FormData data)
 	{
 		struct TokenClearGuard
 		{
@@ -1682,6 +1852,71 @@ namespace
 		result.message = data.adapter
 			? L"Adaptador bancário validado e ativado. O EmulationStation já pode gerar cobranças PIX."
 			: L"Conta reconhecida. Loja e caixa foram criados ou reaproveitados e o PIX está pronto.";
+		return result;
+	}
+
+	WorkerResult configure(FormData data)
+	{
+		struct SecretClearGuard
+		{
+			explicit SecretClearGuard(FormData& value) : data(value) {}
+			~SecretClearGuard()
+			{
+				for (std::wstring* value : { &data.token, &data.enrollmentCode })
+					if (!value->empty()) SecureZeroMemory(value->data(), value->size() * sizeof(wchar_t));
+			}
+			FormData& data;
+		} clear(data);
+
+		WorkerResult result;
+		MercadoPagoInventory inventory;
+		std::wstring error;
+		if (!fetchMercadoPagoInventory(data.token, inventory, error))
+		{
+			result.message = L"A credencial nao foi aceita na consulta real do Mercado Pago: " + error;
+			return result;
+		}
+		if (!data.selectedAccountId.empty() && inventory.accountId != data.selectedAccountId)
+		{
+			result.message = L"A conta Mercado Pago mudou entre a consulta e a confirmacao. Nada foi enviado ao servidor.";
+			return result;
+		}
+		const auto pairs = compatiblePairs(inventory);
+		const auto selected = std::find_if(pairs.begin(), pairs.end(), [&](const auto& pair) {
+			return sameTextInsensitive(pair.pos.externalId, data.posExternalId)
+				&& (data.storeExternalId.empty()
+					|| sameTextInsensitive(pair.store.externalId, data.storeExternalId));
+		});
+		if (selected == pairs.end())
+		{
+			result.message = L"O PDV selecionado nao foi confirmado na conta Mercado Pago. Nada foi enviado ao servidor.";
+			return result;
+		}
+		data.selectedAccountId = inventory.accountId;
+		data.selectedStoreId = selected->store.id;
+		data.selectedPosId = selected->pos.id;
+		data.storeExternalId = selected->store.externalId;
+		data.posExternalId = selected->pos.externalId;
+
+		if (data.removeOtherManagedPairs)
+		{
+			size_t removedPoints = 0, removedStores = 0;
+			if (!removeOtherManagedPairs(data.token, data.selectedAccountId,
+				data.selectedStoreId, data.selectedPosId, removedPoints, removedStores, error))
+			{
+				result.message = L"O cadastro escolhido foi preservado, mas a limpeza dos cadastros antigos nao terminou: " + error;
+				return result;
+			}
+		}
+		if (!sendMercadoPagoEnrollment(data, error))
+		{
+			result.message = error;
+			return result;
+		}
+		result.ok = true;
+		result.message = data.removeOtherManagedPairs
+			? L"Conta e PDV validados. Cadastros TurboRama antigos foram removidos e a credencial ficou protegida somente no servidor LZ Games."
+			: L"Conta e PDV validados. A credencial ficou protegida somente no servidor LZ Games e nao foi salva neste computador.";
 		return result;
 	}
 
@@ -1774,9 +2009,10 @@ namespace
 
 	void enableForm(bool enabled)
 	{
-		for (HWND control : { gProvider,gEnvironment,gToken,gShow,gStore,gPos,gStoreExternal,gPosExternal,
-			gCep,gNumber,gReference,gAdapterUrl,gAdapterId,gManage,
-			gPrice15,gPrice30,gPrice45,gPrice60,gPrice120,gConfigure,gLoad,gClose }) EnableWindow(control, enabled);
+		for (HWND control : { gServerUrl,gCustomerId,gEnrollmentCode,gToken,gShow,gStore,gPos,
+			gStoreExternal,gPosExternal,gManage,gConfigure,gLoad,gClose })
+			if (control) EnableWindow(control, enabled);
+		if (gServerUrl) EnableWindow(gServerUrl, FALSE);
 	}
 
 	void clearTokenControl()
@@ -2025,7 +2261,7 @@ namespace
 		return true;
 	}
 
-	void createControls(HWND window)
+	void legacyCreateControls(HWND window)
 	{
 		gTitleFont = CreateFontW(30,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
 		gHeaderFont = CreateFontW(21,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
@@ -2078,6 +2314,50 @@ namespace
 		updateProvider();
 	}
 
+	void createControls(HWND window)
+	{
+		gTitleFont = CreateFontW(30,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
+		gHeaderFont = CreateFontW(21,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
+		gFont = CreateFontW(17,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
+		gSmallFont = CreateFontW(14,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
+		gMonoFont = CreateFontW(17,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Consolas");
+		gHeroFont = CreateFontW(40,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
+		gStepFont = CreateFontW(16,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
+
+		label(window,L"SERVIDOR LZ GAMES",300,140,250,22);
+		gServerUrl=edit(window,ID_SERVER_URL,kDefaultServerUrl,300,164,640,38,ES_READONLY);
+
+		label(window,L"CLIENTE ID DO PAINEL",300,220,270,22);
+		gCustomerId=edit(window,ID_CUSTOMER_ID,L"",300,244,290,38);
+		SendMessageW(gCustomerId,EM_SETLIMITTEXT,64,0);
+		label(window,L"CODIGO BANCARIO DE USO UNICO",610,220,310,22);
+		gEnrollmentCode=edit(window,ID_ENROLLMENT_CODE,L"",610,244,330,38,ES_PASSWORD);
+		SendMessageW(gEnrollmentCode,EM_SETLIMITTEXT,128,0);
+
+		label(window,L"ACCESS TOKEN MERCADO PAGO",300,302,320,22);
+		gToken=edit(window,ID_TOKEN,L"",300,326,470,38,ES_PASSWORD);
+		SendMessageW(gToken,EM_SETPASSWORDCHAR,0x25CF,0);
+		gShow=button(window,ID_SHOW,L"MOSTRAR",784,326,90,38);
+		gManage=button(window,ID_MANAGE,L"CONSULTAR",884,326,76,38);
+
+		label(window,L"LOJA CONFIRMADA",300,390,260,22);
+		gStore=edit(window,ID_STORE,L"",300,414,310,38,ES_READONLY);
+		label(window,L"PDV CONFIRMADO",630,390,260,22);
+		gPos=edit(window,ID_POS,L"",630,414,310,38,ES_READONLY);
+		label(window,L"ID EXTERNO DA LOJA",300,470,260,22);
+		gStoreExternal=edit(window,ID_STORE_EXTERNAL,L"",300,494,310,38,ES_READONLY);
+		label(window,L"ID EXTERNO DO PDV",630,470,260,22);
+		gPosExternal=edit(window,ID_POS_EXTERNAL,L"",630,494,310,38,ES_READONLY);
+
+		gStatus=CreateWindowExW(WS_EX_TRANSPARENT,L"STATIC",L"Cole o token e consulte os cadastros reais.",
+			WS_CHILD|WS_VISIBLE|SS_LEFT|SS_NOPREFIX,334,615,598,20,window,nullptr,nullptr,nullptr);
+		SendMessageW(gStatus,WM_SETFONT,(WPARAM)gSmallFont,TRUE);
+		gConfigure=button(window,ID_CONFIGURE,L"VALIDAR E PROTEGER NO SERVIDOR",300,648,420,42);
+		gLoad=button(window,ID_LOAD,L"LIMPAR",734,648,206,42);
+		gClose=button(window,ID_CLOSE,L"FECHAR",74,642,132,38);
+		EnableWindow(gServerUrl,FALSE);
+	}
+
 	void drawButton(const DRAWITEMSTRUCT* item)
 	{
 		const bool primary = item->CtlID == ID_CONFIGURE;
@@ -2107,7 +2387,7 @@ namespace
 		SelectObject(dc,font);SetTextColor(dc,color);SetBkMode(dc,TRANSPARENT);TextOutW(dc,x,y,value,lstrlenW(value));
 	}
 
-	void paint(HWND window)
+	void legacyPaint(HWND window)
 	{
 		PAINTSTRUCT ps{}; HDC dc=BeginPaint(window,&ps); RECT client{}; GetClientRect(window,&client);
 		FillRect(dc,&client,gBackgroundBrush);
@@ -2147,6 +2427,45 @@ namespace
 		EndPaint(window,&ps);
 	}
 
+	void paint(HWND window)
+	{
+		PAINTSTRUCT ps{}; HDC dc=BeginPaint(window,&ps); RECT client{}; GetClientRect(window,&client);
+		FillRect(dc,&client,gBackgroundBrush);
+		RECT sidebar{0,0,250,client.bottom}; FillRect(dc,&sidebar,gPanelBrush);
+		RECT header{250,0,client.right,112}; HBRUSH headerBrush=CreateSolidBrush(RGB(8,22,37)); FillRect(dc,&header,headerBrush); DeleteObject(headerBrush);
+		RECT accent{250,108,client.right,112}; HBRUSH accentBrush=CreateSolidBrush(RGB(0,195,235)); FillRect(dc,&accent,accentBrush); DeleteObject(accentBrush);
+		if(gIcon) DrawIconEx(dc,28,24,gIcon,52,52,0,nullptr,DI_NORMAL);
+		drawTextLine(dc,gHeaderFont,RGB(244,248,253),94,25,L"LZ GAMES");
+		drawTextLine(dc,gSmallFont,RGB(0,210,245),96,57,L"TURBORAMA  -  PIX");
+		drawTextLine(dc,gTitleFont,RGB(245,249,255),300,24,L"Cadastro bancario seguro");
+		drawTextLine(dc,gFont,RGB(137,161,188),302,66,L"A credencial sai deste programa somente por HTTPS e fica no servidor LZ Games.");
+
+		RECT stepsCard{22,118,228,452}; fillBox(dc,stepsCard,RGB(8,20,34),RGB(30,55,77),16);
+		drawTextLine(dc,gSmallFont,RGB(236,186,58),40,142,L"FLUXO DO ADMINISTRADOR");
+		const wchar_t* steps[]={L"Gerar codigo no painel",L"Colar Access Token",L"Consultar Loja / PDV",L"Escolher um cadastro",L"Proteger no servidor"};
+		for(int i=0;i<5;++i)
+		{
+			const int y=188+i*49; RECT circle{38,y-4,66,y+24}; fillBox(dc,circle,i==4?RGB(37,52,29):RGB(10,42,60),i==4?RGB(236,186,58):RGB(0,180,222),28);
+			wchar_t number[3]{}; wsprintfW(number,L"%d",i+1); RECT numberArea=circle;
+			SelectObject(dc,gSmallFont); SetTextColor(dc,RGB(242,247,252)); SetBkMode(dc,TRANSPARENT); DrawTextW(dc,number,-1,&numberArea,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+			drawTextLine(dc,gSmallFont,RGB(222,234,246),78,y,steps[i]);
+			if(i<4){RECT connector{51,y+25,53,y+42};HBRUSH line=CreateSolidBrush(RGB(30,69,92));FillRect(dc,&connector,line);DeleteObject(line);}
+		}
+		RECT safeCard{22,470,228,622}; fillBox(dc,safeCard,RGB(7,24,27),RGB(38,91,76),16);
+		drawTextLine(dc,gHeaderFont,RGB(114,226,160),40,494,L"SEM SEGREDO LOCAL");
+		RECT safeText{40,528,210,608}; SelectObject(dc,gSmallFont); SetTextColor(dc,RGB(157,185,183)); SetBkMode(dc,TRANSPARENT);
+		DrawTextW(dc,L"O token nao e gravado no kiosk. Ao terminar, feche e remova este programa de manutencao.",-1,&safeText,DT_LEFT|DT_WORDBREAK);
+
+		RECT serverCard{276,128,964,292}; fillBox(dc,serverCard,RGB(10,24,40),RGB(34,63,88),16);
+		RECT accountCard{276,296,964,378}; fillBox(dc,accountCard,RGB(10,24,40),RGB(34,63,88),16);
+		RECT pointCard{276,382,964,548}; fillBox(dc,pointCard,RGB(10,24,40),RGB(34,63,88),16);
+		RECT noteCard{276,558,964,598}; fillBox(dc,noteCard,RGB(7,24,27),RGB(38,91,76),14);
+		drawTextLine(dc,gSmallFont,RGB(114,226,160),300,570,L"O servidor guarda apenas uma conexao Mercado Pago ativa por cliente.");
+		RECT statusCard{300,kStatusCardTop,940,kStatusCardBottom}; fillBox(dc,statusCard,RGB(6,21,31),RGB(32,85,104),14);
+		RECT statusAccent{300,kStatusCardTop,306,kStatusCardBottom}; HBRUSH statusBrush=CreateSolidBrush(GetWindowLongPtrW(gStatus,GWLP_USERDATA)?RGB(236,85,92):RGB(0,198,231)); FillRect(dc,&statusAccent,statusBrush); DeleteObject(statusBrush);
+		EndPaint(window,&ps);
+	}
+
 	std::wstring friendlyIdentityError(const std::wstring& raw)
 	{
 		if (raw.find(L"SID local do quiosque") != std::wstring::npos
@@ -2168,14 +2487,9 @@ namespace
 		case WM_CREATE:
 		{
 			createControls(window);
-			gWorking = true;
-			enableForm(false);
-			setStatus(L"Confirmando a conta Windows configurada no TurboRama/Winlogon...", false);
-			std::thread([window]() {
-				auto* result = new WorkerResult;
-				result->ok = preflightKioskIdentity(result->message);
-				PostMessageW(window, WM_IDENTITY_CHECKED, 0, (LPARAM)result);
-			}).detach();
+			gWorking = false;
+			enableForm(true);
+			setStatus(L"Gere o codigo bancario no painel, cole o token e consulte os PDVs reais.", false);
 			return 0;
 		}
 		case WM_PAINT: paint(window); return 0;
@@ -2203,10 +2517,6 @@ namespace
 			case ID_MANAGE:
 			{
 				if(gWorking) return 0;
-				std::wstring error;
-				if(SendMessageW(gProvider, CB_GETCURSEL, 0, 0) != 0)
-				{ setStatus(L"A consulta de cadastros existe apenas para Mercado Pago.",true); return 0; }
-				if(!preflightKioskIdentity(error)){error=friendlyIdentityError(error);setStatus(error,true);MessageBoxW(window,error.c_str(),kTitle,MB_OK|MB_ICONERROR);return 0;}
 				std::wstring token = textOf(gToken);
 				if(token.size() < 40 || !looksLikeProductionMercadoPagoToken(token))
 				{ setStatus(L"Cole o Access Token completo antes de consultar a conta Mercado Pago.",true); return 0; }
@@ -2224,29 +2534,23 @@ namespace
 			{
 				if(gWorking) return 0;
 				std::wstring error;
-				// Confirma que o processo atual e a mesma conta Windows configurada
-				// no TurboRama/Winlogon antes de copiar o Access Token.
-				if(!preflightKioskIdentity(error)){error=friendlyIdentityError(error);setStatus(error,true);MessageBoxW(window,error.c_str(),kTitle,MB_OK|MB_ICONERROR);return 0;}
-				const bool mercadoPago = SendMessageW(gProvider, CB_GETCURSEL, 0, 0) == 0;
-				if (mercadoPago && looksLikeProductionMercadoPagoToken(textOf(gToken)))
-					forceProductionMercadoPagoEnvironment();
-				const bool production = SendMessageW(gEnvironment, CB_GETCURSEL, 0, 0) == 1;
-				if (mercadoPago && production && MessageBoxW(window,
-					L"PRODUCAO REAL\n\nEsta operacao valida uma conta real, pode criar ou reutilizar Loja e PDV reais "
-					L"e libera cobrancas com dinheiro real. Deseja continuar?",
+				if (MessageBoxW(window,
+					L"PRODUCAO REAL\n\nO servidor validara a conta e o PDV reais. O codigo bancario sera consumido e a credencial ficara protegida no servidor LZ Games. Deseja continuar?",
 					kTitle, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) return 0;
 				FormData data;
-				if(!collect(data,error)){setStatus(error,true);MessageBoxW(window,error.c_str(),kTitle,MB_OK|MB_ICONERROR);return 0;}
+				if(!collectServerEnrollment(data,error)){setStatus(error,true);MessageBoxW(window,error.c_str(),kTitle,MB_OK|MB_ICONERROR);return 0;}
 				clearTokenControl();
-				gWorking=true; enableForm(false); setStatus(L"Validando credencial, titular, loja e caixa. Aguarde...",false);
+				SetWindowTextW(gEnrollmentCode,L"");
+				gWorking=true; enableForm(false); setStatus(L"Validando conta e PDV no Mercado Pago e protegendo no servidor. Aguarde...",false);
 				std::thread([window,data=std::move(data)]() mutable { auto* result=new WorkerResult(configure(std::move(data))); PostMessageW(window,WM_CONFIGURED,0,(LPARAM)result); }).detach(); return 0;
 			}
 			case ID_LOAD:
 			{
-				std::wstring loadMessage;
-				const bool loaded = loadExistingRegistration(loadMessage);
-				setStatus(loadMessage, !loaded);
-				if (!loaded) MessageBoxW(window, loadMessage.c_str(), kTitle, MB_OK | MB_ICONINFORMATION);
+				clearTokenControl();
+				SetWindowTextW(gEnrollmentCode,L"");
+				SetWindowTextW(gStore,L""); SetWindowTextW(gPos,L"");
+				SetWindowTextW(gStoreExternal,L""); SetWindowTextW(gPosExternal,L"");
+				setStatus(L"Campos sensiveis limpos. Nenhum arquivo local foi criado.",false);
 				return 0;
 			}
 			case ID_CLOSE: if(!gWorking) DestroyWindow(window); return 0;
@@ -2307,7 +2611,7 @@ namespace
 
 					FormData data;
 					std::wstring configureError;
-					if(!collect(data, configureError))
+					if(!collectServerEnrollment(data, configureError))
 					{
 						clearTokenControl();
 						setStatus(configureError, true);
@@ -2323,7 +2627,7 @@ namespace
 					clearTokenControl();
 					gWorking = true;
 					enableForm(false);
-					setStatus(L"Cadastro selecionado. Gravando e ativando somente este Loja/PDV nesta maquina...", false);
+					setStatus(L"Cadastro selecionado. Validando e protegendo no servidor LZ Games...", false);
 					std::thread([window, data = std::move(data)]() mutable {
 						auto* configured = new WorkerResult(configure(std::move(data)));
 						PostMessageW(window, WM_CONFIGURED, 0, (LPARAM)configured);
@@ -2436,11 +2740,11 @@ namespace
 		volatile int clientWidth = kClientWidth;
 		volatile int clientHeight = kClientHeight;
 		volatile int statusCardBottom = kStatusCardBottom;
-		return clientWidth == 1040
-			&& clientHeight <= 680
+		return clientWidth == 980
+			&& clientHeight <= 700
 			&& statusCardBottom <= clientHeight
 			&& width <= 1360
-			&& height <= 728;
+			&& height <= 760;
 	}
 
 	bool selfTest()
@@ -2469,6 +2773,10 @@ namespace
 			&& productionJson.find("\"posExternalId\": \"LZPIX01\"")!=std::string::npos
 			&& validExternalId(std::wstring(60,L'A'),60) && !validExternalId(std::wstring(61,L'A'),60)
 			&& validExternalId(std::wstring(40,L'9'),40) && !validExternalId(L"LZ-PIX",40)
+			&& validEnrollmentIdentifier(L"CLI-0018",4,64)
+			&& validEnrollmentIdentifier(std::wstring(43,L'A'),32,128)
+			&& !validEnrollmentIdentifier(L"codigo curto",32,128)
+			&& std::wstring(kDefaultServerUrl)==L"https://painelpix.lzgames.com.br"
 			&& looksLikeMercadoPagoNumericId(L"1234567890123456") && !looksLikeMercadoPagoNumericId(L"LZPIXF50555198F64")
 			&& strictUnsigned("{\"processId\":123}", "processId", parsedPid) && parsedPid == 123
 			&& jsonString(saved,"provider")=="adapter" && jsonString(saved,"storeName")=="LZ \"Games\""
