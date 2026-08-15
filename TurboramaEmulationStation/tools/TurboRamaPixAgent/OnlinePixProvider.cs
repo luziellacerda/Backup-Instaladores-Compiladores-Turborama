@@ -46,8 +46,9 @@ sealed record OnlineOwnerConfiguration
             ProtectionProfile = ProtectionProfile,
             ProviderId = "turborama-online"
         }.Normalize();
-        // Licenciamento e pagamento sao camadas independentes. A ativacao
-        // on-line nunca troca o provedor, PDV, token ou precos locais.
+        // Campos locais antigos sao preservados apenas para manutencao e
+        // migracao. Quando OnlineLicensingEnabled=true, o daemon nao os usa:
+        // toda nova cobranca e criada no servidor.
         var preserved = existing ?? new PixOwnerSettings
         {
             SchemaVersion = 1,
@@ -125,53 +126,6 @@ sealed class OnlineApiException : Exception
     public string Code { get; }
 }
 
-// A indisponibilidade do servidor nunca pode transformar uma instalacao ainda
-// nao validada em autorizada. O quiosque e os creditos locais continuam
-// independentes; esta politica controla somente novas cobrancas PIX.
-sealed class OnlineLicenseAvailabilityPolicy
-{
-    private readonly bool _onlineLicensingEnabled;
-    private bool _confirmedInThisProcess;
-    private bool _explicitlyDenied;
-
-    public OnlineLicenseAvailabilityPolicy(bool onlineLicensingEnabled)
-    {
-        _onlineLicensingEnabled = onlineLicensingEnabled;
-        AllowsNewPix = !onlineLicensingEnabled;
-    }
-
-    public bool AllowsNewPix { get; private set; }
-    public string LastError { get; private set; } = "";
-
-    public void Confirmed()
-    {
-        if (!_onlineLicensingEnabled) return;
-        _confirmedInThisProcess = true;
-        _explicitlyDenied = false;
-        AllowsNewPix = true;
-        LastError = "";
-    }
-
-    public void ExplicitlyDenied(string error)
-    {
-        if (!_onlineLicensingEnabled) return;
-        _explicitlyDenied = true;
-        AllowsNewPix = false;
-        LastError = error ?? "";
-    }
-
-    public bool TransientFailure(string error)
-    {
-        if (!_onlineLicensingEnabled) return true;
-        AllowsNewPix = _confirmedInThisProcess && !_explicitlyDenied;
-        LastError = error ?? "";
-        return AllowsNewPix;
-    }
-
-    public static bool IsTransientStatus(int statusCode)
-        => statusCode is 408 or 425 or 429 or >= 500;
-}
-
 // A solicitacao final de ativacao pode ter chegado ao servidor mesmo quando a
 // resposta se perde no caminho. Esse caso nao pode ser tratado como uma recusa
 // comum: o cliente precisa tentar abrir uma sessao com a mesma chave antes de
@@ -182,9 +136,9 @@ sealed class OnlineActivationIndeterminateException : Exception
         : base(message, inner) { }
 }
 
-// Cliente exclusivo de licenciamento e reconhecimento da maquina. Ele nao e
-// um provedor PIX: cobrancas e consultas de pagamento continuam no provedor
-// local selecionado (Mercado Pago ou adaptador bancario).
+// O servidor e a autoridade da licenca e tambem da criacao/consulta de cada
+// cobranca. O cliente nunca recebe a credencial bancaria: ele prova a posse da
+// chave desta maquina e recebe somente os dados publicos da cobranca.
 sealed class OnlineLicenseClient
 {
     private readonly OnlinePixOptions _online;
@@ -264,6 +218,80 @@ sealed class OnlineLicenseClient
             _sessionOpen = false;
             throw;
         }
+    }
+
+    public async Task<OnlineOrderResponse> CreateOrderAsync(PixPurchaseRequest request,
+        int paymentExpirationMinutes, CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        try
+        {
+            await EnsureSessionAsync(token);
+            var device = _identity.Describe();
+            var context = new OnlinePaymentCreateContext(OnlineLicenseProtocol.SchemaVersion,
+                _sessionId, request.Id, request.AmountCents, "BRL", request.Minutes,
+                request.ExpiresAtUnixSeconds, checked(Math.Clamp(paymentExpirationMinutes, 1, 60) * 60));
+            var contextHash = OnlineLicenseProtocol.ContextHash(context);
+            var proof = await CreateProofAsync("payment.create", contextHash, device, token);
+            var result = await PostAsync<OnlinePaymentCreateProof, OnlineOrderResponse>("v1/orders",
+                new OnlinePaymentCreateProof(proof, context), token);
+            ValidateOrder(result, request.Id, request.AmountCents, expectedOrderId: null,
+                requireQr: true, allowedStatuses: ["pending"]);
+            return result;
+        }
+        catch (OnlineApiException ex) when (ex.StatusCode is 403 or 409)
+        {
+            _sessionOpen = false;
+            throw;
+        }
+    }
+
+    public async Task<OnlineOrderResponse> ReadOrderAsync(PixSession session,
+        CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        try
+        {
+            await EnsureSessionAsync(token);
+            var device = _identity.Describe();
+            var context = new OnlinePaymentReadContext(OnlineLicenseProtocol.SchemaVersion,
+                _sessionId, session.Id, session.ProviderOrderId, session.AmountCents, "BRL");
+            var contextHash = OnlineLicenseProtocol.ContextHash(context);
+            var proof = await CreateProofAsync("payment.read", contextHash, device, token);
+            var result = await PostAsync<OnlinePaymentReadProof, OnlineOrderResponse>("v1/orders/status",
+                new OnlinePaymentReadProof(proof, context), token);
+            ValidateOrder(result, session.Id, session.AmountCents, session.ProviderOrderId,
+                requireQr: false, allowedStatuses: ["pending", "approved", "cancelled"]);
+            return result;
+        }
+        catch (OnlineApiException ex) when (ex.StatusCode is 403 or 409)
+        {
+            _sessionOpen = false;
+            throw;
+        }
+    }
+
+    private async Task EnsureSessionAsync(CancellationToken token)
+    {
+        if (!_sessionOpen) await CheckHealthAsync(token);
+    }
+
+    private void ValidateOrder(OnlineOrderResponse result, string externalReference,
+        long amountCents, string? expectedOrderId, bool requireQr,
+        IReadOnlyCollection<string> allowedStatuses)
+    {
+        if (result.SchemaVersion != OnlineLicenseProtocol.SchemaVersion
+            || !result.ProviderId.Equals(_online.ProviderId, StringComparison.Ordinal)
+            || !result.ExternalReference.Equals(externalReference, StringComparison.Ordinal)
+            || result.AmountCents != amountCents || result.Currency != "BRL"
+            || !PixId.IsValidProviderOrder(result.ProviderOrderId)
+            || (expectedOrderId is not null
+                && !result.ProviderOrderId.Equals(expectedOrderId, StringComparison.Ordinal))
+            || !allowedStatuses.Contains(result.Status, StringComparer.Ordinal)
+            || (requireQr && (string.IsNullOrWhiteSpace(result.QrData)
+                || result.QrData.Length is < 20 or > 4096))
+            || (!requireQr && result.QrData.Length > 4096))
+            throw new SecurityException("O servidor retornou uma cobranca PIX divergente do pedido assinado.");
     }
 
     private async Task<OnlineOperationProof> CreateProofAsync(string action, string contextHash,
@@ -348,5 +376,32 @@ sealed class OnlineLicenseClient
             ? "Nao foi possivel validar esta instalacao. Codigo: TR-ACT-104."
             : new string(message.Where(character => !char.IsControl(character)).ToArray()).Trim();
         return value.Length > 200 ? value[..200] : value;
+    }
+}
+
+sealed class OnlineServerPixProvider : IPixProvider
+{
+    private readonly PixOptions _options;
+    private readonly OnlineLicenseClient _client;
+
+    public OnlineServerPixProvider(PixOptions options, OnlineLicenseClient client)
+        => (_options, _client) = (options, client);
+
+    public string Name => "turborama-online";
+
+    public Task CheckHealthAsync(CancellationToken token) => _client.CheckHealthAsync(token);
+
+    public async Task<PixSession> CreateAsync(PixPurchaseRequest request, CancellationToken token)
+    {
+        var order = await _client.CreateOrderAsync(request, _options.PaymentExpirationMinutes, token);
+        return PixSession.Pending(request, Name, order.ProviderOrderId, order.QrData);
+    }
+
+    public async Task<PixSession?> RefreshAsync(PixSession session, CancellationToken token)
+    {
+        if (!session.Provider.Equals(Name, StringComparison.Ordinal))
+            throw new SecurityException("A sessao PIX pertence a outro provedor.");
+        var order = await _client.ReadOrderAsync(session, token);
+        return session with { Status = order.Status, UpdatedAt = DateTimeOffset.UtcNow };
     }
 }

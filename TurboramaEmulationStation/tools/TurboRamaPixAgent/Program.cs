@@ -133,7 +133,9 @@ try
     // cadastro protegido. Criar o vinculo antes de aplicar owner-settings
     // faria uma maquina SOFTWARE_BOUND_ONLINE tentar abrir o TPM por engano.
     startupMachineBinding = MachineBindingFactory.Create(options);
-    if (startupCommercialIdentity.Required)
+    // O perfil servidor-autoritativo substitui a antiga licenca local emitida
+    // para Windows. A chave da maquina e a decisao do Linux sao a licenca.
+    if (startupCommercialIdentity.Required && !options.OnlineLicensingEnabled)
         startupCommercialLicense = startupCommercialIdentity.CreateRequiredVerifier(
             startupMachineBinding, commercialLicensePolicy);
     options.ValidateForStartup(command.SetToken || command.AcceptCredentialOnce || command.MercadoPagoInventory
@@ -162,7 +164,8 @@ var machineBinding = startupMachineBinding!;
 var commercialLicense = startupCommercialLicense;
 using var fileLog = AgentFileLog.TryAttach(paths.Logs);
 var secrets = new PixSecretStore(paths.SecretFile,
-    options.RequireTpmMachineBinding || commercialIdentity.Required, machineBinding);
+    options.RequireTpmMachineBinding
+        || (commercialIdentity.Required && !options.OnlineLicensingEnabled), machineBinding);
 var signingKeys = new PixSigningKeyStore(paths.SigningKeyFile);
 
 using var instanceLock = PixAgentInstanceLock.TryAcquire(paths.Root);
@@ -183,7 +186,7 @@ if (!string.IsNullOrWhiteSpace(command.OnlineConfigureFile))
         var destination = Path.Combine(paths.Root, "owner-settings.json");
         paths.WriteAtomically(destination, settings);
         WindowsFileSecurity.HardenCredentialFile(destination, allowBuiltinUsersRead: false);
-        Console.WriteLine("Licenciamento TurboRama Online configurado. Provedor, PDV, token e precos locais foram preservados.");
+        Console.WriteLine("Servidor TurboRama configurado como autoridade da licenca e das novas cobrancas PIX.");
         return 0;
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException
@@ -198,7 +201,8 @@ var licenseCommandExit = CommercialLicenseRuntime.HandleAdministrativeCommand(
     command, commercialIdentity, commercialLicensePolicy, machineBinding, commercialLicense, paths);
 if (licenseCommandExit.HasValue) return licenseCommandExit.Value;
 
-Func<CommercialLicenseValidationResult>? validateCommercialLicense = commercialLicense is null
+Func<CommercialLicenseValidationResult>? validateCommercialLicense = options.OnlineLicensingEnabled
+    || commercialLicense is null
     ? null
     : () => commercialLicense.ValidateFile(paths.LicenseFile);
 
@@ -208,9 +212,6 @@ if (command.OnlineActivate)
     {
         if (!options.OnlineLicensingEnabled)
             throw new InvalidOperationException("A ativacao on-line exige o licenciamento TurboRama configurado.");
-        var localLicense = validateCommercialLicense?.Invoke();
-        if (commercialIdentity.Required && localLicense is not { IsValid: true })
-            throw new SecurityException(localLicense?.Message ?? "A licenca comercial local nao esta instalada.");
         Console.Write("Digite o codigo de ativacao on-line e pressione Enter: ");
         var activationCode = SecretConsole.ReadHidden();
         Console.WriteLine();
@@ -369,9 +370,12 @@ PixCredentialInbox? credentialInbox = null;
 var credentialInboxReady = false;
 var nextCredentialInboxAttempt = DateTimeOffset.MinValue;
 var lastCredentialInboxError = "";
+var localProviderAdministrativeMode = command.MercadoPagoInventory
+    || !string.IsNullOrWhiteSpace(command.MercadoPagoSetupFile);
+var onlinePaymentMode = options.OnlineLicensingEnabled && !localProviderAdministrativeMode;
 try
 {
-    if (options.Provider is "mercadopago" or "adapter")
+    if (!onlinePaymentMode && options.Provider is "mercadopago" or "adapter")
     {
         credentialInbox = new PixCredentialInbox(paths, secrets);
         credentialInbox.EnsureReady();
@@ -386,11 +390,14 @@ catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or C
     nextCredentialInboxAttempt = DateTimeOffset.UtcNow.AddSeconds(15);
 }
 
-var provider = PixProviderFactory.Create(options, secrets);
+var onlineLicense = onlinePaymentMode ? new OnlineLicenseClient(options) : null;
+IPixProvider provider = onlineLicense is null
+    ? PixProviderFactory.Create(options, secrets)
+    : new OnlineServerPixProvider(options, onlineLicense);
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
 using var heartbeat = daemonIdentity is null ? null : new PixAgentHeartbeat(options, paths, provider.Name,
-    provider.Name == "mock" || secrets.TryLoad().IsAvailable,
+    provider.Name is "mock" or "turborama-online" || secrets.TryLoad().IsAvailable,
     provider.Name == "mock", "starting", daemonIdentity.Descriptor,
     validateCommercialLicense);
 await using var stopMonitor = daemonIdentity is null ? null : PixAgentStopMonitor.Start(paths,
@@ -414,9 +421,10 @@ if (ownerSettings is not null && ownerSettings.Enabled && provider is MercadoPag
     catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return 0; }
 }
 var ownerSetupPendingWithoutCoordinator = ownerInfrastructure is null
+    && !onlinePaymentMode
     && ownerSettings is { Enabled: true }
     && !ownerSettings.SetupState.Equals("ready", StringComparison.OrdinalIgnoreCase);
-var baseConfigurationUsesLegacyTestPdv = ownerSettings is null
+var baseConfigurationUsesLegacyTestPdv = !onlinePaymentMode && ownerSettings is null
     && options.Provider.Equals("mercadopago", StringComparison.OrdinalIgnoreCase)
     && MercadoPagoOptions.IsLegacyTestExternalPosId(options.MercadoPago.ExternalPosId);
 
@@ -454,9 +462,6 @@ if (command.MercadoPagoInventory || !string.IsNullOrWhiteSpace(command.MercadoPa
 }
 
 var engine = new PixEngine(options, paths, provider, signingKeys, validateCommercialLicense);
-var onlineLicense = options.OnlineLicensingEnabled ? new OnlineLicenseClient(options) : null;
-var licenseAvailability = new OnlineLicenseAvailabilityPolicy(onlineLicense is not null);
-var nextLicenseCheck = DateTimeOffset.MinValue;
 
 if (!string.IsNullOrWhiteSpace(command.ApproveId))
 {
@@ -531,60 +536,6 @@ try
             if (ownerInfrastructure is not null && (!ownerInfrastructure.Ready || credentialChanged))
                 await ownerInfrastructure.TryEnsureAsync(force: credentialChanged, cancellation.Token);
 
-            // O servidor TurboRama reconhece a instalacao, mas nao e provedor
-            // de pagamento nem autoridade de precos. Falha de rede, timeout ou
-            // erro 5xx preserva a ultima autorizacao local; apenas uma recusa
-            // criptograficamente confirmada (403/409) bloqueia novas cobrancas.
-            if (onlineLicense is not null && now >= nextLicenseCheck)
-            {
-                try
-                {
-                    await onlineLicense.CheckHealthAsync(cancellation.Token);
-                    if (!licenseAvailability.AllowsNewPix
-                        || !string.IsNullOrWhiteSpace(licenseAvailability.LastError))
-                        Console.WriteLine("Licenca TurboRama Online confirmada novamente.");
-                    licenseAvailability.Confirmed();
-                    nextLicenseCheck = now.AddSeconds(60);
-                }
-                catch (OnlineApiException ex) when (
-                    OnlineLicenseAvailabilityPolicy.IsTransientStatus(ex.StatusCode))
-                {
-                    var previousError = licenseAvailability.LastError;
-                    var preserved = licenseAvailability.TransientFailure(ex.Message);
-                    nextLicenseCheck = now.AddSeconds(30);
-                    if (!ex.Message.Equals(previousError, StringComparison.Ordinal))
-                        Console.Error.WriteLine(preserved
-                            ? "Servidor de licenca temporariamente indisponivel; a autorizacao confirmada nesta execucao foi preservada."
-                            : "Servidor de licenca indisponivel antes da confirmacao desta execucao; somente novas cobrancas PIX permanecem bloqueadas.");
-                }
-                catch (OnlineApiException ex)
-                {
-                    var previousError = licenseAvailability.LastError;
-                    licenseAvailability.ExplicitlyDenied(ex.Message);
-                    nextLicenseCheck = now.AddSeconds(15);
-                    if (!ex.Message.Equals(previousError, StringComparison.Ordinal))
-                        Console.Error.WriteLine($"Licenca TurboRama recusada: {ex.Message}");
-                }
-                catch (SecurityException ex)
-                {
-                    var previousError = licenseAvailability.LastError;
-                    licenseAvailability.ExplicitlyDenied(ex.Message);
-                    nextLicenseCheck = now.AddSeconds(15);
-                    if (!ex.Message.Equals(previousError, StringComparison.Ordinal))
-                        Console.Error.WriteLine($"Licenca TurboRama recusada: {ex.Message}");
-                }
-                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-                {
-                    var previousError = licenseAvailability.LastError;
-                    var preserved = licenseAvailability.TransientFailure(ex.Message);
-                    nextLicenseCheck = now.AddSeconds(30);
-                    if (!ex.Message.Equals(previousError, StringComparison.Ordinal))
-                        Console.Error.WriteLine(preserved
-                            ? "Servidor de licenca temporariamente indisponivel; a autorizacao confirmada nesta execucao foi preservada."
-                            : "Servidor de licenca indisponivel antes da confirmacao desta execucao; somente novas cobrancas PIX permanecem bloqueadas.");
-                }
-            }
-
             if (baseConfigurationUsesLegacyTestPdv)
             {
                 providerHealthy = false;
@@ -625,10 +576,12 @@ try
                 }
                 nextHealthCheck = DateTimeOffset.UtcNow.AddSeconds(providerHealthy ? 60 : 10);
             }
-            var readyForNewPix = providerHealthy && licenseAvailability.AllowsNewPix;
-            heartbeat?.Update(provider.Name == "mock" || secrets.TryLoad().IsAvailable,
+            // No modo on-line, providerHealthy significa que o servidor abriu
+            // uma sessao autenticada para esta maquina. A criacao da ordem
+            // repete a prova; nao existe autorizacao local em cache.
+            var readyForNewPix = providerHealthy;
+            heartbeat?.Update(provider.Name is "mock" or "turborama-online" || secrets.TryLoad().IsAvailable,
                 readyForNewPix, readyForNewPix ? "online"
-                    : !licenseAvailability.AllowsNewPix ? "license_denied"
                     : baseConfigurationUsesLegacyTestPdv || ownerSetupPendingWithoutCoordinator || ownerInfrastructure is { Ready: false }
                         ? "owner_setup_pending" : "provider_unavailable");
             if (readyForNewPix) await engine.RunOnceAsync(cancellation.Token,
@@ -1107,7 +1060,10 @@ sealed record PixOptions
     public void ValidateForStartup(bool configurationOnly)
     {
         if (OnlineLicensingEnabled) Online.Validate(configurationOnly: false);
-        if (configurationOnly || Provider == "mock") return;
+        // Quando o servidor on-line esta habilitado, ele cria a cobranca com a
+        // credencial bancaria mantida somente no Linux. PDV, token e ambiente
+        // Mercado Pago locais nao participam da execucao normal do agente.
+        if (configurationOnly || OnlineLicensingEnabled || Provider == "mock") return;
         if (!ProductionEnabled)
             throw new InvalidOperationException("Pagamentos reais estao bloqueados. Defina ProductionEnabled=true somente apos concluir os testes.");
         if (Provider == "mercadopago")

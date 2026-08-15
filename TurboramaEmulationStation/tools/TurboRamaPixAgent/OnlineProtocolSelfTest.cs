@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -7,34 +8,6 @@ static class OnlineProtocolSelfTest
 {
     public static void Run(PixOptions baseOptions)
     {
-        var disabledPolicy = new OnlineLicenseAvailabilityPolicy(onlineLicensingEnabled: false);
-        if (!disabledPolicy.AllowsNewPix || !disabledPolicy.TransientFailure("offline"))
-            throw new InvalidOperationException("licenciamento desativado bloqueou o provedor local");
-
-        var enabledPolicy = new OnlineLicenseAvailabilityPolicy(onlineLicensingEnabled: true);
-        if (enabledPolicy.AllowsNewPix || enabledPolicy.TransientFailure("primeiro contato indisponivel"))
-            throw new InvalidOperationException("licenca on-line iniciou liberada sem confirmacao");
-        enabledPolicy.Confirmed();
-        if (!enabledPolicy.AllowsNewPix || !enabledPolicy.TransientFailure("queda temporaria"))
-            throw new InvalidOperationException("queda temporaria descartou confirmacao da execucao");
-        enabledPolicy.ExplicitlyDenied("revogada");
-        if (enabledPolicy.AllowsNewPix || enabledPolicy.TransientFailure("servidor indisponivel"))
-            throw new InvalidOperationException("falha temporaria reabriu licenca explicitamente recusada");
-        enabledPolicy.Confirmed();
-        if (!enabledPolicy.AllowsNewPix)
-            throw new InvalidOperationException("nova confirmacao nao reabriu a licenca");
-        if (!OnlineLicenseAvailabilityPolicy.IsTransientStatus(408)
-            || !OnlineLicenseAvailabilityPolicy.IsTransientStatus(425)
-            || !OnlineLicenseAvailabilityPolicy.IsTransientStatus(429)
-            || !OnlineLicenseAvailabilityPolicy.IsTransientStatus(500)
-            || !OnlineLicenseAvailabilityPolicy.IsTransientStatus(599)
-            || OnlineLicenseAvailabilityPolicy.IsTransientStatus(400)
-            || OnlineLicenseAvailabilityPolicy.IsTransientStatus(401)
-            || OnlineLicenseAvailabilityPolicy.IsTransientStatus(403)
-            || OnlineLicenseAvailabilityPolicy.IsTransientStatus(404)
-            || OnlineLicenseAvailabilityPolicy.IsTransientStatus(409))
-            throw new InvalidOperationException("classificacao HTTP da licenca on-line e insegura");
-
         var localOwner = new PixOwnerSettings
         {
             Enabled = true,
@@ -76,12 +49,62 @@ static class OnlineProtocolSelfTest
         };
         if (MachineBindingFactory.Create(options) is not SoftwareCngMachineBinding)
             throw new InvalidOperationException("perfil SOFTWARE_BOUND_ONLINE tentou usar outro vinculo local");
+        var withoutLocalBankCredential = options with
+        {
+            ProductionEnabled = false,
+            MercadoPago = options.MercadoPago with { ExternalPosId = "CONFIGURE-O-PDV" }
+        };
+        withoutLocalBankCredential.ValidateForStartup(configurationOnly: false);
         var license = new OnlineLicenseClient(options, handler, identity);
         license.ActivateAsync("SELFTEST-ACTIVATION-CODE-123456", CancellationToken.None).GetAwaiter().GetResult();
         license.CheckHealthAsync(CancellationToken.None).GetAwaiter().GetResult();
         license.CheckHealthAsync(CancellationToken.None).GetAwaiter().GetResult();
         if (handler.Activations != 1 || handler.Sessions != 2)
             throw new InvalidOperationException("contagem do protocolo de licenciamento on-line");
+        var paymentProvider = new OnlineServerPixProvider(options, license);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var purchase = new PixPurchaseRequest(PixContract.SchemaVersion, "PIXONLINESELFTEST001",
+            15, 750, now, now + 300, "installation", "SELFTEST", "self-test-signature");
+        var pending = paymentProvider.CreateAsync(purchase, CancellationToken.None).GetAwaiter().GetResult();
+        var approved = paymentProvider.RefreshAsync(pending, CancellationToken.None).GetAwaiter().GetResult();
+        if (handler.Orders != 1 || handler.OrderReads != 1
+            || pending.Provider != "turborama-online" || pending.Status != "pending"
+            || approved?.Status != "approved" || pending.QrData.Length < 20)
+            throw new InvalidOperationException("pagamento nao percorreu exclusivamente o servidor on-line");
+
+        using var tamperedIdentity = new TestIdentity();
+        using var tamperedHandler = new TestServerHandler(tamperedIdentity.Descriptor,
+            tamperPaymentResponse: true);
+        var tamperedClient = new OnlineLicenseClient(options, tamperedHandler, tamperedIdentity);
+        tamperedClient.ActivateAsync("SELFTEST-ACTIVATION-CODE-123456", CancellationToken.None)
+            .GetAwaiter().GetResult();
+        tamperedClient.CheckHealthAsync(CancellationToken.None).GetAwaiter().GetResult();
+        var tamperBlocked = false;
+        try
+        {
+            new OnlineServerPixProvider(options, tamperedClient).CreateAsync(purchase,
+                CancellationToken.None).GetAwaiter().GetResult();
+        }
+        catch (SecurityException) { tamperBlocked = true; }
+        if (!tamperBlocked)
+            throw new InvalidOperationException("resposta de pagamento divergente foi aceita pelo cliente");
+
+        using var unavailableIdentity = new TestIdentity();
+        using var unavailableHandler = new TestServerHandler(unavailableIdentity.Descriptor,
+            paymentFailureStatus: HttpStatusCode.ServiceUnavailable);
+        var unavailableClient = new OnlineLicenseClient(options, unavailableHandler, unavailableIdentity);
+        unavailableClient.ActivateAsync("SELFTEST-ACTIVATION-CODE-123456", CancellationToken.None)
+            .GetAwaiter().GetResult();
+        unavailableClient.CheckHealthAsync(CancellationToken.None).GetAwaiter().GetResult();
+        var offlineBlocked = false;
+        try
+        {
+            new OnlineServerPixProvider(options, unavailableClient).CreateAsync(purchase,
+                CancellationToken.None).GetAwaiter().GetResult();
+        }
+        catch (OnlineApiException ex) when (ex.StatusCode == 503) { offlineBlocked = true; }
+        if (!offlineBlocked || unavailableHandler.Orders != 1)
+            throw new InvalidOperationException("indisponibilidade do servidor permitiu fallback local de pagamento");
 
         using var uncertainIdentity = new TestIdentity();
         using var uncertainHandler = new TestServerHandler(uncertainIdentity.Descriptor,
@@ -131,12 +154,15 @@ static class OnlineProtocolSelfTest
     }
 
     private sealed class TestServerHandler(OnlineDeviceDescriptor descriptor,
-        bool makeCompletionIndeterminate = false) : HttpMessageHandler
+        bool makeCompletionIndeterminate = false, bool tamperPaymentResponse = false,
+        HttpStatusCode? paymentFailureStatus = null) : HttpMessageHandler
     {
         private readonly Dictionary<string, (OnlineChallengeResponse Challenge, string LicenseId,
             string DeviceId, string SessionId, string Action, string ContextHash)> _challenges = new();
         public int Activations { get; private set; }
         public int Sessions { get; private set; }
+        public int Orders { get; private set; }
+        public int OrderReads { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -151,6 +177,8 @@ static class OnlineProtocolSelfTest
                     "v1/activations/complete" => ActivationComplete(bytes),
                     "v1/challenges" => OperationChallenge(bytes),
                     "v1/sessions" => Session(bytes),
+                    "v1/orders" => CreateOrder(bytes),
+                    "v1/orders/status" => ReadOrder(bytes),
                     _ => Response(HttpStatusCode.NotFound, new OnlineErrorResponse(1, "NOT_FOUND", "not found"))
                 };
             }
@@ -197,6 +225,39 @@ static class OnlineProtocolSelfTest
             Sessions++;
             return Response(HttpStatusCode.OK, new OnlineActivationResult(1, "ACTIVE",
                 descriptor.DeviceId, descriptor.BindingType));
+        }
+
+        private HttpResponseMessage CreateOrder(byte[] bytes)
+        {
+            var request = Read<OnlinePaymentCreateProof>(bytes);
+            var hash = OnlineLicenseProtocol.ContextHash(request.Context);
+            if (request.Proof.Action != "payment.create"
+                || !Verify(request.Proof.ChallengeId, request.Proof.LicenseId,
+                    request.Proof.DeviceId, request.Proof.SessionId, request.Proof.Action,
+                    hash, request.Proof.Signature)) return Denied();
+            Orders++;
+            if (paymentFailureStatus is not null)
+                return Response(paymentFailureStatus.Value,
+                    new OnlineErrorResponse(1, "ONLINE_UNAVAILABLE", "temporary"));
+            return Response(HttpStatusCode.OK, new OnlineOrderResponse(1, "turborama-online",
+                request.Context.ExternalReference,
+                tamperPaymentResponse ? request.Context.AmountCents + 1 : request.Context.AmountCents,
+                "BRL", "ONLINE-ORDER-SELFTEST-1",
+                "00020126580014BR.GOV.BCB.PIX0136pix-turborama-online-self-test", "pending"));
+        }
+
+        private HttpResponseMessage ReadOrder(byte[] bytes)
+        {
+            var request = Read<OnlinePaymentReadProof>(bytes);
+            var hash = OnlineLicenseProtocol.ContextHash(request.Context);
+            if (request.Proof.Action != "payment.read"
+                || !Verify(request.Proof.ChallengeId, request.Proof.LicenseId,
+                    request.Proof.DeviceId, request.Proof.SessionId, request.Proof.Action,
+                    hash, request.Proof.Signature)) return Denied();
+            OrderReads++;
+            return Response(HttpStatusCode.OK, new OnlineOrderResponse(1, "turborama-online",
+                request.Context.ExternalReference, request.Context.AmountCents, "BRL",
+                request.Context.ProviderOrderId, "", "approved"));
         }
 
         private OnlineChallengeResponse NewChallenge(string licenseId, string deviceId, string sessionId,
