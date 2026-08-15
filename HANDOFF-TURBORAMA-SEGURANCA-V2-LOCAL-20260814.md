@@ -29,7 +29,8 @@ senha, codigo unico, chave privada ou outro segredo.
   `4e8ce7e7bd670acc7c737f117f27497aabdcc92a`.
 - Trabalho servidor V2: branch local `SEGURANCA-V2-LOCAL-20260814`.
 - Commit funcional servidor V2: `92dba87` (`Endurecer transporte e perfis de licenca`).
-- Os ramos V2 nao devem ser enviados enquanto os repositorios estiverem publicos.
+- Os ramos V2 foram enviados por ordem expressa do responsavel, que decidiu tornar os repositorios
+  privados somente ao final do trabalho. Em 2026-08-15 ambos ainda estavam publicos.
 
 ## 3. Correcao do cliente PIX
 
@@ -99,14 +100,19 @@ Arquivos alterados:
 - O ZIP foi extraido em pasta nova, contem exatamente cinco arquivos, passou verificacao de checksums,
   nao contem fonte, script ou arquivo proibido, e seu binario extraido passou o self-test.
 
-## 7. Estado do servico atualmente publicado
+## 7. Estado do servico publicado apos a Rodada 13
 
-- Antes da implantacao R13, `GET http://pix.lzgames.com.br/v1/health` ainda respondeu `200` sem
-  redirecionamento. Esse e o codigo antigo em producao, nao o pacote R13 corrigido.
-- `GET https://pix.lzgames.com.br/v1/health` respondeu `200`.
-- `https://pix.lzgames.com.br/admin` respondeu `404`.
-- O painel em `https://painelpix.lzgames.com.br/admin` continuou protegido pelo Cloudflare Access.
-- Portanto a correcao de transporte so estara ativa depois da implantacao Linux controlada da R13.
+- O Linux implantou o commit `82ecef33c883b38824582a63aeb60aee718ad606` e o pacote R13 exato.
+- O retorno Linux registrou servico ativo, zero reinicios, listener somente em `127.0.0.1:5187`,
+  self-test `0` e preservacao de estado, banco, Nginx, Cloudflare e site da empresa.
+- A verificacao externa independente posterior confirmou:
+  - `GET http://pix.lzgames.com.br/v1/health`: `400`;
+  - `GET https://pix.lzgames.com.br/v1/health`: `200`;
+  - HSTS `max-age=31536000`: presente;
+  - `https://pix.lzgames.com.br/admin`: `404`;
+  - painel protegido pelo Cloudflare Access: `302`;
+  - site da empresa: `200`.
+- O retorno integral esta em `RETORNO-LINUX-RODADA-13.md` na midia de transferencia do operador.
 
 ## 8. Segredos e verificacoes
 
@@ -120,20 +126,31 @@ Arquivos alterados:
 
 - Nao existe certificado privado Authenticode de assinatura de codigo instalado nesta maquina;
   consulta local encontrou zero certificados de Code Signing.
-- O estado do TPM atual nao foi comprovado: `Get-Tpm` exigiu terminal elevado. Nao declarar TPM pronto.
+- O TPM fisico atual foi comprovado por `tpmtool getdeviceinformation`: TPM 2.0 AMD, inicializado,
+  pronto para armazenamento e atestado, com capacidade de atestado, sem firmware vulneravel e nao
+  bloqueado. A consulta WMI continuou negada por o processo nao estar elevado.
 - Nao ha atestacao remota de TPM.
 - `SOFTWARE_BOUND_ONLINE` continua sendo o modo mais fraco e pode ser atacado por administrador local.
 - Um usuario administrador da propria maquina pode inspecionar ou alterar software local. Nao existe
   protecao local absoluta contra esse controle.
 - A protecao de temas/decoracoes ainda usa material embarcado recuperavel; corrigir isso de verdade exige
   chave por licenca entregue pelo servidor e alteracao maior de protocolo e cliente.
-- A R13 ainda precisa ser implantada e verificada no Linux.
 - Ainda faltam assinatura comercial, teste de instalacao completo em maquina limpa, ativacao real,
   DPAPI/TPM e uma cobranca Mercado Pago seguida de conciliacao e expiracao controladas.
 
-## 10. Regra de conclusao
+## 10. Correcao da fronteira de compilacao em H
+
+- Foi encontrado um desvio real: o compilador principal aceitava `DiretorioTemporarioBuild`, mas
+  `Build-TurboRamaPackage.ps1` ainda fixava a saida em `%LOCALAPPDATA%\Temp`.
+- O empacotador agora exige explicitamente `DiretorioTemporarioBuild` e calcula o unico destino permitido
+  dentro dessa fronteira.
+- O compilador principal passa a mesma fronteira validada ao empacotador.
+- Parser dos dois scripts: zero erros.
+- Teste valido em `H:\TurboRamaTemp\pack-boundary-selftest-20260814`: codigo `0`, pacote criado em H.
+- Teste com destino fora da fronteira: codigo `1`, mensagem de recusa e nenhum arquivo criado.
+
+## 11. Regra de conclusao
 
 Este estado e uma V2 local endurecida e testada no que foi possivel nesta maquina. Nao chamar de release
-final para venda, nao gerar instalador comercial sem assinatura e nao publicar os ramos V2 antes de os
-dois repositorios estarem privados. A base funcional recuperavel foi preservada; nenhuma parte do Kiosk
-base ou de `D:` foi modificada nesta rodada.
+final para venda e nao gerar instalador comercial sem assinatura. A base funcional recuperavel foi
+preservada; nenhuma parte do Kiosk base ou de `D:` foi modificada nesta rodada.

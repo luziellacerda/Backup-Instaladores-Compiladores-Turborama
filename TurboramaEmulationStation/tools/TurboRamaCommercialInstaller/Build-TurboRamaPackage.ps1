@@ -3,16 +3,19 @@ param(
     [Parameter(Mandatory=$true)][string]$Installer,
     [Parameter(Mandatory=$true)][string]$SevenZip,
     [Parameter(Mandatory=$true)][string]$Payload,
-    [Parameter(Mandatory=$true)][string]$Output
+    [Parameter(Mandatory=$true)][string]$Output,
+    [Parameter(Mandatory=$true)][string]$DiretorioTemporarioBuild
 )
 $ErrorActionPreference = 'Stop'
 $outputFull = [IO.Path]::GetFullPath($Output)
 $outputParent = [IO.Path]::GetFullPath((Split-Path -Parent $outputFull)).TrimEnd('\')
-$localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
-if ([string]::IsNullOrWhiteSpace($localAppData)) {
-    throw 'Nao foi possivel localizar LocalAppData para o candidato temporario.'
+$buildBoundary = [IO.Path]::GetFullPath($DiretorioTemporarioBuild).TrimEnd('\')
+$buildDriveRoot = [IO.Path]::GetPathRoot($buildBoundary).TrimEnd('\')
+if ([string]::IsNullOrWhiteSpace($buildBoundary) -or
+    [string]::Equals($buildBoundary, $buildDriveRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'DiretorioTemporarioBuild nao pode ser vazio nem a raiz de uma unidade.'
 }
-$expectedCandidateParent = [IO.Path]::GetFullPath((Join-Path $localAppData 'Temp\TurboRama-v25-build\pack\PIX-COMERCIAL\GERADO-v25')).TrimEnd('\')
+$expectedCandidateParent = [IO.Path]::GetFullPath((Join-Path $buildBoundary 'TurboRama-v25-build\pack\PIX-COMERCIAL\GERADO-v25')).TrimEnd('\')
 if (-not [string]::Equals($outputParent, $expectedCandidateParent, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Saida recusada: o empacotador so monta o candidato temporario esperado ($outputFull)."
 }

@@ -2363,7 +2363,7 @@ try {
     }
     Assert-PathEntryAbsent $payload 'Payload antes da compactacao'
     Run $sevenZip @('a','-t7z',$payload,'.\*','-mx=9','-mmt=on','-y') $ArchiveRoot
-    Run powershell.exe @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$PackScript,'-Bootstrapper',(Join-Path $BundleRoot 'TurboRamaBootstrapper.exe'),'-Installer',(Join-Path $BundleRoot 'TurboRamaInstaller.exe'),'-SevenZip',(Join-Path $BundleRoot '7za.exe'),'-Payload',$payload,'-Output',$FinalInstaller) $OutputRoot
+    Run powershell.exe @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$PackScript,'-Bootstrapper',(Join-Path $BundleRoot 'TurboRamaBootstrapper.exe'),'-Installer',(Join-Path $BundleRoot 'TurboRamaInstaller.exe'),'-SevenZip',(Join-Path $BundleRoot '7za.exe'),'-Payload',$payload,'-Output',$FinalInstaller,'-DiretorioTemporarioBuild',$BuildTempBoundary) $OutputRoot
     Sign-Binary $FinalInstaller
     Copy-Item -LiteralPath $ownerConfigurator -Destination (Join-Path $OutputRoot 'CONFIGURAR-USER-TOKEN-PIX.exe') -Force
     Copy-Item -LiteralPath $credentialEditor -Destination (Join-Path $OutputRoot 'CONFIGURAR-ACCESS-TOKEN-PIX.exe') -Force
