@@ -186,7 +186,7 @@ if (!string.IsNullOrWhiteSpace(command.OnlineConfigureFile))
         var destination = Path.Combine(paths.Root, "owner-settings.json");
         paths.WriteAtomically(destination, settings);
         WindowsFileSecurity.HardenCredentialFile(destination, allowBuiltinUsersRead: false);
-        Console.WriteLine("Servidor TurboRama configurado como autoridade da licenca e das novas cobrancas PIX.");
+        Console.WriteLine("Servidor TurboRama configurado como autoridade da licenca; banco e cobrancas permanecem locais.");
         return 0;
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException
@@ -371,11 +371,12 @@ var credentialInboxReady = false;
 var nextCredentialInboxAttempt = DateTimeOffset.MinValue;
 var lastCredentialInboxError = "";
 var localProviderAdministrativeMode = command.MercadoPagoInventory
-    || !string.IsNullOrWhiteSpace(command.MercadoPagoSetupFile);
-var onlinePaymentMode = options.OnlineLicensingEnabled && !localProviderAdministrativeMode;
+    || !string.IsNullOrWhiteSpace(command.MercadoPagoSetupFile)
+    || !string.IsNullOrWhiteSpace(command.ConfigureOwnerFile);
+var onlineLicensingMode = options.OnlineLicensingEnabled && !localProviderAdministrativeMode;
 try
 {
-    if (!onlinePaymentMode && options.Provider is "mercadopago" or "adapter")
+    if (options.Provider is "mercadopago" or "adapter")
     {
         credentialInbox = new PixCredentialInbox(paths, secrets);
         credentialInbox.EnsureReady();
@@ -390,14 +391,15 @@ catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or C
     nextCredentialInboxAttempt = DateTimeOffset.UtcNow.AddSeconds(15);
 }
 
-var onlineLicense = onlinePaymentMode ? new OnlineLicenseClient(options) : null;
+var onlineLicense = onlineLicensingMode ? new OnlineLicenseClient(options) : null;
+var localProvider = PixProviderFactory.Create(options, secrets);
 IPixProvider provider = onlineLicense is null
-    ? PixProviderFactory.Create(options, secrets)
-    : new OnlineServerPixProvider(options, onlineLicense);
+    ? localProvider
+    : new OnlineAuthorizedLocalPixProvider(localProvider, onlineLicense);
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
 using var heartbeat = daemonIdentity is null ? null : new PixAgentHeartbeat(options, paths, provider.Name,
-    provider.Name is "mock" or "turborama-online" || secrets.TryLoad().IsAvailable,
+    provider.Name == "mock" || secrets.TryLoad().IsAvailable,
     provider.Name == "mock", "starting", daemonIdentity.Descriptor,
     validateCommercialLicense);
 await using var stopMonitor = daemonIdentity is null ? null : PixAgentStopMonitor.Start(paths,
@@ -414,17 +416,16 @@ await using var stopMonitor = daemonIdentity is null ? null : PixAgentStopMonito
 // O cadastro pode ser salvo sem internet. A criacao/confirmacao da loja e do
 // PDV e retomada automaticamente a cada 15 segundos ate a conexao voltar.
 OwnerInfrastructureCoordinator? ownerInfrastructure = null;
-if (ownerSettings is not null && ownerSettings.Enabled && provider is MercadoPagoPixProvider ownerMercadoPago)
+if (ownerSettings is not null && ownerSettings.Enabled && localProvider is MercadoPagoPixProvider ownerMercadoPago)
 {
     ownerInfrastructure = new OwnerInfrastructureCoordinator(ownerSettings, ownerMercadoPago, paths);
     try { await ownerInfrastructure.TryEnsureAsync(force: true, cancellation.Token); }
     catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return 0; }
 }
 var ownerSetupPendingWithoutCoordinator = ownerInfrastructure is null
-    && !onlinePaymentMode
     && ownerSettings is { Enabled: true }
     && !ownerSettings.SetupState.Equals("ready", StringComparison.OrdinalIgnoreCase);
-var baseConfigurationUsesLegacyTestPdv = !onlinePaymentMode && ownerSettings is null
+var baseConfigurationUsesLegacyTestPdv = ownerSettings is null
     && options.Provider.Equals("mercadopago", StringComparison.OrdinalIgnoreCase)
     && MercadoPagoOptions.IsLegacyTestExternalPosId(options.MercadoPago.ExternalPosId);
 
@@ -577,10 +578,11 @@ try
                 nextHealthCheck = DateTimeOffset.UtcNow.AddSeconds(providerHealthy ? 60 : 10);
             }
             // No modo on-line, providerHealthy significa que o servidor abriu
-            // uma sessao autenticada para esta maquina. A criacao da ordem
-            // repete a prova; nao existe autorizacao local em cache.
+            // uma sessao autenticada para esta maquina e que o provedor local
+            // esta acessivel. Antes de cada nova cobranca o wrapper repete a
+            // prova on-line; a ordem e o QR continuam sendo criados no gabinete.
             var readyForNewPix = providerHealthy;
-            heartbeat?.Update(provider.Name is "mock" or "turborama-online" || secrets.TryLoad().IsAvailable,
+            heartbeat?.Update(provider.Name == "mock" || secrets.TryLoad().IsAvailable,
                 readyForNewPix, readyForNewPix ? "online"
                     : baseConfigurationUsesLegacyTestPdv || ownerSetupPendingWithoutCoordinator || ownerInfrastructure is { Ready: false }
                         ? "owner_setup_pending" : "provider_unavailable");
@@ -1060,10 +1062,10 @@ sealed record PixOptions
     public void ValidateForStartup(bool configurationOnly)
     {
         if (OnlineLicensingEnabled) Online.Validate(configurationOnly: false);
-        // Quando o servidor on-line esta habilitado, ele cria a cobranca com a
-        // credencial bancaria mantida somente no Linux. PDV, token e ambiente
-        // Mercado Pago locais nao participam da execucao normal do agente.
-        if (configurationOnly || OnlineLicensingEnabled || Provider == "mock") return;
+        // O licenciamento on-line nao substitui o banco local. Mesmo com a
+        // licenca no servidor, token/PDV e producao precisam estar validos no
+        // gabinete antes de anunciar o PIX como disponivel.
+        if (configurationOnly || Provider == "mock") return;
         if (!ProductionEnabled)
             throw new InvalidOperationException("Pagamentos reais estao bloqueados. Defina ProductionEnabled=true somente apos concluir os testes.");
         if (Provider == "mercadopago")

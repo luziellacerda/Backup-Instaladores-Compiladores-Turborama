@@ -60,13 +60,16 @@ O cadastro da licença não altera provedor, PDV, Access Token ou preços locais
 
 ## Consulta de licença e funcionamento sem o servidor
 
-O agente tenta confirmar periodicamente a licença. Os resultados são tratados assim:
+O agente confirma periodicamente a licença e repete a prova antes de cada nova cobrança. Os
+resultados são tratados assim:
 
-- autorização confirmada: renova a autorização local;
+- autorização confirmada: mantém o PIX pronto para uma nova cobrança;
 - recusa explícita e autenticada (`401`, `403`, `409` ou falha criptográfica): bloqueia somente novas
   cobranças PIX;
-- timeout, perda de internet, DNS, túnel indisponível ou erro `5xx`: preserva a última autorização
-  local conhecida e tenta novamente depois.
+- timeout, perda de internet, DNS, túnel indisponível ou erro `5xx`: bloqueia somente a criação de uma
+  nova cobrança, preserva o EmulationStation e tenta novamente depois;
+- uma cobrança que já existe continua sendo consultada diretamente no banco local. Isso não cria uma
+  nova order e não concede crédito sem confirmação do provedor.
 
 Uma falha temporária do servidor de licenças nunca deve encerrar o EmulationStation, retirar créditos
 já concedidos, bloquear jogos, F10/F12 ou impedir o uso normal do quiosque.
@@ -77,6 +80,7 @@ indisponível. O restante do sistema permanece local e operacional.
 
 ## Fluxo de pagamento
 
+0. O agente prova licença, máquina e sessão ao servidor para autorizar uma nova cobrança.
 1. O TurboRama escolhe um pacote e informa ao agente o valor/preço local.
 2. O agente valida o pacote contra a tabela local.
 3. O agente chama diretamente o Mercado Pago ou o adaptador bancário local configurado.
@@ -84,7 +88,8 @@ indisponível. O restante do sistema permanece local e operacional.
 5. O agente consulta o pagamento no mesmo provedor.
 6. Após confirmação válida, o TurboRama aplica os créditos.
 
-O servidor de licenças não participa desses seis passos.
+O servidor participa somente da autorização anterior ao passo 1; não recebe a credencial bancária,
+não cria a order, não gera o QR e não confirma o pagamento.
 
 ## Cadastro persistente esperado
 

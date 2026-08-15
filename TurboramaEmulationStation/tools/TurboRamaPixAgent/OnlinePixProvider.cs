@@ -46,9 +46,8 @@ sealed record OnlineOwnerConfiguration
             ProtectionProfile = ProtectionProfile,
             ProviderId = "turborama-online"
         }.Normalize();
-        // Campos locais antigos sao preservados apenas para manutencao e
-        // migracao. Quando OnlineLicensingEnabled=true, o daemon nao os usa:
-        // toda nova cobranca e criada no servidor.
+        // O servidor e somente a autoridade da licenca. O provedor bancario,
+        // os precos, a order e o QR permanecem locais no gabinete.
         var preserved = existing ?? new PixOwnerSettings
         {
             SchemaVersion = 1,
@@ -136,9 +135,9 @@ sealed class OnlineActivationIndeterminateException : Exception
         : base(message, inner) { }
 }
 
-// O servidor e a autoridade da licenca e tambem da criacao/consulta de cada
-// cobranca. O cliente nunca recebe a credencial bancaria: ele prova a posse da
-// chave desta maquina e recebe somente os dados publicos da cobranca.
+// O servidor e a autoridade da licenca. O cliente prova a posse da chave da
+// maquina para abrir/renovar a sessao; a credencial bancaria e as cobrancas
+// permanecem no gabinete.
 sealed class OnlineLicenseClient
 {
     private readonly OnlinePixOptions _online;
@@ -379,29 +378,33 @@ sealed class OnlineLicenseClient
     }
 }
 
-sealed class OnlineServerPixProvider : IPixProvider
+sealed class OnlineAuthorizedLocalPixProvider : IPixProvider
 {
-    private readonly PixOptions _options;
+    private readonly IPixProvider _localProvider;
     private readonly OnlineLicenseClient _client;
 
-    public OnlineServerPixProvider(PixOptions options, OnlineLicenseClient client)
-        => (_options, _client) = (options, client);
+    public OnlineAuthorizedLocalPixProvider(IPixProvider localProvider, OnlineLicenseClient client)
+        => (_localProvider, _client) = (localProvider, client);
 
-    public string Name => "turborama-online";
+    public string Name => _localProvider.Name;
 
-    public Task CheckHealthAsync(CancellationToken token) => _client.CheckHealthAsync(token);
+    public async Task CheckHealthAsync(CancellationToken token)
+    {
+        await _client.CheckHealthAsync(token);
+        await _localProvider.CheckHealthAsync(token);
+    }
 
     public async Task<PixSession> CreateAsync(PixPurchaseRequest request, CancellationToken token)
     {
-        var order = await _client.CreateOrderAsync(request, _options.PaymentExpirationMinutes, token);
-        return PixSession.Pending(request, Name, order.ProviderOrderId, order.QrData);
+        // Falha fechada: nenhuma chamada que cria dinheiro real ocorre antes
+        // de o servidor confirmar novamente licenca, maquina e sessao.
+        await _client.CheckHealthAsync(token);
+        return await _localProvider.CreateAsync(request, token);
     }
 
-    public async Task<PixSession?> RefreshAsync(PixSession session, CancellationToken token)
-    {
-        if (!session.Provider.Equals(Name, StringComparison.Ordinal))
-            throw new SecurityException("A sessao PIX pertence a outro provedor.");
-        var order = await _client.ReadOrderAsync(session, token);
-        return session with { Status = order.Status, UpdatedAt = DateTimeOffset.UtcNow };
-    }
+    // Uma cobranca que ja existe precisa continuar sendo conciliada mesmo se
+    // o servidor de licenca ficar temporariamente fora do ar. Isso nunca cria
+    // uma nova order nem concede credito sem confirmacao do banco local.
+    public Task<PixSession?> RefreshAsync(PixSession session, CancellationToken token)
+        => _localProvider.RefreshAsync(session, token);
 }
