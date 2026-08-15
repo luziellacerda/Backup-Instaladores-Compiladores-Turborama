@@ -3634,11 +3634,17 @@ namespace
 			const bool prepared = entry.directory
 				? prepareTreeReplacement(source, entry, targetDirectory)
 				: prepareRegularReplacement(source, entry, targetDirectory);
+			const DWORD preparationError = prepared ? ERROR_SUCCESS : GetLastError();
 			const bool targetRevalidated = openTargetMutationGuard(transaction);
 			if (!prepared || !targetRevalidated)
 			{
-				if (GetLastError() < 45000)
-					SetLastError(static_cast<DWORD>(42000 + index));
+				// Nao masque o erro real da copia/validacao ao reabrir o guard.
+				// O codigo e preservado ate a mensagem de incidente ao operador.
+				if (!prepared)
+					SetLastError(preparationError == ERROR_SUCCESS
+						? static_cast<DWORD>(42000 + index) : preparationError);
+				else
+					SetLastError(static_cast<DWORD>(42100 + index));
 				return false;
 			}
 		}
@@ -7661,6 +7667,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 			installTransaction);
 	if (!transactionPrepared)
 	{
+		const DWORD preparationFailure = GetLastError();
 		const bool candidatesRemoved = abandonPreparedInstallTransaction(installTransaction);
 		const bool processesQuiet = quiesceExactProcesses();
 		const bool pixRestored = processesQuiet
@@ -7669,11 +7676,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		const bool restored = candidatesRemoved && processesQuiet && pixRestored
 			&& backupRemoved && coordinationEvidenceIntact();
 		closePinned();
-		if (!silentTest) MessageBoxW(nullptr,
-			restored
+		if (!silentTest)
+		{
+			std::wstring message = restored
 				? L"A preparacao atomica do EmulationStation e do agente PIX falhou antes da publicacao. Os temporarios foram removidos e o estado PIX anterior foi restaurado."
-				: L"A preparacao atomica falhou e a recuperacao ou limpeza ficou incompleta. Nao inicie o TurboRama.",
-			kTitle, MB_OK | MB_ICONERROR);
+				: L"A preparacao atomica falhou e a recuperacao ou limpeza ficou incompleta. Nao inicie o TurboRama.";
+			message += L"\n\nCodigo interno preservado: "
+				+ std::to_wstring(preparationFailure == ERROR_SUCCESS
+					? ERROR_GEN_FAILURE : preparationFailure);
+			MessageBoxW(nullptr, message.c_str(), kTitle, MB_OK | MB_ICONERROR);
+		}
 		return restored ? 12 : 14;
 	}
 	InstallationSecurityContext installationSecurity;
