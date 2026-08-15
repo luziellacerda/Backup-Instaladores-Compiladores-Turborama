@@ -152,6 +152,9 @@ Arquivos alterados:
   variavel retornada como `Path=` porque aceitava apenas `PATH=` com caixa exata.
 - A importacao agora reconhece `Path` sem diferenciar maiusculas e minusculas, preservando o valor
   devolvido pelo ambiente oficial do Visual Studio.
+- Preflight comercial repetido com Git limpo e fronteira nova em H: deixou de apresentar o erro do
+  Visual Studio, chegou a validacao de assinatura e recusou corretamente a ausencia de
+  `CertificadoThumbprint` com codigo `1`. Nenhum build foi desviado para C:.
 
 ## 11. Regra de conclusao
 
