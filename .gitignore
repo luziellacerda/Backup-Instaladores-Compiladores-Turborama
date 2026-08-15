@@ -16,6 +16,9 @@
 **/x86/
 **/Win32/
 **/packages/
+# Estes arquivos sao modulos-fonte do CMake, nao cache NuGet.
+!TurboramaEmulationStation/CMake/Packages/
+!TurboramaEmulationStation/CMake/Packages/*.cmake
 **/node_modules/
 **/.vs/
 **/.idea/
