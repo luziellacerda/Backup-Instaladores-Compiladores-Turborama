@@ -2364,6 +2364,14 @@ std::vector<GuiComponent*> ThemeData::makeExtras(const std::shared_ptr<ThemeData
 
 std::map<std::string, ThemeSet> ThemeData::getThemeSets()
 {
+	if (EmbeddedTheme::isAvailable())
+	{
+		std::map<std::string, ThemeSet> embeddedSets;
+		ThemeSet embeddedSet = { EmbeddedTheme::getRootPath() };
+		embeddedSets[EmbeddedTheme::THEME_SET_ID] = embeddedSet;
+		return embeddedSets;
+	}
+
 	std::vector<std::string> paths =
 	{ 
 		Paths::getUserThemesPath(),

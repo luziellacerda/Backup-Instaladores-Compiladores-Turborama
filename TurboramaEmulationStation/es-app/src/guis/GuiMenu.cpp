@@ -1665,7 +1665,7 @@ void GuiMenu::openUpdatesSettings()
 	}
 
 	// Themes installer/browser
-	if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::THEMESDOWNLOADER))
+	if (!EmbeddedTheme::isAvailable() && ApiSystem::getInstance()->isScriptingSupported(ApiSystem::THEMESDOWNLOADER))
 	{
 		updateGui->addEntry(_("THEMES"), true, [this]
 		{
