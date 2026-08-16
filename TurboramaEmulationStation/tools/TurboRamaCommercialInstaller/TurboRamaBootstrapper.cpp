@@ -874,8 +874,12 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
 	CloseHandle(staging.lock);
 	if (preserveStagingForInstallerResult(result, smoke))
 	{
-		const std::wstring message = L"Uma ferramenta auxiliar da instalacao nao confirmou o encerramento de toda a arvore de processos. "
-			L"Para impedir rollback ou limpeza enquanto ainda pode haver arquivos em uso, o staging e o rollback foram preservados em:\n\n"
+		const std::wstring reason = result == kAuxiliaryTreeUnconfirmedExitCode
+			? L"Uma ferramenta auxiliar nao confirmou o encerramento de toda a arvore de processos."
+			: L"O instalador interno recusou concluir a operacao (codigo "
+				+ std::to_wstring(result) + L").";
+		const std::wstring message = reason
+			+ L" Para impedir rollback ou limpeza insegura, o staging e o rollback foram preservados em:\n\n"
 			+ staging.path
 			+ L"\n\nReinicie o Windows. Depois, verifique manualmente se nao existe 7za.exe, powershell.exe ou dotnet.exe dessa instalacao em execucao antes de analisar ou remover essa pasta. Nao execute outro instalador ate concluir essa verificacao.";
 		MessageBoxW(nullptr, message.c_str(), kTitle, MB_OK | MB_ICONERROR);

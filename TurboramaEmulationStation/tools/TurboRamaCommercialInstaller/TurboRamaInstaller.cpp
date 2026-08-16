@@ -4262,6 +4262,19 @@ namespace
 		return rootDeleted && pathIsMissing(directory);
 	}
 
+	bool cleanupDirectoryTreeWithRetry(const std::wstring& directory,
+		const FILE_ID_INFO* expectedIdentity = nullptr)
+	{
+		constexpr unsigned attempts = 20;
+		for (unsigned attempt = 0; attempt < attempts; ++attempt)
+		{
+			if (pathIsMissing(directory)
+				|| cleanupDirectoryTreeByHandle(directory, expectedIdentity)) return true;
+			Sleep(250);
+		}
+		return pathIsMissing(directory);
+	}
+
 	bool directoryHasTransactionResidue(const std::wstring& directory)
 	{
 		WIN32_FIND_DATAW entry{};
@@ -7827,7 +7840,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		return restored ? 15 : 14;
 	}
 	transactionFinalized = true;
-	const bool backupRemoved = cleanupDirectoryTreeByHandle(transactionBackup);
+	const bool backupRemoved = cleanupDirectoryTreeWithRetry(transactionBackup);
 	if (!artifactsCommitted || !backupRemoved || !coordinationEvidenceIntact())
 	{
 		closePinned();
