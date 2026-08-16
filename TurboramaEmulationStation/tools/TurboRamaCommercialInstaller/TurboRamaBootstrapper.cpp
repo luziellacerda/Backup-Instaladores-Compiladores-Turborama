@@ -689,6 +689,19 @@ namespace
 		return ok && (RemoveDirectoryW(directory.c_str()) != FALSE || GetLastError() == ERROR_PATH_NOT_FOUND);
 	}
 
+	bool removeTreeWithRetry(const std::wstring& directory)
+	{
+		constexpr unsigned attempts = 120;
+		for (unsigned attempt = 0; attempt < attempts; ++attempt)
+		{
+			if (removeTree(directory)) return true;
+			Sleep(250);
+		}
+		if (GetFileAttributesW(directory.c_str()) != INVALID_FILE_ATTRIBUTES) return false;
+		const DWORD error = GetLastError();
+		return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+	}
+
 	bool readAt(HANDLE source, std::uint64_t offset, void* destination, DWORD size)
 	{
 		LARGE_INTEGER position{};
@@ -885,7 +898,7 @@ int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int)
 		MessageBoxW(nullptr, message.c_str(), kTitle, MB_OK | MB_ICONERROR);
 		return result;
 	}
-	if (!removeTree(staging.path))
+	if (!removeTreeWithRetry(staging.path))
 	{
 		MessageBoxW(nullptr,
 			L"O processo interno terminou, mas o staging nao pode ser removido integralmente. "

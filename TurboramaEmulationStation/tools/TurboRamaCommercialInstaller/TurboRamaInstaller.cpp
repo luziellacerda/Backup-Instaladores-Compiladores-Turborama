@@ -2680,6 +2680,16 @@ namespace
 		return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
 	}
 
+	bool waitForPathMissing(const std::wstring& path, unsigned attempts = 120)
+	{
+		for (unsigned attempt = 0; attempt < attempts; ++attempt)
+		{
+			if (pathIsMissing(path)) return true;
+			Sleep(250);
+		}
+		return pathIsMissing(path);
+	}
+
 	bool clearReadonlyAttribute(HANDLE object)
 	{
 		FILE_BASIC_INFO basic{};
@@ -2773,7 +2783,9 @@ namespace
 		const DWORD operationError = GetLastError();
 		CloseHandle(object);
 		object = INVALID_HANDLE_VALUE;
-		const bool missing = pathIsMissing(currentPath);
+		// SetFileInformationByHandle pode confirmar a exclusao enquanto filtros do
+		// Windows ainda mantem o pathname visivel por alguns instantes.
+		const bool missing = ok ? waitForPathMissing(currentPath) : pathIsMissing(currentPath);
 		if (!ok) SetLastError(operationError);
 		else if (!missing) SetLastError(44500);
 		return ok && missing;
@@ -4265,7 +4277,7 @@ namespace
 	bool cleanupDirectoryTreeWithRetry(const std::wstring& directory,
 		const FILE_ID_INFO* expectedIdentity = nullptr)
 	{
-		constexpr unsigned attempts = 20;
+		constexpr unsigned attempts = 120;
 		for (unsigned attempt = 0; attempt < attempts; ++attempt)
 		{
 			if (pathIsMissing(directory)
@@ -7841,12 +7853,20 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 	}
 	transactionFinalized = true;
 	const bool backupRemoved = cleanupDirectoryTreeWithRetry(transactionBackup);
-	if (!artifactsCommitted || !backupRemoved || !coordinationEvidenceIntact())
+	const bool finalCoordinationIntact = coordinationEvidenceIntact();
+	if (!artifactsCommitted || !backupRemoved || !finalCoordinationIntact)
 	{
 		closePinned();
-		if (!silentTest) MessageBoxW(nullptr,
-			L"Os novos artefatos foram publicados, mas a limpeza transacional nao foi confirmada por completo. Nao foi gravado recibo de sucesso; revise a instalacao antes de iniciar o quiosque.",
-			kTitle, MB_OK | MB_ICONERROR);
+		if (!silentTest)
+		{
+			const std::wstring message =
+				L"Os novos artefatos foram publicados, mas a limpeza transacional nao foi confirmada por completo. "
+				L"Nao foi gravado recibo de sucesso; revise a instalacao antes de iniciar o quiosque.\n\n"
+				L"Diagnostico: artefatos=" + std::wstring(artifactsCommitted ? L"OK" : L"FALHA")
+				+ L"; rollback=" + std::wstring(backupRemoved ? L"OK" : L"FALHA")
+				+ L"; coordenacao=" + std::wstring(finalCoordinationIntact ? L"OK" : L"FALHA") + L".";
+			MessageBoxW(nullptr, message.c_str(), kTitle, MB_OK | MB_ICONERROR);
+		}
 		return 14;
 	}
 	if (!quiesceExactProcesses())
