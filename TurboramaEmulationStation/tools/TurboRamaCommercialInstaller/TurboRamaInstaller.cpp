@@ -9,6 +9,7 @@
 #include <aclapi.h>
 #include <lm.h>
 #include <shlobj.h>
+#include <taskschd.h>
 #include <winioctl.h>
 
 #include <algorithm>
@@ -27,6 +28,8 @@
 #pragma comment(lib, "bcrypt.lib")
 #pragma comment(lib, "netapi32.lib")
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "oleaut32.lib")
+#pragma comment(lib, "taskschd.lib")
 
 #ifndef TURBORAMA_RELEASE_NUMBER
 #define TURBORAMA_RELEASE_NUMBER 25
@@ -42,6 +45,112 @@ namespace
 	const wchar_t* kReleaseTag = L"v" TR_WSTRINGIFY(TURBORAMA_RELEASE_NUMBER);
 	const wchar_t* kTitle = L"TurboRama - Sistema PIX Comercial v" TR_WSTRINGIFY(TURBORAMA_RELEASE_NUMBER);
 	constexpr int kAuxiliaryTreeUnconfirmedExitCode = 42;
+	const wchar_t* kLegacyPixTaskName = L"TurboRama PIX Agent";
+
+	struct LegacyPixTaskMigration
+	{
+		bool armed = false;
+		bool taskExists = false;
+		bool wasEnabled = false;
+		bool keepDisabled = false;
+
+		~LegacyPixTaskMigration();
+	};
+
+	bool configureLegacyPixTask(bool enabled, bool stopInstances, bool& taskExists,
+		bool* previousEnabled = nullptr, bool* previousStateRead = nullptr)
+	{
+		taskExists = false;
+		const HRESULT initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+		const bool uninitialize = SUCCEEDED(initialized);
+		if (FAILED(initialized) && initialized != RPC_E_CHANGED_MODE)
+		{
+			SetLastError(HRESULT_CODE(initialized));
+			return false;
+		}
+
+		ITaskService* service = nullptr;
+		ITaskFolder* root = nullptr;
+		IRegisteredTask* task = nullptr;
+		BSTR rootName = nullptr;
+		BSTR taskName = nullptr;
+		auto release = [&]()
+		{
+			if (task != nullptr) task->Release();
+			if (root != nullptr) root->Release();
+			if (service != nullptr) service->Release();
+			if (taskName != nullptr) SysFreeString(taskName);
+			if (rootName != nullptr) SysFreeString(rootName);
+			if (uninitialize) CoUninitialize();
+		};
+
+		HRESULT result = CoCreateInstance(CLSID_TaskScheduler, nullptr,
+			CLSCTX_INPROC_SERVER, IID_ITaskService, reinterpret_cast<void**>(&service));
+		VARIANT empty;
+		VariantInit(&empty);
+		if (SUCCEEDED(result)) result = service->Connect(empty, empty, empty, empty);
+		rootName = SysAllocString(L"\\");
+		taskName = SysAllocString(kLegacyPixTaskName);
+		if (SUCCEEDED(result) && (rootName == nullptr || taskName == nullptr))
+			result = E_OUTOFMEMORY;
+		if (SUCCEEDED(result)) result = service->GetFolder(rootName, &root);
+		if (SUCCEEDED(result)) result = root->GetTask(taskName, &task);
+		if (result == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
+		{
+			release();
+			return true;
+		}
+		if (FAILED(result))
+		{
+			SetLastError(HRESULT_CODE(result));
+			release();
+			return false;
+		}
+
+		taskExists = true;
+		VARIANT_BOOL current = VARIANT_FALSE;
+		result = task->get_Enabled(&current);
+		if (SUCCEEDED(result) && previousEnabled != nullptr)
+			*previousEnabled = current != VARIANT_FALSE;
+		if (SUCCEEDED(result) && previousStateRead != nullptr)
+			*previousStateRead = true;
+		if (SUCCEEDED(result) && stopInstances)
+		{
+			const HRESULT stopResult = task->Stop(0);
+			if (FAILED(stopResult) && stopResult != SCHED_E_TASK_NOT_RUNNING)
+				result = stopResult;
+		}
+		if (SUCCEEDED(result))
+			result = task->put_Enabled(enabled ? VARIANT_TRUE : VARIANT_FALSE);
+		VARIANT_BOOL confirmed = enabled ? VARIANT_FALSE : VARIANT_TRUE;
+		if (SUCCEEDED(result)) result = task->get_Enabled(&confirmed);
+		const bool confirmedState = SUCCEEDED(result)
+			&& (confirmed != VARIANT_FALSE) == enabled;
+		if (!confirmedState)
+			SetLastError(FAILED(result) ? HRESULT_CODE(result) : ERROR_INVALID_STATE);
+		release();
+		return confirmedState;
+	}
+
+	LegacyPixTaskMigration::~LegacyPixTaskMigration()
+	{
+		if (!armed || keepDisabled || !taskExists) return;
+		bool existsNow = false;
+		(void)configureLegacyPixTask(wasEnabled, false, existsNow);
+	}
+
+	bool retireLegacyPixTask(LegacyPixTaskMigration& migration)
+	{
+		bool existed = false;
+		bool enabled = false;
+		bool stateRead = false;
+		const bool retired = configureLegacyPixTask(false, true, existed, &enabled,
+			&stateRead);
+		migration.armed = stateRead;
+		migration.taskExists = existed;
+		migration.wasEnabled = enabled;
+		return retired;
+	}
 
 	std::wstring join(const std::wstring& left, const std::wstring& right)
 	{
@@ -7544,6 +7653,35 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		return 0;
 	}
 
+	LegacyPixTaskMigration legacyPixTask;
+	std::wstring legacyProgramDataAgent;
+	if (!silentTest)
+	{
+		PWSTR programData = nullptr;
+		const HRESULT programDataResult = SHGetKnownFolderPath(FOLDERID_ProgramData,
+			KF_FLAG_DEFAULT, nullptr, &programData);
+		if (FAILED(programDataResult) || programData == nullptr)
+		{
+			if (programData != nullptr) CoTaskMemFree(programData);
+			closePinned();
+			MessageBoxW(nullptr,
+				L"A pasta segura ProgramData nao pode ser localizada para aposentar o agente PIX antigo. Nada em D: foi alterado.",
+				kTitle, MB_OK | MB_ICONERROR);
+			return 21;
+		}
+		legacyProgramDataAgent = join(programData,
+			L"TurboRama\\PixAgent\\TurboRamaPixAgent.exe");
+		CoTaskMemFree(programData);
+	}
+	if (!silentTest && !retireLegacyPixTask(legacyPixTask))
+	{
+		closePinned();
+		MessageBoxW(nullptr,
+			L"A tarefa antiga do agente PIX em C: nao pode ser encerrada e desativada. Nada em D: foi alterado.",
+			kTitle, MB_OK | MB_ICONERROR);
+		return 21;
+	}
+
 	const std::wstring stagedPayload = join(source, L"payload-expanded");
 	if (!CreateDirectoryW(stagedPayload.c_str(), nullptr)
 		|| (!silentTest && !applyAdminOnlySecurity(stagedPayload, true)))
@@ -7611,6 +7749,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 	addProcessPath(targetExecutable);
 	addProcessPath(privateDotnet);
 	addProcessPath(standaloneAgent);
+	if (!legacyProgramDataAgent.empty()) addProcessPath(legacyProgramDataAgent);
 	auto quiesceExactProcesses = [&]()
 	{
 		if (!coordinationEvidenceIntact()) return false;
@@ -7852,6 +7991,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		return restored ? 15 : 14;
 	}
 	transactionFinalized = true;
+	if (!silentTest) legacyPixTask.keepDisabled = true;
 	const bool backupRemoved = cleanupDirectoryTreeWithRetry(transactionBackup);
 	const bool finalCoordinationIntact = coordinationEvidenceIntact();
 	if (!artifactsCommitted || !backupRemoved || !finalCoordinationIntact)
@@ -7915,6 +8055,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 		+ L"Foram trocados somente o EmulationStation e o pix-agent em:\n"
 		+ target + L"\n\n"
 		+ L"Os dois configuradores administrativos nao foram instalados no gabinete.\n\n"
+		+ L"A tarefa antiga TurboRama PIX Agent de C: foi desativada; o agente novo de D: agora e iniciado e supervisionado pelo EmulationStation.\n\n"
 		+ L"Factory Pack, wrapper, Launcher, servicos, cache, .runtime, ROMs e temas foram preservados e permaneceram fora do escopo. "
 			L"Nenhum servico foi parado ou reiniciado.\n\n"
 		+ L"O arquivo legado REPARAR-INSTALACAO-TURBORAMA.ps1, se ja existia em D:, foi preservado sem ser executado ou instalado.\n\n"

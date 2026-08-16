@@ -129,6 +129,7 @@ $AgentSettingsTemplate = Join-Path (Split-Path -Parent $AgentProject) 'appsettin
 $LicenseIssuerProject = Join-Path $ProjectRoot 'tools\TurboRamaPixLicenseIssuer\TurboRamaPixLicenseIssuer.csproj'
 $InstallerSource = Join-Path $ProjectRoot 'tools\TurboRamaCommercialInstaller'
 $PackScript = Join-Path $InstallerSource 'Build-TurboRamaPackage.ps1'
+$ShutdownHelper = Join-Path $InstallerSource 'ENCERRAR-TURBORAMA-COM-ADMIN.cmd'
 $ThemePacker = Join-Path $ProjectRoot 'tools\Pack-EmbeddedTheme.ps1'
 $SevenZipVendorRoot = Join-Path $InstallerSource 'vendor'
 $SevenZipLicense = Join-Path $SevenZipVendorRoot 'LICENSE-7ZIP-24.09.txt'
@@ -150,6 +151,7 @@ $ReleaseArtifacts = @(
     'NOTICE-7ZIP-24.09.txt',
     'ASSINATURA-AUTHENTICODE.txt',
     'COMO-CONFIGURAR-O-PIX.txt',
+    'ENCERRAR-TURBORAMA-COM-ADMIN.cmd',
     'RELATORIO-COMPILACAO-v25.txt',
     'COMPILACAO-v25.log'
 )
@@ -2184,6 +2186,7 @@ try {
     Require-Directory $ProjectRoot 'Projeto TurboRama'
     Require-File $AgentProject 'Projeto do agente PIX'
     Require-File $PackScript 'Empacotador comercial'
+    Require-File $ShutdownHelper 'Encerrador profissional para instalacao'
     Require-File $ThemePacker 'Empacotador deterministico do tema'
     Require-File $SevenZipLicense 'Licenca oficial do 7-Zip 24.09'
     Require-File $SevenZipCopying 'GNU LGPL 2.1 do 7-Zip 24.09'
@@ -2361,6 +2364,7 @@ try {
     Copy-Item -LiteralPath $ownerConfigurator -Destination (Join-Path $OutputRoot 'CONFIGURAR-USER-TOKEN-PIX.exe') -Force
     Copy-Item -LiteralPath $credentialEditor -Destination (Join-Path $OutputRoot 'CONFIGURAR-ACCESS-TOKEN-PIX.exe') -Force
     Copy-Item -LiteralPath $sevenZip -Destination (Join-Path $OutputRoot '7za.exe') -Force
+    Copy-Item -LiteralPath $ShutdownHelper -Destination (Join-Path $OutputRoot 'ENCERRAR-TURBORAMA-COM-ADMIN.cmd') -Force
     foreach ($notice in @($SevenZipLicense,$SevenZipCopying,$SevenZipNotice)) {
         Copy-Item -LiteralPath $notice -Destination (Join-Path $OutputRoot (Split-Path -Leaf $notice)) -Force
     }
