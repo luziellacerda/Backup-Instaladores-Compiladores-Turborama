@@ -16,6 +16,11 @@
 #include "ThemeData.h"
 #include <SDL_timer.h>
 #include "AudioManager.h"
+#include "Log.h"
+#include <condition_variable>
+#include <deque>
+#include <new>
+#include <thread>
 
 #ifdef WIN32
 #include <codecvt>
@@ -31,18 +36,114 @@ std::vector<VideoVlcComponent::ActiveVideoPlayer> VideoVlcComponent::sActivePlay
 std::set<VideoVlcComponent*> VideoVlcComponent::sDeferredPlayers;
 std::mutex VideoVlcComponent::sBufferPoolMutex;
 std::vector<VideoBufferPoolEntry> VideoVlcComponent::sVideoBufferPool;
+unsigned long long VideoVlcComponent::sBufferPoolUseCounter = 0;
+size_t VideoVlcComponent::sVideoBufferBudgetBytes = (size_t)768 * 1024 * 1024;
 
-static const int MAX_VIDEO_BUFFER_POOL_SIZE = 6;
+namespace
+{
+	struct MediaPlayerReleaseJob
+	{
+		libvlc_media_player_t* player;
+		VideoContext* context;
+	};
+
+	// libvlc_media_player_release may wait for VLC decoder threads.  A single
+	// process-lifetime worker keeps that wait off the render thread without
+	// creating one detached thread for every carousel movement.
+	class MediaPlayerReleaseQueue
+	{
+	public:
+		static MediaPlayerReleaseQueue& instance()
+		{
+			static MediaPlayerReleaseQueue queue;
+			return queue;
+		}
+
+		void enqueue(libvlc_media_player_t* player, VideoContext* context)
+		{
+			bool releaseSynchronously = false;
+			{
+				std::lock_guard<std::mutex> lock(mMutex);
+				// Keep retiring VLC internals bounded too. Pixel buffers are already
+				// budgeted, but libVLC owns additional decoder state that we cannot
+				// measure. Under pathological rapid scrolling, apply backpressure by
+				// completing this one release on the caller instead of growing forever.
+				if (mJobs.size() + mInFlight >= MAX_RELEASE_JOBS)
+					releaseSynchronously = true;
+				else
+					mJobs.push_back({ player, context });
+			}
+			if (releaseSynchronously)
+			{
+				if (player != nullptr)
+					libvlc_media_player_release(player);
+				VideoVlcComponent::releaseContext(context);
+				return;
+			}
+			mCondition.notify_one();
+		}
+
+	private:
+		MediaPlayerReleaseQueue() : mStopping(false), mInFlight(0), mWorker([this]() { run(); })
+		{
+		}
+
+		~MediaPlayerReleaseQueue()
+		{
+			{
+				std::lock_guard<std::mutex> lock(mMutex);
+				mStopping = true;
+			}
+			mCondition.notify_one();
+			if (mWorker.joinable())
+				mWorker.join();
+			VideoVlcComponent::clearBufferPool();
+		}
+
+		void run()
+		{
+			for (;;)
+			{
+				MediaPlayerReleaseJob job;
+				{
+					std::unique_lock<std::mutex> lock(mMutex);
+					mCondition.wait(lock, [this]() { return mStopping || !mJobs.empty(); });
+					if (mStopping && mJobs.empty())
+						return;
+					job = mJobs.front();
+					mJobs.pop_front();
+					mInFlight++;
+				}
+
+				if (job.player != nullptr)
+					libvlc_media_player_release(job.player);
+				VideoVlcComponent::releaseContext(job.context);
+				{
+					std::lock_guard<std::mutex> lock(mMutex);
+					mInFlight--;
+				}
+			}
+		}
+
+		static const size_t MAX_RELEASE_JOBS = 16;
+		std::mutex mMutex;
+		std::condition_variable mCondition;
+		std::deque<MediaPlayerReleaseJob> mJobs;
+		bool mStopping;
+		size_t mInFlight;
+		std::thread mWorker;
+	};
+}
 
 // VLC prepares to render a video frame.
 static void *lock(void *data, void **p_pixels) 
 {
 	struct VideoContext *c = (struct VideoContext *)data;
 
-	int frame = (c->surfaceId ^ 1);
+	int frame = (c->surfaceId.load(std::memory_order_acquire) ^ 1);
 	
 	c->mutexes[frame].lock();
-	c->hasFrame[frame] = false;
+	c->hasFrame[frame].store(false, std::memory_order_release);
 	*p_pixels = c->surfaces[frame];
 	return NULL; // Picture identifier, not needed here.
 }
@@ -52,22 +153,18 @@ static void unlock(void *data, void* /*id*/, void *const* /*p_pixels*/)
 {
 	struct VideoContext *c = (struct VideoContext *)data;
 
-	int frame = (c->surfaceId ^ 1);	
+	int frame = (c->surfaceId.load(std::memory_order_acquire) ^ 1);
 
-	c->surfaceId = frame;
-	c->hasFrame[frame] = true;
+	c->surfaceId.store(frame, std::memory_order_release);
+	c->hasFrame[frame].store(true, std::memory_order_release);
 	c->mutexes[frame].unlock();
 }
 
 // VLC wants to display a video frame.
-static void display(void* data, void* id)
+static void display(void* /*data*/, void* /*id*/)
 {
-	if (data == NULL)
-		return;
-
-	struct VideoContext *c = (struct VideoContext *)data;
-	if (c->component != nullptr && !c->component->isPlaying() && c->component->isWaitingForVideoToStart())
-		c->component->onVideoStarted();
+	// VLC invokes this from a decoder thread. Playback state and component
+	// callbacks are deliberately handled by update() on the UI thread.
 }
 
 VideoVlcComponent::VideoVlcComponent(Window* window) : VideoComponent(window), 
@@ -75,7 +172,17 @@ VideoVlcComponent::VideoVlcComponent(Window* window) : VideoComponent(window),
 	mTopLeftCrop(0.0f, 0.0f), mBottomRightCrop(1.0f, 1.0f), mContext(nullptr)
 {
 	mIsRegisteredActive = false;
+	mReservedVideoBytes = 0;
+	mConcurrentPlaybackLimit = 0;
 	mIsParsing = false;
+	mUsingHardwareDecoder = false;
+	mHardwareFallbackAttempted = false;
+	mHasAudioTrack = false;
+	mAudioPlaybackRegistered = false;
+	mPowerSaverPaused = false;
+	mPlaybackFailureCount = 0;
+	mPlaybackFailureBlockedUntil = 0;
+	mSharedVideoSource = nullptr;
 	mSaturation = 1.0f;
 	mElapsed = 0;
 	mColorShift = 0xFFFFFFFF;
@@ -86,6 +193,8 @@ VideoVlcComponent::VideoVlcComponent(Window* window) : VideoComponent(window),
 	mLastPlaybackTime = -1;
 	mLastPlaybackProgressTick = SDL_GetTicks();
 	mLastPlaybackRestartTick = 0;
+	mPlaybackStartedTick = 0;
+	mPlaybackRestartAttempts = 0;
 
 	// Get an empty texture for rendering the video
 	mTexture = nullptr;// TextureResource::get("");
@@ -95,22 +204,40 @@ VideoVlcComponent::VideoVlcComponent(Window* window) : VideoComponent(window),
 	init();
 }
 
-static void mediaplayer_release_async(VideoContext* ctx, libvlc_media_player_t* p_mi)
+void VideoVlcComponent::queueMediaPlayerRelease(VideoContext* ctx, libvlc_media_player_t* player)
 {
-	if (p_mi == nullptr)
+	if (player == nullptr)
 	{
-		VideoVlcComponent::releaseContext(ctx);
+		releaseContext(ctx);
+		return;
+	}
+	if (ctx == nullptr)
+	{
+		// No video callbacks or decoder were installed yet, so this release is
+		// cheap and avoids an unaccounted context-less job in the worker queue.
+		libvlc_media_player_release(player);
 		return;
 	}
 
-	if (ctx != nullptr)
+	{
+		// Synchronize with any callback that already observed this context. The
+		// callback no longer calls the component, but this also keeps the context
+		// contract safe for older VLC callback ordering during teardown.
+		std::lock_guard<std::mutex> lock(ctx->componentMutex);
 		ctx->component = nullptr;
+	}
 
-	std::thread([p_mi, ctx]()
+	{
+		std::lock_guard<std::mutex> lock(sBufferPoolMutex);
+		if (ctx->poolIndex >= 0 && ctx->poolIndex < (int)sVideoBufferPool.size())
 		{
-			libvlc_media_player_release(p_mi);
-			VideoVlcComponent::releaseContext(ctx);
-		}).detach();
+			VideoBufferPoolEntry& entry = sVideoBufferPool[ctx->poolIndex];
+			if (entry.surfaces[0] == ctx->surfaces[0] && entry.inUse)
+				entry.retiring = true;
+		}
+	}
+
+	MediaPlayerReleaseQueue::instance().enqueue(player, ctx);
 }
 
 VideoVlcComponent::~VideoVlcComponent()
@@ -127,11 +254,21 @@ int VideoVlcComponent::getEffectiveMaxConcurrentVideos()
 	return maxVideos;
 }
 
+int VideoVlcComponent::getEffectiveMaxConcurrentCarouselVideos()
+{
+	// Zero deliberately means "the XML controls the number of cells".  The RAM
+	// budget is still authoritative and every cell reserves memory before parse.
+	return Math::max(0, Settings::getInstance()->getInt("MaxConcurrentCarouselVideos"));
+}
+
 int VideoVlcComponent::getMaxVideoRamMb()
 {
 	int maxVideoRam = Settings::getInstance()->getInt("MaxVideoRAM");
 	if (maxVideoRam <= 0)
-		maxVideoRam = 768;
+	{
+		const int maxRam = Settings::getInstance()->getInt("MaxRAM");
+		maxVideoRam = Math::max(64, Math::min(768, maxRam > 0 ? maxRam / 4 : 128));
+	}
 
 	return maxVideoRam;
 }
@@ -144,28 +281,104 @@ size_t VideoVlcComponent::getVideoBufferBytes() const
 	return (size_t)mVideoWidth * (size_t)mVideoHeight * 4 * 2;
 }
 
-size_t VideoVlcComponent::getActiveVideoBufferBytes()
-{
-	std::unique_lock<std::mutex> lock(sActivePlayersMutex);
-	size_t total = 0;
-
-	for (const auto& player : sActivePlayers)
-	{
-		if (player.component != nullptr)
-			total += player.component->getVideoBufferBytes();
-	}
-
-	return total;
-}
-
-size_t VideoVlcComponent::estimatePendingVideoBufferBytes()
+size_t VideoVlcComponent::estimatePendingVideoBufferBytes() const
 {
 	int width = Renderer::getScreenWidth();
 	int height = Renderer::getScreenHeight();
 	if (width <= 0 || height <= 0)
 		width = 1280, height = 720;
 
+	// OptimizeVideo asks VLC to decode at the component's target size.  Reserving
+	// that size prevents a row of small cells from each claiming a full-screen
+	// buffer while still falling back to a conservative screen-sized estimate.
+	if (Settings::getInstance()->getBool("OptimizeVideo"))
+	{
+		if (mTargetSize.x() > 0)
+			width = Math::min(width, Math::max(1, (int)std::ceil(mTargetSize.x())));
+		if (mTargetSize.y() > 0)
+			height = Math::min(height, Math::max(1, (int)std::ceil(mTargetSize.y())));
+	}
+
 	return (size_t)width * (size_t)height * 4 * 2;
+}
+
+size_t VideoVlcComponent::getBufferPoolCacheLimitBytes(size_t maxVideoBytes)
+{
+	const size_t maxCacheBytes = (size_t)128 * 1024 * 1024;
+	return std::min(maxCacheBytes, maxVideoBytes / 4);
+}
+
+void VideoVlcComponent::trimBufferPoolLocked(size_t maxFreeBytes, size_t maxTotalBytes)
+{
+	size_t totalBytes = 0;
+	size_t freeBytes = 0;
+	for (const auto& entry : sVideoBufferPool)
+	{
+		if (entry.surfaces[0] == nullptr)
+			continue;
+
+		const size_t bytes = (size_t)entry.width * (size_t)entry.height * 4 * 2;
+		totalBytes += bytes;
+		if (!entry.inUse)
+			freeBytes += bytes;
+	}
+
+	while (freeBytes > maxFreeBytes || totalBytes > maxTotalBytes)
+	{
+		int oldestIndex = -1;
+		unsigned long long oldestUse = 0;
+		for (int i = 0; i < (int)sVideoBufferPool.size(); ++i)
+		{
+			const VideoBufferPoolEntry& entry = sVideoBufferPool[i];
+			if (entry.inUse || entry.surfaces[0] == nullptr)
+				continue;
+
+			if (oldestIndex < 0 || entry.lastUsed < oldestUse)
+			{
+				oldestIndex = i;
+				oldestUse = entry.lastUsed;
+			}
+		}
+
+		if (oldestIndex < 0)
+			break;
+
+		VideoBufferPoolEntry& entry = sVideoBufferPool[oldestIndex];
+		const size_t bytes = (size_t)entry.width * (size_t)entry.height * 4 * 2;
+		delete[] entry.surfaces[0];
+		delete[] entry.surfaces[1];
+		entry.surfaces[0] = nullptr;
+		entry.surfaces[1] = nullptr;
+		entry.width = 0;
+		entry.height = 0;
+		entry.inUse = false;
+		entry.retiring = false;
+		entry.carouselVideo = false;
+		entry.countAgainstConcurrentLimit = false;
+		entry.lastUsed = ++sBufferPoolUseCounter;
+		totalBytes -= bytes;
+		freeBytes -= bytes;
+	}
+}
+
+bool VideoVlcComponent::isCarouselVideo() const
+{
+	const std::string& tag = getTag();
+	return tag == "carouselCellVideo" || tag == "frontSystemCarouselVideo";
+}
+
+bool VideoVlcComponent::isThemeManagedVideo()
+{
+	return !isCarouselVideo() && getExtraType() != ExtraType::BUILTIN;
+}
+
+bool VideoVlcComponent::shouldPlayAudio()
+{
+	// Carousel and other setPlayAudio(false) decorations receive :no-audio,
+	// while the selected game's normal preview keeps the existing audio policy.
+	return !isCarouselVideo() && getPlayAudio() &&
+		(mScreensaverMode || Settings::getInstance()->getBool("VideoAudio")) &&
+		!(mScreensaverMode && Settings::getInstance()->getBool("ScreenSaverVideoMute"));
 }
 
 void VideoVlcComponent::releaseContext(VideoContext* ctx)
@@ -173,28 +386,106 @@ void VideoVlcComponent::releaseContext(VideoContext* ctx)
 	if (ctx == nullptr)
 		return;
 
-	std::unique_lock<std::mutex> lock(sBufferPoolMutex);
-
-	if (ctx->poolIndex >= 0 && ctx->poolIndex < (int)sVideoBufferPool.size())
 	{
-		sVideoBufferPool[ctx->poolIndex].inUse = false;
+		std::unique_lock<std::mutex> lock(sBufferPoolMutex);
+		bool returnedToPool = false;
+		if (ctx->poolIndex >= 0 && ctx->poolIndex < (int)sVideoBufferPool.size())
+		{
+			VideoBufferPoolEntry& entry = sVideoBufferPool[ctx->poolIndex];
+			if (entry.surfaces[0] == ctx->surfaces[0] && entry.surfaces[1] == ctx->surfaces[1])
+			{
+				entry.inUse = false;
+				entry.retiring = false;
+				entry.lastUsed = ++sBufferPoolUseCounter;
+				returnedToPool = true;
+			}
+		}
+
+		if (!returnedToPool)
+			ctx->poolIndex = -1;
+
 		delete ctx;
-		return;
+		trimBufferPoolLocked(getBufferPoolCacheLimitBytes(sVideoBufferBudgetBytes),
+			sVideoBufferBudgetBytes);
 	}
 
-	if (ctx->surfaces[0] != nullptr)
+	// A retiring VLC player remains in both the byte and slot budgets until this
+	// point. Deferred components poll on their short retry timer; the worker does
+	// not touch component state from its background thread.
+}
+
+void VideoVlcComponent::clearBufferPool()
+{
+	std::lock_guard<std::mutex> lock(sBufferPoolMutex);
+	for (auto& entry : sVideoBufferPool)
 	{
-		delete[] ctx->surfaces[0];
-		ctx->surfaces[0] = nullptr;
-	}
+		// At normal shutdown the release queue has drained every in-use context.
+		// Retain a defensive check so a future static video cannot free live pixels.
+		if (entry.inUse)
+			continue;
 
-	if (ctx->surfaces[1] != nullptr)
+		delete[] entry.surfaces[0];
+		delete[] entry.surfaces[1];
+		entry.surfaces[0] = nullptr;
+		entry.surfaces[1] = nullptr;
+		entry.width = 0;
+		entry.height = 0;
+		entry.retiring = false;
+	}
+	sVideoBufferPool.erase(std::remove_if(sVideoBufferPool.begin(), sVideoBufferPool.end(),
+		[](const VideoBufferPoolEntry& entry) { return !entry.inUse; }), sVideoBufferPool.end());
+}
+
+bool VideoVlcComponent::updatePlaybackReservation(size_t bytes)
+{
+	const size_t maxVideoBytes = (size_t)getMaxVideoRamMb() * 1024 * 1024;
+	std::unique_lock<std::mutex> playersLock(sActivePlayersMutex);
+	if (!mIsRegisteredActive)
+		return false;
+
+	size_t pendingBytes = 0;
+	for (const auto& player : sActivePlayers)
 	{
-		delete[] ctx->surfaces[1];
-		ctx->surfaces[1] = nullptr;
+		if (player.component != nullptr && player.component != this &&
+			player.component->mContext == nullptr)
+			pendingBytes += player.component->mReservedVideoBytes;
 	}
 
-	delete ctx;
+	size_t inUseBytes = 0;
+	{
+		std::lock_guard<std::mutex> poolLock(sBufferPoolMutex);
+		sVideoBufferBudgetBytes = maxVideoBytes;
+		for (const auto& entry : sVideoBufferPool)
+			if (entry.inUse && entry.surfaces[0] != nullptr)
+				inUseBytes += (size_t)entry.width * (size_t)entry.height * 4 * 2;
+	}
+
+	if (inUseBytes > maxVideoBytes || pendingBytes > maxVideoBytes - inUseBytes ||
+		bytes > maxVideoBytes - inUseBytes - pendingBytes)
+		return false;
+
+	mReservedVideoBytes = bytes;
+	return true;
+}
+
+void VideoVlcComponent::clearPlaybackDeferred()
+{
+	std::lock_guard<std::mutex> lock(sActivePlayersMutex);
+	mPlaybackDeferred = false;
+	sDeferredPlayers.erase(this);
+}
+
+void VideoVlcComponent::deferPlayback(unsigned retryDelay)
+{
+	// startVideoWithDelay marks the component as waiting before calling us. A
+	// deferred attempt has not actually started, so release that gate or the
+	// timer can expire without ever re-entering startVideo().
+	mIsWaitingForVideoToStart = false;
+	mStartDelayed = false;
+	std::lock_guard<std::mutex> lock(sActivePlayersMutex);
+	mPlaybackDeferred = true;
+	mDeferredRetryTime = SDL_GetTicks() + retryDelay;
+	sDeferredPlayers.insert(this);
 }
 
 int VideoVlcComponent::computePlaybackPriority()
@@ -225,122 +516,153 @@ int VideoVlcComponent::computePlaybackPriority()
 
 bool VideoVlcComponent::acquirePlaybackSlot()
 {
-	int priority = computePlaybackPriority();
+	const int priority = computePlaybackPriority();
 	if (priority <= 0)
 		return false;
 
-	// Carousel cell videos are decoded at their small on-screen target size and
-	// already remain bounded to the rendered carousel range. They must not
-	// compete with the general three-player limit, otherwise adjacent cells keep
-	// entering the deferred queue and visibly reload while the carousel moves.
-	// The global video RAM check below remains authoritative for every player.
-	const auto isDedicatedCarouselVideo = [](VideoVlcComponent* component)
+	const bool carousel = isCarouselVideo();
+	const bool themeManaged = isThemeManagedVideo();
+	const size_t reservationBytes = estimatePendingVideoBufferBytes();
+	const size_t maxVideoBytes = (size_t)getMaxVideoRamMb() * 1024 * 1024;
+
+	for (;;)
 	{
-		if (component == nullptr)
-			return false;
-		const std::string& componentTag = component->getTag();
-		return componentTag == "carouselCellVideo" || componentTag == "frontSystemCarouselVideo";
-	};
-	const bool isCarouselCellVideo = isDedicatedCarouselVideo(this);
+		VideoVlcComponent* victim = nullptr;
+		std::unique_lock<std::mutex> playersLock(sActivePlayersMutex);
+		if (mIsRegisteredActive)
+			return true;
 
-	size_t maxVideoBytes = (size_t)getMaxVideoRamMb() * 1024 * 1024;
-	size_t activeVideoBytes = getActiveVideoBufferBytes();
-	size_t pendingVideoBytes = estimatePendingVideoBufferBytes();
-
-	if (activeVideoBytes + pendingVideoBytes > maxVideoBytes)
-		return false;
-
-	if (!Settings::getInstance()->getBool("EnforceVideoLimit"))
-		return true;
-
-	if (isCarouselCellVideo)
-		return true;
-
-	int maxVideos = getEffectiveMaxConcurrentVideos();
-
-	std::unique_lock<std::mutex> lock(sActivePlayersMutex);
-
-	if (mIsRegisteredActive)
-		return true;
-
-	int limitedPlayerCount = 0;
-	for (const auto& player : sActivePlayers)
-		if (player.component != nullptr && !isDedicatedCarouselVideo(player.component))
-			limitedPlayerCount++;
-
-	while (limitedPlayerCount >= maxVideos)
-	{
-		int weakestIdx = -1;
-		int weakestPriority = priority;
-
-		for (int i = 0; i < (int)sActivePlayers.size(); i++)
+		int bucketCount = 0;
+		for (const auto& player : sActivePlayers)
 		{
-			if (sActivePlayers[i].component == nullptr ||
-				isDedicatedCarouselVideo(sActivePlayers[i].component))
+			if (player.component == nullptr)
 				continue;
+			if (carousel && player.component->isCarouselVideo())
+				bucketCount++;
+			else if (!carousel && !themeManaged && !player.component->isCarouselVideo() &&
+				!player.component->isThemeManagedVideo())
+				bucketCount++;
+		}
 
-			if (sActivePlayers[i].priority < weakestPriority)
+		size_t inUseBytes = 0;
+		int retiringBucketCount = 0;
+		{
+			std::lock_guard<std::mutex> poolLock(sBufferPoolMutex);
+			sVideoBufferBudgetBytes = maxVideoBytes;
+			trimBufferPoolLocked(getBufferPoolCacheLimitBytes(maxVideoBytes), maxVideoBytes);
+			for (const auto& entry : sVideoBufferPool)
 			{
-				weakestPriority = sActivePlayers[i].priority;
-				weakestIdx = i;
+				if (!entry.inUse || entry.surfaces[0] == nullptr)
+					continue;
+				inUseBytes += (size_t)entry.width * (size_t)entry.height * 4 * 2;
+				if (entry.retiring && ((carousel && entry.carouselVideo) ||
+					(!carousel && !themeManaged && entry.countAgainstConcurrentLimit)))
+					retiringBucketCount++;
 			}
 		}
 
-		if (weakestIdx < 0)
+		const bool enforceCount = Settings::getInstance()->getBool("EnforceVideoLimit");
+		const int globalCarouselLimit = getEffectiveMaxConcurrentCarouselVideos();
+		const int configuredCarouselLimit = mConcurrentPlaybackLimit > 0 && globalCarouselLimit > 0 ?
+			Math::min(mConcurrentPlaybackLimit, globalCarouselLimit) :
+			Math::max(mConcurrentPlaybackLimit, globalCarouselLimit);
+		const int bucketLimit = carousel ? configuredCarouselLimit :
+			(themeManaged ? 0 : getEffectiveMaxConcurrentVideos());
+		if (enforceCount && bucketLimit > 0 && bucketCount + retiringBucketCount >= bucketLimit)
+		{
+			int weakestIndex = -1;
+			int weakestPriority = priority;
+			for (int i = 0; i < (int)sActivePlayers.size(); ++i)
+			{
+				VideoVlcComponent* candidate = sActivePlayers[i].component;
+				if (candidate == nullptr)
+					continue;
+
+				const bool sameBucket = carousel ? candidate->isCarouselVideo() :
+					(!themeManaged && !candidate->isCarouselVideo() &&
+						!candidate->isThemeManagedVideo());
+				if (sameBucket && sActivePlayers[i].priority < weakestPriority)
+				{
+					weakestIndex = i;
+					weakestPriority = sActivePlayers[i].priority;
+				}
+			}
+
+			if (weakestIndex < 0)
+				return false;
+
+			victim = sActivePlayers[weakestIndex].component;
+			sActivePlayers.erase(sActivePlayers.begin() + weakestIndex);
+			victim->mIsRegisteredActive = false;
+			victim->mReservedVideoBytes = 0;
+			playersLock.unlock();
+			victim->stopVideo();
+			// Its VLC player/context is now retiring and still consumes both the
+			// decoder token and byte budget. Wait for the release worker instead of
+			// cascading through every lower-priority player in this bucket.
+			return false;
+		}
+
+		size_t pendingBytes = 0;
+		for (const auto& player : sActivePlayers)
+			if (player.component != nullptr && player.component->mContext == nullptr)
+				pendingBytes += player.component->mReservedVideoBytes;
+
+		if (inUseBytes > maxVideoBytes || pendingBytes > maxVideoBytes - inUseBytes ||
+			reservationBytes > maxVideoBytes - inUseBytes - pendingBytes)
 			return false;
 
-		VideoVlcComponent* victim = sActivePlayers[weakestIdx].component;
-		sActivePlayers.erase(sActivePlayers.begin() + weakestIdx);
-		victim->mIsRegisteredActive = false;
-		limitedPlayerCount--;
-
-		lock.unlock();
-		victim->stopVideo();
-		lock.lock();
+		sActivePlayers.push_back({ this, priority });
+		mIsRegisteredActive = true;
+		mReservedVideoBytes = reservationBytes;
+		mPlaybackDeferred = false;
+		sDeferredPlayers.erase(this);
+		return true;
 	}
-
-	return true;
 }
 
 void VideoVlcComponent::registerActivePlayer()
 {
-	if (mIsRegisteredActive)
-		return;
-
 	std::unique_lock<std::mutex> lock(sActivePlayersMutex);
-	sActivePlayers.push_back({ this, computePlaybackPriority() });
-	mIsRegisteredActive = true;
+	if (!mIsRegisteredActive)
+	{
+		// Defensive compatibility for callers that bypassed startVideo().
+		sActivePlayers.push_back({ this, computePlaybackPriority() });
+		mIsRegisteredActive = true;
+		mReservedVideoBytes = getVideoBufferBytes();
+	}
+	else
+	{
+		for (auto& player : sActivePlayers)
+			if (player.component == this)
+				player.priority = computePlaybackPriority();
+	}
 	mPlaybackDeferred = false;
 	sDeferredPlayers.erase(this);
 }
 
 void VideoVlcComponent::unregisterActivePlayer()
 {
-	if (!mIsRegisteredActive)
-		return;
-
 	std::unique_lock<std::mutex> lock(sActivePlayersMutex);
 	sActivePlayers.erase(std::remove_if(sActivePlayers.begin(), sActivePlayers.end(),
 		[this](const ActiveVideoPlayer& p) { return p.component == this; }), sActivePlayers.end());
+	const bool wasRegistered = mIsRegisteredActive;
 	mIsRegisteredActive = false;
+	mReservedVideoBytes = 0;
 	lock.unlock();
 
-	notifyPlaybackSlotAvailable();
+	if (wasRegistered)
+		notifyPlaybackSlotAvailable();
 }
 
 void VideoVlcComponent::notifyPlaybackSlotAvailable()
 {
-	std::vector<VideoVlcComponent*> retry;
-
-	{
-		std::unique_lock<std::mutex> lock(sActivePlayersMutex);
-		for (auto component : sDeferredPlayers)
-			if (component != nullptr && component->mPlaybackDeferred)
-				retry.push_back(component);
-	}
-
-	for (auto component : retry)
-		component->mDeferredRetryTime = SDL_GetTicks();
+	// Keep pointer validation and the write under the same lock. In particular,
+	// the release worker must not retain a raw component pointer past destruction.
+	std::unique_lock<std::mutex> lock(sActivePlayersMutex);
+	for (auto component : sDeferredPlayers)
+		if (component != nullptr && component->mPlaybackDeferred)
+			component->mDeferredRetryTime = SDL_GetTicks();
 }
 
 Vector2f VideoVlcComponent::getSize() const
@@ -356,6 +678,23 @@ Vector2f VideoVlcComponent::getSize() const
 	}
 
 	return GuiComponent::getSize() * (mBottomRightCrop - mTopLeftCrop);
+}
+
+void VideoVlcComponent::setSharedVideoSource(VideoVlcComponent* source)
+{
+	if (mSharedVideoSource == source)
+		return;
+
+	stopVideo();
+	mSharedVideoSource = source;
+	mVideoPath.clear();
+	mPlayingVideoPath.clear();
+	mTexture = nullptr;
+	mVideoWidth = 0;
+	mVideoHeight = 0;
+	// The source owns playback fade. This component retains its independent
+	// opacity/storyboard while drawing the already-decoded frame.
+	mFadeIn = source == nullptr ? 0.0f : 1.0f;
 }
 
 void VideoVlcComponent::setResize(float width, float height)
@@ -399,6 +738,7 @@ void VideoVlcComponent::setMinSize(float width, float height)
 
 void VideoVlcComponent::onVideoStarted()
 {
+	resetPlaybackFailures();
 	VideoComponent::onVideoStarted();
 	resize();
 }
@@ -678,9 +1018,23 @@ void VideoVlcComponent::render(const Transform4x4f& parentTrans)
 
 	VideoComponent::render(parentTrans);
 
-	bool initFromPixels = true;
+	bool initFromPixels = mSharedVideoSource == nullptr;
+	if (mSharedVideoSource != nullptr)
+	{
+		if (mSharedVideoSource == this || mSharedVideoSource->mTexture == nullptr ||
+			!mSharedVideoSource->mTexture->isLoaded())
+			return;
 
-	if (!mIsPlaying || !mContext || mIsParsing)
+		const bool dimensionsChanged = mVideoWidth != mSharedVideoSource->mVideoWidth ||
+			mVideoHeight != mSharedVideoSource->mVideoHeight;
+		mTexture = mSharedVideoSource->mTexture;
+		mVideoWidth = mSharedVideoSource->mVideoWidth;
+		mVideoHeight = mSharedVideoSource->mVideoHeight;
+		if (dimensionsChanged)
+			resize();
+	}
+
+	if (mSharedVideoSource == nullptr && (!mIsPlaying || !mContext || mIsParsing))
 	{
 		// If video is still attached to the path & texture is initialized, we suppose it had just been stopped (onhide, ondisable, screensaver...)
 		// still render the last frame
@@ -714,8 +1068,9 @@ void VideoVlcComponent::render(const Transform4x4f& parentTrans)
 	// Build a texture for the video frame
 	if (initFromPixels)
 	{		
-		int frame = mContext->surfaceId;
-		if (mContext->hasFrame[frame])
+		int frame = mContext->surfaceId.load(std::memory_order_acquire);
+		std::lock_guard<std::mutex> frameLock(mContext->mutexes[frame]);
+		if (mContext->hasFrame[frame].load(std::memory_order_acquire))
 		{
 			if (mTexture == nullptr)
 			{
@@ -730,10 +1085,8 @@ void VideoVlcComponent::render(const Transform4x4f& parentTrans)
 			if (!Settings::getInstance()->getBool("OptimizeVideo") || mElapsed >= 33)
 #endif
 			{
-				mContext->mutexes[frame].lock();
 				mTexture->updateFromExternalPixels(mContext->surfaces[frame], mVideoWidth, mVideoHeight);
-				mContext->hasFrame[frame] = false;
-				mContext->mutexes[frame].unlock();
+				mContext->hasFrame[frame].store(false, std::memory_order_release);
 
 				mElapsed = 0;
 			}
@@ -823,45 +1176,119 @@ VideoContext* VideoVlcComponent::rentContext()
 	ctx->poolIndex = -1;
 	ctx->bufferWidth = mVideoWidth;
 	ctx->bufferHeight = mVideoHeight;
+	ctx->carouselVideo = isCarouselVideo();
+	ctx->countAgainstConcurrentLimit = !ctx->carouselVideo && !isThemeManagedVideo();
 	ctx->hasFrame[0] = false;
 	ctx->hasFrame[1] = false;
 	ctx->surfaceId = 0;
 
 	const size_t frameBytes = (size_t)mVideoWidth * (size_t)mVideoHeight * 4;
+	const size_t bufferBytes = frameBytes * 2;
+	const size_t maxVideoBytes = (size_t)getMaxVideoRamMb() * 1024 * 1024;
 
-	std::unique_lock<std::mutex> lock(sBufferPoolMutex);
+	// Keep the lock order consistent with reservation checks: players, then pool.
+	std::unique_lock<std::mutex> playersLock(sActivePlayersMutex);
+	size_t otherPendingBytes = 0;
+	for (const auto& player : sActivePlayers)
+		if (player.component != nullptr && player.component != this &&
+			player.component->mContext == nullptr)
+			otherPendingBytes += player.component->mReservedVideoBytes;
+
+	std::unique_lock<std::mutex> poolLock(sBufferPoolMutex);
+	sVideoBufferBudgetBytes = maxVideoBytes;
+	trimBufferPoolLocked(getBufferPoolCacheLimitBytes(maxVideoBytes), maxVideoBytes);
 
 	for (int i = 0; i < (int)sVideoBufferPool.size(); i++)
 	{
 		VideoBufferPoolEntry& entry = sVideoBufferPool[i];
-		if (!entry.inUse && entry.width == mVideoWidth && entry.height == mVideoHeight)
+		if (!entry.inUse && entry.surfaces[0] != nullptr &&
+			entry.width == (int)mVideoWidth && entry.height == (int)mVideoHeight)
 		{
 			ctx->surfaces[0] = entry.surfaces[0];
 			ctx->surfaces[1] = entry.surfaces[1];
 			ctx->poolIndex = i;
 			entry.inUse = true;
-			lock.unlock();
+			entry.retiring = false;
+			entry.carouselVideo = ctx->carouselVideo;
+			entry.countAgainstConcurrentLimit = ctx->countAgainstConcurrentLimit;
+			entry.lastUsed = ++sBufferPoolUseCounter;
+			mContext = ctx;
+			poolLock.unlock();
+			playersLock.unlock();
 			resize();
 			return ctx;
 		}
 	}
 
-	ctx->surfaces[0] = new unsigned char[frameBytes];
-	ctx->surfaces[1] = new unsigned char[frameBytes];
-
-	if ((int)sVideoBufferPool.size() < MAX_VIDEO_BUFFER_POOL_SIZE)
+	if (otherPendingBytes > maxVideoBytes || bufferBytes > maxVideoBytes - otherPendingBytes)
 	{
-		VideoBufferPoolEntry entry;
-		entry.width = mVideoWidth;
-		entry.height = mVideoHeight;
-		entry.surfaces[0] = ctx->surfaces[0];
-		entry.surfaces[1] = ctx->surfaces[1];
-		entry.inUse = true;
-		sVideoBufferPool.push_back(entry);
-		ctx->poolIndex = (int)sVideoBufferPool.size() - 1;
+		poolLock.unlock();
+		playersLock.unlock();
+		delete ctx;
+		return nullptr;
 	}
 
-	lock.unlock();
+	// Free LRU idle buffers until this allocation plus every parser reservation
+	// fits. Retiring entries are in-use and therefore cannot be evicted early.
+	const size_t maxExistingBytes = maxVideoBytes - otherPendingBytes - bufferBytes;
+	trimBufferPoolLocked(getBufferPoolCacheLimitBytes(maxVideoBytes), maxExistingBytes);
+
+	size_t allocatedBytes = 0;
+	for (const auto& entry : sVideoBufferPool)
+		if (entry.surfaces[0] != nullptr)
+			allocatedBytes += (size_t)entry.width * (size_t)entry.height * 4 * 2;
+
+	if (allocatedBytes > maxExistingBytes)
+	{
+		poolLock.unlock();
+		playersLock.unlock();
+		delete ctx;
+		return nullptr;
+	}
+
+	ctx->surfaces[0] = new (std::nothrow) unsigned char[frameBytes];
+	ctx->surfaces[1] = new (std::nothrow) unsigned char[frameBytes];
+	if (ctx->surfaces[0] == nullptr || ctx->surfaces[1] == nullptr)
+	{
+		poolLock.unlock();
+		playersLock.unlock();
+		delete ctx;
+		return nullptr;
+	}
+
+	int poolIndex = -1;
+	for (int i = 0; i < (int)sVideoBufferPool.size(); ++i)
+	{
+		if (!sVideoBufferPool[i].inUse && sVideoBufferPool[i].surfaces[0] == nullptr)
+		{
+			poolIndex = i;
+			break;
+		}
+	}
+
+	VideoBufferPoolEntry entry;
+	entry.width = mVideoWidth;
+	entry.height = mVideoHeight;
+	entry.surfaces[0] = ctx->surfaces[0];
+	entry.surfaces[1] = ctx->surfaces[1];
+	entry.inUse = true;
+	entry.retiring = false;
+	entry.carouselVideo = ctx->carouselVideo;
+	entry.countAgainstConcurrentLimit = ctx->countAgainstConcurrentLimit;
+	entry.lastUsed = ++sBufferPoolUseCounter;
+
+	if (poolIndex >= 0)
+		sVideoBufferPool[poolIndex] = entry;
+	else
+	{
+		sVideoBufferPool.push_back(entry);
+		poolIndex = (int)sVideoBufferPool.size() - 1;
+	}
+
+	ctx->poolIndex = poolIndex;
+	mContext = ctx;
+	poolLock.unlock();
+	playersLock.unlock();
 	resize();
 	return ctx;
 }
@@ -951,199 +1378,431 @@ void VideoVlcComponent::init()
 	delete[] theArgs;
 }
 
-void VideoVlcComponent::handleLooping()
+bool VideoVlcComponent::createMedia(bool forceSoftwareDecoder)
 {
-	if (mIsPlaying && mMediaPlayer && mMedia && !mIsParsing)
+#ifdef WIN32
+	const std::string path = Utils::String::replace(mVideoPath, "/", "\\");
+#else
+	const std::string path = mVideoPath;
+#endif
+
+	mMedia = libvlc_media_new_path(mVLC, path.c_str());
+	if (mMedia == nullptr)
+		return false;
+
+	bool explicitHardwareOption = false;
+	bool explicitSoftwareDecoder = false;
+	const std::string options = SystemConf::getInstance()->get("vlc.options");
+	if (!options.empty())
 	{
-		libvlc_state_t state = libvlc_media_player_get_state(mMediaPlayer);
-		const bool isCarouselCellVideo =
-			getTag() == "carouselCellVideo" || getTag() == "frontSystemCarouselVideo";
-
-		if (isCarouselCellVideo)
+		for (const auto& token : Utils::String::split(options, ' '))
 		{
-			const unsigned int now = SDL_GetTicks();
-			const long long playbackTime = (long long)libvlc_media_player_get_time(mMediaPlayer);
-
-			if (playbackTime >= 0 &&
-				(mLastPlaybackTime < 0 || playbackTime > mLastPlaybackTime ||
-					playbackTime + 500 < mLastPlaybackTime))
+			if (token.empty())
+				continue;
+			libvlc_media_add_option(mMedia, token.c_str());
+			if (token.find("avcodec-hw=") != std::string::npos)
 			{
-				mLastPlaybackTime = playbackTime;
-				mLastPlaybackProgressTick = now;
+				explicitHardwareOption = true;
+				explicitSoftwareDecoder = token.find("avcodec-hw=none") != std::string::npos;
 			}
-
-			const bool terminalState =
-				state == libvlc_Ended || state == libvlc_Stopped || state == libvlc_Error;
-			const bool unexpectedlyPaused =
-				state == libvlc_Paused && now - mLastPlaybackProgressTick >= 1500;
-			const bool stalledWhilePlaying =
-				state == libvlc_Playing && playbackTime >= 0 &&
-				now - mLastPlaybackProgressTick >= 4000;
-
-			if ((terminalState || unexpectedlyPaused || stalledWhilePlaying) &&
-				now - mLastPlaybackRestartTick >= 1000)
-			{
-				// VLC can keep reporting the component as playing while a short cell
-				// video is already stopped on its final frame. Reattach the same media
-				// and restart only this dedicated cell player.
-				libvlc_media_player_set_media(mMediaPlayer, mMedia);
-				if (!getPlayAudio() || !Settings::getInstance()->getBool("VideoAudio"))
-					libvlc_audio_set_mute(mMediaPlayer, 1);
-				libvlc_media_player_play(mMediaPlayer);
-
-				mLastPlaybackTime = -1;
-				mLastPlaybackProgressTick = now;
-				mLastPlaybackRestartTick = now;
-			}
-
-			return;
-		}
-
-		if (state == libvlc_Ended)
-		{
-			if (mLoops >= 0)
-			{
-				mCurrentLoop++;
-				if (mCurrentLoop > mLoops)
-				{
-					stopVideo();
-
-					mFadeIn = 0.0;
-					mPlayingVideoPath = "";
-					mVideoPath = "";
-					return;
-				}
-			}
-
-			if (mPlaylist != nullptr)
-			{
-				auto nextVideo = mPlaylist->getNextItem();
-				if (!nextVideo.empty())
-				{
-					stopVideo();
-					setVideo(nextVideo);
-					return;
-				}
-				else
-					mPlaylist = nullptr;
-			}
-			
-			if (mVideoEnded != nullptr)
-			{
-				bool cont = mVideoEnded();
-				if (!cont)
-				{
-					stopVideo();
-					return;
-				}
-			}
-
-			if (!getPlayAudio() || (!mScreensaverMode && !Settings::getInstance()->getBool("VideoAudio")) || (Settings::getInstance()->getBool("ScreenSaverVideoMute") && mScreensaverMode))
-				libvlc_audio_set_mute(mMediaPlayer, 1);
-
-			//libvlc_media_player_set_position(mMediaPlayer, 0.0f);
-			if (mMedia)
-				libvlc_media_player_set_media(mMediaPlayer, mMedia);
-
-			libvlc_media_player_play(mMediaPlayer);
 		}
 	}
+
+#if WIN32
+	if (forceSoftwareDecoder)
+	{
+		// Added after custom options so the one-shot fallback is authoritative.
+		libvlc_media_add_option(mMedia, ":avcodec-hw=none");
+		mUsingHardwareDecoder = false;
+	}
+	else
+	{
+		if (!explicitHardwareOption)
+			libvlc_media_add_option(mMedia, ":avcodec-hw=any");
+		mUsingHardwareDecoder = !explicitSoftwareDecoder;
+	}
+	libvlc_media_add_option(mMedia, ":no-spu");
+#else
+	(void)forceSoftwareDecoder;
+	mUsingHardwareDecoder = false;
+#endif
+
+	if (!shouldPlayAudio())
+	{
+		// Decorative menu videos explicitly use setPlayAudio(false), carousel tags
+		// are always silent, and a disabled global audio option should also avoid
+		// creating an audio decoder. The selected game's preview keeps its policy.
+		libvlc_media_add_option(mMedia, ":no-audio");
+	}
+#if WIN32
+	if (isCarouselVideo())
+		libvlc_media_add_option(mMedia, ":input-repeat=65535");
+#endif
+
+	if (mPlaylist != nullptr && mConfig.startDelay == 0 &&
+		!mConfig.showSnapshotDelay && !mConfig.showSnapshotNoVideo)
+		libvlc_media_add_option(mMedia, ":start-time=0.7");
+
+	mIsParsing = false;
+#if LIBVLC_VERSION_MAJOR >= 3
+	#if WIN32
+		const char* vlcVersion = libvlc_get_version();
+		if (vlcVersion[0] < '3')
+			libvlc_media_parse(mMedia);
+		else
+	#endif
+	{
+		const int parseResult = libvlc_media_parse_with_options(
+			mMedia, libvlc_media_parse_local, 5000);
+		if (parseResult != 0)
+		{
+			LOG(LogWarning) << "[VideoVlcComponent] failed to start media parsing: " << mVideoPath;
+			libvlc_media_release(mMedia);
+			mMedia = nullptr;
+			return false;
+		}
+		if ((int)libvlc_media_get_parsed_status(mMedia) == 0)
+		{
+			mIsParsing = true;
+			return true;
+		}
+	}
+#else
+	libvlc_media_parse(mMedia);
+#endif
+
+	onMediaParsed();
+	return mIsParsing || mMediaPlayer != nullptr;
+}
+
+void VideoVlcComponent::releaseMediaForDecoderRetry()
+{
+	if (mAudioPlaybackRegistered)
+	{
+		AudioManager::setVideoPlaying(false);
+		mAudioPlaybackRegistered = false;
+	}
+
+	if (mMediaPlayer != nullptr)
+	{
+		// The release worker is deliberately serialized and can have a short
+		// backlog while a carousel is moving. Silence this player immediately so
+		// audio from the previous selection cannot continue until its release job
+		// reaches the front of the queue.
+		libvlc_audio_set_mute(mMediaPlayer, 1);
+		queueMediaPlayerRelease(mContext, mMediaPlayer);
+	}
+	else if (mContext != nullptr)
+		releaseContext(mContext);
+
+	mMediaPlayer = nullptr;
+	mContext = nullptr;
+	if (mMedia != nullptr)
+		libvlc_media_release(mMedia);
+	mMedia = nullptr;
+	mIsParsing = false;
+	mIsPlaying = false;
+	mIsWaitingForVideoToStart = true;
+	mTexture = nullptr;
+	mVideoWidth = 0;
+	mVideoHeight = 0;
+	mHasAudioTrack = false;
+	mLastPlaybackTime = -1;
+	mLastPlaybackProgressTick = SDL_GetTicks();
+	mLastPlaybackRestartTick = 0;
+	mPlaybackStartedTick = 0;
+	mPlaybackRestartAttempts = 0;
+}
+
+bool VideoVlcComponent::trySoftwareDecoderFallback()
+{
+#if WIN32
+	if (!mUsingHardwareDecoder || mHardwareFallbackAttempted)
+		return false;
+
+	mHardwareFallbackAttempted = true;
+	mSoftwareDecoderPath = mVideoPath;
+	LOG(LogWarning) << "[VideoVlcComponent] hardware decoding failed; retrying once in software: "
+		<< mVideoPath;
+	// The old decoder remains alive until the release worker finishes. Re-enter
+	// through the normal slot allocator so that retiring hardware + replacement
+	// software never exceed the XML decoder count or RAM budget.
+	stopVideo();
+	deferPlayback(100);
+	return true;
+#else
+	return false;
+#endif
+}
+
+void VideoVlcComponent::resetPlaybackFailures()
+{
+	mPlaybackFailurePath.clear();
+	mPlaybackFailureCount = 0;
+	mPlaybackFailureBlockedUntil = 0;
+}
+
+void VideoVlcComponent::failPlayback(unsigned retryDelay, bool countFailure)
+{
+	const std::string failedPath = mVideoPath;
+	if (countFailure)
+	{
+		if (mPlaybackFailurePath != failedPath)
+		{
+			mPlaybackFailurePath = failedPath;
+			mPlaybackFailureCount = 0;
+		}
+		mPlaybackFailureCount++;
+	}
+
+	stopVideo();
+	if (failedPath.empty())
+		return;
+
+	if (!countFailure || mPlaybackFailureCount <= 3)
+	{
+		const unsigned int delay = countFailure ?
+			std::min(15000U, retryDelay * (unsigned int)mPlaybackFailureCount) : retryDelay;
+		deferPlayback(delay);
+		return;
+	}
+
+	// A broken/unsupported file must not be reopened every frame forever. Keep
+	// the component cheap, but retry after a long cooldown so replaced media can
+	// recover without restarting EmulationStation.
+	mPlaybackFailureBlockedUntil = SDL_GetTicks() + 60000;
+	LOG(LogWarning) << "[VideoVlcComponent] pausing retries for 60 seconds after repeated failures: "
+		<< failedPath;
+}
+
+void VideoVlcComponent::handleLooping()
+{
+	if (!mIsPlaying || mMediaPlayer == nullptr || mMedia == nullptr || mIsParsing)
+		return;
+
+	const libvlc_state_t state = libvlc_media_player_get_state(mMediaPlayer);
+	const unsigned int now = SDL_GetTicks();
+	const long long playbackTime = (long long)libvlc_media_player_get_time(mMediaPlayer);
+	if (playbackTime >= 0 &&
+		(mLastPlaybackTime < 0 || playbackTime > mLastPlaybackTime ||
+			playbackTime + 500 < mLastPlaybackTime))
+	{
+		mLastPlaybackTime = playbackTime;
+		mLastPlaybackProgressTick = now;
+		mPlaybackRestartAttempts = 0;
+	}
+
+	const bool hardwareStall = mUsingHardwareDecoder && state == libvlc_Playing &&
+		playbackTime >= 0 && now - mLastPlaybackProgressTick >= 6000;
+	const bool decoderStopped = state == libvlc_Stopped;
+	if (state == libvlc_Error || hardwareStall || (decoderStopped && mUsingHardwareDecoder))
+	{
+		if (trySoftwareDecoderFallback())
+			return;
+		failPlayback(2000);
+		return;
+	}
+
+	if (isCarouselVideo())
+	{
+		const bool expectedEnd = state == libvlc_Ended;
+		const bool terminalState = expectedEnd || decoderStopped;
+		const bool unexpectedlyPaused =
+			state == libvlc_Paused && now - mLastPlaybackProgressTick >= 1500;
+		const bool stalledWhilePlaying = state == libvlc_Playing && playbackTime >= 0 &&
+			now - mLastPlaybackProgressTick >= 4000;
+
+		if ((terminalState || unexpectedlyPaused || stalledWhilePlaying) &&
+			now - mLastPlaybackRestartTick >= 1000)
+		{
+			if (!expectedEnd && ++mPlaybackRestartAttempts > 2)
+			{
+				failPlayback(2000);
+				return;
+			}
+
+			libvlc_media_player_set_media(mMediaPlayer, mMedia);
+			if (libvlc_media_player_play(mMediaPlayer) < 0)
+			{
+				if (!trySoftwareDecoderFallback())
+					failPlayback(2000);
+				return;
+			}
+
+			mLastPlaybackTime = -1;
+			mLastPlaybackProgressTick = now;
+			mLastPlaybackRestartTick = now;
+			mPlaybackStartedTick = now;
+		}
+		return;
+	}
+	if (decoderStopped)
+	{
+		failPlayback(2000);
+		return;
+	}
+
+	if (state != libvlc_Ended)
+		return;
+
+	if (mLoops >= 0)
+	{
+		mCurrentLoop++;
+		if (mCurrentLoop > mLoops)
+		{
+			stopVideo();
+			mFadeIn = 0.0;
+			mPlayingVideoPath = "";
+			mVideoPath = "";
+			return;
+		}
+	}
+
+	if (mPlaylist != nullptr)
+	{
+		const auto nextVideo = mPlaylist->getNextItem();
+		if (!nextVideo.empty())
+		{
+			stopVideo();
+			setVideo(nextVideo);
+			return;
+		}
+		mPlaylist = nullptr;
+	}
+
+	if (mVideoEnded != nullptr && !mVideoEnded())
+	{
+		stopVideo();
+		return;
+	}
+
+	if (!shouldPlayAudio())
+		libvlc_audio_set_mute(mMediaPlayer, 1);
+	libvlc_media_player_set_media(mMediaPlayer, mMedia);
+	if (libvlc_media_player_play(mMediaPlayer) < 0)
+	{
+		if (!trySoftwareDecoderFallback())
+			failPlayback(2000);
+		return;
+	}
+	mPlaybackStartedTick = now;
 }
 
 void VideoVlcComponent::onMediaParsed()
 {
 	StopWatch stopWatch("[VideoVlcComponent] onMediaParsed", LogDebug);
+	if (mMedia == nullptr)
+		return;
 
 	mVideoWidth = 0;
 	mVideoHeight = 0;
-
-	bool hasAudioTrack = false;
-	unsigned track_count;
-
-	libvlc_media_track_t** tracks;
-	track_count = libvlc_media_tracks_get(mMedia, &tracks);
-	for (unsigned track = 0; track < track_count; ++track)
+	mHasAudioTrack = false;
+	libvlc_media_track_t** tracks = nullptr;
+	const unsigned trackCount = libvlc_media_tracks_get(mMedia, &tracks);
+	for (unsigned track = 0; track < trackCount; ++track)
 	{
 		if (tracks[track]->i_type == libvlc_track_audio)
-			hasAudioTrack = true;
+			mHasAudioTrack = true;
 		else if (tracks[track]->i_type == libvlc_track_video)
 		{
 			mVideoWidth = tracks[track]->video->i_width;
 			mVideoHeight = tracks[track]->video->i_height;
-
-			if (hasAudioTrack)
-				break;
 		}
 	}
-	libvlc_media_tracks_release(tracks, track_count);
+	if (tracks != nullptr)
+		libvlc_media_tracks_release(tracks, trackCount);
 
-	if (mVideoWidth == 0 && mVideoHeight == 0 && Utils::FileSystem::isAudio(mPlayingVideoPath))
+	if (mVideoWidth == 0 && mVideoHeight == 0 &&
+		Utils::FileSystem::isAudio(mPlayingVideoPath) && shouldPlayAudio() && !mScreensaverMode)
 	{
-		if (getPlayAudio() && !mScreensaverMode && Settings::getInstance()->getBool("VideoAudio"))
-		{
-			// Make fake dimension to play audio files
-			mVideoWidth = 1;
-			mVideoHeight = 1;
-		}
+		mVideoWidth = 1;
+		mVideoHeight = 1;
 	}
 
-	// Make sure we found a valid video track
 	if (mVideoWidth <= 0 || mVideoHeight <= 0)
+	{
+		failPlayback(2000);
 		return;
+	}
 
 	if (mVideoWidth > 1 && Settings::getInstance()->getBool("OptimizeVideo"))
 	{
-		// Avoid videos bigger than resolution
 		Vector2f maxSize(Renderer::getScreenWidth(), Renderer::getScreenHeight());
-
 #ifdef _RPI_
-		// Temporary -> RPI -> Try to limit videos to 400x300 for performance benchmark
 		if (!Renderer::isSmallScreen())
 			maxSize = Vector2f(400, 300);
 #endif
-
-		if (!mTargetSize.empty() && (mTargetSize.x() < maxSize.x() || mTargetSize.y() < maxSize.y()))
+		if (!mTargetSize.empty() &&
+			(mTargetSize.x() < maxSize.x() || mTargetSize.y() < maxSize.y()))
 			maxSize = mTargetSize;
 
-		// If video is bigger than display, ask VLC for a smaller image
-		auto sz = ImageIO::adjustPictureSize(Vector2i(mVideoWidth, mVideoHeight), Vector2i(maxSize.x(), maxSize.y()), mTargetIsMin);
-		if (sz.x() < mVideoWidth || sz.y() < mVideoHeight)
+		const auto size = ImageIO::adjustPictureSize(
+			Vector2i(mVideoWidth, mVideoHeight), Vector2i(maxSize.x(), maxSize.y()), mTargetIsMin);
+		if (size.x() < mVideoWidth || size.y() < mVideoHeight)
 		{
-			mVideoWidth = sz.x();
-			mVideoHeight = sz.y();
+			mVideoWidth = size.x();
+			mVideoHeight = size.y();
 		}
 	}
 
-	mMediaPlayer = libvlc_media_player_new_from_media(mMedia);
-	if (!mMediaPlayer)
+	if (!updatePlaybackReservation(getVideoBufferBytes()))
+	{
+		failPlayback(300);
 		return;
+	}
+
+	mMediaPlayer = libvlc_media_player_new_from_media(mMedia);
+	if (mMediaPlayer == nullptr)
+	{
+		if (!trySoftwareDecoderFallback())
+			failPlayback(2000);
+		return;
+	}
 
 	mContext = rentContext();
-	mLastPlaybackTime = -1;
-	mLastPlaybackProgressTick = SDL_GetTicks();
-	mLastPlaybackRestartTick = 0;
-
-	if (hasAudioTrack)
+	if (mContext == nullptr)
 	{
-		if (!getPlayAudio() || (!mScreensaverMode && !Settings::getInstance()->getBool("VideoAudio")) || (Settings::getInstance()->getBool("ScreenSaverVideoMute") && mScreensaverMode))
-			libvlc_audio_set_mute(mMediaPlayer, 1);
-		else
-			AudioManager::setVideoPlaying(true);
+		failPlayback(300);
+		return;
 	}
+
+	const unsigned int now = SDL_GetTicks();
+	mLastPlaybackTime = -1;
+	mLastPlaybackProgressTick = now;
+	mLastPlaybackRestartTick = 0;
+	mPlaybackStartedTick = now;
+	mPlaybackRestartAttempts = 0;
+
+	if (mHasAudioTrack && shouldPlayAudio())
+	{
+		AudioManager::setVideoPlaying(true);
+		mAudioPlaybackRegistered = true;
+	}
+	else if (mHasAudioTrack)
+		libvlc_audio_set_mute(mMediaPlayer, 1);
 
 	if (mVideoWidth > 1)
 	{
 		libvlc_video_set_callbacks(mMediaPlayer, lock, unlock, display, (void*)mContext);
-		libvlc_video_set_format(mMediaPlayer, "RGBA", (int)mVideoWidth, (int)mVideoHeight, (int)mVideoWidth * 4);
-	}	
-	
-	libvlc_media_player_play(mMediaPlayer);
+		libvlc_video_set_format(mMediaPlayer, "RGBA", (int)mVideoWidth,
+			(int)mVideoHeight, (int)mVideoWidth * 4);
+	}
+
+	if (libvlc_media_player_play(mMediaPlayer) < 0)
+	{
+		if (!trySoftwareDecoderFallback())
+			failPlayback(2000);
+		return;
+	}
 	registerActivePlayer();
 }
 
 void VideoVlcComponent::startVideo()
 {
-	if (mIsPlaying || !mVLC)
+	if (mSharedVideoSource != nullptr)
+		return;
+
+	if (mIsPlaying || mIsParsing || mMediaPlayer != nullptr || mMedia != nullptr || !mVLC)
 		return;
 
 	if (mVideoPath.empty())
@@ -1152,32 +1811,32 @@ void VideoVlcComponent::startVideo()
 		return;
 	}
 
+	if (mPlaybackFailurePath != mVideoPath)
+	{
+		mPlaybackFailurePath = mVideoPath;
+		mPlaybackFailureCount = 0;
+		mPlaybackFailureBlockedUntil = 0;
+	}
+	else if (mPlaybackFailureCount > 3 && mPlaybackFailureBlockedUntil != 0)
+	{
+		const unsigned int now = SDL_GetTicks();
+		if ((int)(now - mPlaybackFailureBlockedUntil) < 0)
+		{
+			deferPlayback(mPlaybackFailureBlockedUntil - now);
+			return;
+		}
+
+		mPlaybackFailureCount = 0;
+		mPlaybackFailureBlockedUntil = 0;
+	}
+
 	if (!acquirePlaybackSlot())
 	{
-		mPlaybackDeferred = true;
-		mDeferredRetryTime = SDL_GetTicks() + 300;
-		sDeferredPlayers.insert(this);
+		deferPlayback(300);
 		return;
 	}
-
-	mPlaybackDeferred = false;
-	sDeferredPlayers.erase(this);
 
 	StopWatch stopWatch("[VideoVlcComponent] startVideo", LogDebug);
-
-#ifdef WIN32
-	std::string path = Utils::String::replace(mVideoPath, "/", "\\");
-#else
-	std::string path = mVideoPath;
-#endif
-
-	mMedia = libvlc_media_new_path(mVLC, path.c_str());
-	if (!mMedia)
-	{
-		stopVideo();
-		return;
-	}
-
 	if (hasStoryBoard("", true) && mConfig.startDelay > 0)
 		startStoryboard();
 
@@ -1185,102 +1844,61 @@ void VideoVlcComponent::startVideo()
 	mCurrentLoop = 0;
 	mIsParsing = false;
 	mPlayingVideoPath = mVideoPath;
-
-	PowerSaver::pause();
-
-	// use : vlc �long-help
-	// WIN32 ? libvlc_media_add_option(mMedia, ":avcodec-hw=dxva2");
-	// RPI/OMX ? libvlc_media_add_option(mMedia, ":codec=mediacodec,iomx,all"); .
-
-	const bool isCarouselCellVideo =
-		getTag() == "carouselCellVideo" || getTag() == "frontSystemCarouselVideo";
-	std::string options = SystemConf::getInstance()->get("vlc.options");
-	if (!options.empty())
+	mPlaybackRestartAttempts = 0;
+	mHasAudioTrack = false;
+	if (mSoftwareDecoderPath != mVideoPath)
 	{
-		for (auto token : Utils::String::split(options, ' '))
-			libvlc_media_add_option(mMedia, token.c_str());
+		mSoftwareDecoderPath.clear();
+		mHardwareFallbackAttempted = false;
 	}
-#if WIN32
 	else
+		mHardwareFallbackAttempted = true;
+
+	if (!mPowerSaverPaused)
 	{
-		libvlc_media_add_option(mMedia,
-			isCarouselCellVideo ? ":avcodec-hw=none" : ":avcodec-hw=any");
-		libvlc_media_add_option(mMedia, ":no-spu");
+		PowerSaver::pause();
+		mPowerSaverPaused = true;
 	}
-	if (isCarouselCellVideo)
-		libvlc_media_add_option(mMedia, ":input-repeat=65535");
-#endif
 
-	// If we have a playlist : most videos have a fader, skip it 1 second
-	if (mPlaylist != nullptr && mConfig.startDelay == 0 && !mConfig.showSnapshotDelay && !mConfig.showSnapshotNoVideo)
-		libvlc_media_add_option(mMedia, ":start-time=0.7");
-
-#if LIBVLC_VERSION_MAJOR >= 3
-	#if WIN32
-		const char* vlc_ver = libvlc_get_version();
-		if (vlc_ver[0] < '3')
-			libvlc_media_parse(mMedia);
-		else
-	#endif
-	{
-		libvlc_media_parse_with_options(mMedia, libvlc_media_parse_local, 0);
-		if ((int)libvlc_media_get_parsed_status(mMedia) == 0)
-		{
-			mIsParsing = true;
-			return;
-		}
-	}
-#else
-	// It looks like an older version of the library is being used on Windows.
-	libvlc_media_parse(mMedia);
-#endif
-
-	onMediaParsed();
+	const bool forceSoftwareDecoder = mSoftwareDecoderPath == mVideoPath;
+	if (!createMedia(forceSoftwareDecoder) && mIsRegisteredActive)
+		failPlayback(2000);
 }
 
 void VideoVlcComponent::stopVideo()
 {
-	mPlaybackDeferred = false;
-	sDeferredPlayers.erase(this);
-
+	clearPlaybackDeferred();
 	unregisterActivePlayer();
 
-	if (mMediaPlayer == nullptr && mMedia == nullptr && !mContext)
-		return;
-
-	StopWatch stopWatch("[VideoVlcComponent] stopVideo", LogDebug);
+	const bool hadResources = mMediaPlayer != nullptr || mMedia != nullptr || mContext != nullptr;
+	if (hadResources)
+	{
+		StopWatch stopWatch("[VideoVlcComponent] stopVideo", LogDebug);
+		releaseMediaForDecoderRetry();
+	}
 
 	mIsPlaying = false;
 	mIsWaitingForVideoToStart = false;
 	mStartDelayed = false;
-
-	// Release the media player so it stops calling back to us
-	if (mMediaPlayer)
-	{
-		mediaplayer_release_async(mContext, mMediaPlayer);
-		mMediaPlayer = nullptr;		
-	}
-	else if (mContext)
-		releaseContext(mContext);
-
-	mContext = nullptr;
-
-	// Release the media
-	if (mMedia)
-	{
-		mIsParsing = false;
-		libvlc_media_release(mMedia); 
-		mMedia = NULL;
-
-		PowerSaver::resume();
-	}		
-
+	mIsParsing = false;
+	mUsingHardwareDecoder = false;
 	mTexture = nullptr;
 	mLastPlaybackTime = -1;
 	mLastPlaybackProgressTick = SDL_GetTicks();
 	mLastPlaybackRestartTick = 0;
+	mPlaybackStartedTick = 0;
+	mPlaybackRestartAttempts = 0;
 
-	AudioManager::setVideoPlaying(false);
+	if (mAudioPlaybackRegistered)
+	{
+		AudioManager::setVideoPlaying(false);
+		mAudioPlaybackRegistered = false;
+	}
+	if (mPowerSaverPaused)
+	{
+		PowerSaver::resume();
+		mPowerSaverPaused = false;
+	}
 }
 
 void VideoVlcComponent::applyTheme(const std::shared_ptr<ThemeData>& theme, const std::string& view, const std::string& element, unsigned int properties)
@@ -1344,7 +1962,44 @@ void VideoVlcComponent::update(int deltaTime)
 	{
 		mIsParsing = false;
 		onMediaParsed();
-	}		
+	}
+
+	// VLC callbacks run on decoder threads. Publish frame readiness there, but
+	// perform component state changes here on the UI thread. Audio-only media has
+	// no frame callback, so VLC's Playing state is its start signal.
+	if (!mIsParsing && mMediaPlayer != nullptr && !mIsPlaying &&
+		mIsWaitingForVideoToStart)
+	{
+		bool started = mVideoWidth <= 1 &&
+			libvlc_media_player_get_state(mMediaPlayer) == libvlc_Playing;
+		if (!started && mContext != nullptr)
+		{
+			for (int frame = 0; frame < 2 && !started; ++frame)
+			{
+				std::lock_guard<std::mutex> frameLock(mContext->mutexes[frame]);
+				started = mContext->hasFrame[frame].load(std::memory_order_acquire);
+			}
+		}
+
+		if (started)
+			onVideoStarted();
+	}
+
+	// A decoder can fail before VLC produces its first display callback, in
+	// which case handleLooping() is not active yet. Catch both an explicit error
+	// and an opening stall here, with one hardware-to-software transition only.
+	if (mVideoWidth > 1 && !mIsParsing && mMediaPlayer != nullptr && !mIsPlaying &&
+		mIsWaitingForVideoToStart && mPlaybackStartedTick != 0)
+	{
+		const unsigned int now = SDL_GetTicks();
+		const libvlc_state_t state = libvlc_media_player_get_state(mMediaPlayer);
+		const unsigned int timeout = mUsingHardwareDecoder ? 8000 : 12000;
+		if (state == libvlc_Error || now - mPlaybackStartedTick >= timeout)
+		{
+			if (!trySoftwareDecoderFallback())
+				failPlayback(2000);
+		}
+	}
 	
 	VideoComponent::update(deltaTime);
 }
@@ -1430,9 +2085,16 @@ void VideoVlcComponent::pauseVideo()
 	else
 	{
 		libvlc_media_player_pause(mMediaPlayer);
-		
-		PowerSaver::resume();
-		AudioManager::setVideoPlaying(false);
+		if (mPowerSaverPaused)
+		{
+			PowerSaver::resume();
+			mPowerSaverPaused = false;
+		}
+		if (mAudioPlaybackRegistered)
+		{
+			AudioManager::setVideoPlaying(false);
+			mAudioPlaybackRegistered = false;
+		}
 	}
 }
 
@@ -1447,12 +2109,27 @@ void VideoVlcComponent::resumeVideo()
 		return;
 	}
 
+	if (libvlc_media_player_play(mMediaPlayer) < 0)
+	{
+		if (!trySoftwareDecoderFallback())
+			failPlayback(2000);
+		return;
+	}
+
 	mIsPlaying = true;
-	libvlc_media_player_play(mMediaPlayer);
 	mLastPlaybackTime = -1;
 	mLastPlaybackProgressTick = SDL_GetTicks();
-	PowerSaver::pause();
-	AudioManager::setVideoPlaying(true);
+	mPlaybackStartedTick = mLastPlaybackProgressTick;
+	if (!mPowerSaverPaused)
+	{
+		PowerSaver::pause();
+		mPowerSaverPaused = true;
+	}
+	if (mHasAudioTrack && shouldPlayAudio() && !mAudioPlaybackRegistered)
+	{
+		AudioManager::setVideoPlaying(true);
+		mAudioPlaybackRegistered = true;
+	}
 }
 
 bool VideoVlcComponent::isPaused()

@@ -32,6 +32,8 @@ struct SystemViewData
 	std::vector<GuiComponent*> backgroundExtras;
 	std::shared_ptr<VideoVlcComponent> frontCarouselVideo;
 	std::string frontCarouselVideoPath;
+	std::string frontCarouselVideoConfiguredPath;
+	long long frontCarouselVideoCheckedAt = 0;
 };
 
 
@@ -151,7 +153,13 @@ private:
 
 	std::vector<GuiComponent*>			mStaticBackgrounds;
 	std::vector<SystemViewData>			mEntries;
+	std::vector<int>					mFrontCarouselActiveVideoIndices;
 	int									mFrontCarouselMaxVisible;
+	int									mFrontCarouselSyncedCursor;
+	int									mFrontCarouselSyncedCount;
+	int									mFrontCarouselSyncedEntryCount;
+	std::string							mFrontCarouselSyncedMode;
+	bool								mFrontCarouselSyncValid;
 	bool								mFrontCarouselVideoModeDirty;
 	bool								mFrontCarouselVideoModePreview;
 

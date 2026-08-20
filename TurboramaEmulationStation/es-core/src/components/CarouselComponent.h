@@ -95,6 +95,8 @@ public:
 
 	void		add(const std::string& name, IBindable* obj, bool preloadLogo = false);
 	IBindable*	getActiveObject();
+	bool		remove(IBindable* obj);
+	void		clear() override;
 
 	inline void setCursorChangedCallback(const std::function<void(CursorState state)>& func) { mCursorChangedCallback = func; }
 	void	applyTheme(const std::shared_ptr<ThemeData>& theme, const std::string& view, const std::string& element, unsigned int properties);
@@ -129,6 +131,9 @@ private:
 	void prepareCellVideo(IList<CarouselComponentData, IBindable*>::Entry& entry);
 	void releaseCellVideo(CarouselComponentData& data);
 	void stopCellVideo();
+	std::shared_ptr<VideoComponent> acquireCellVideo();
+	void trimCellVideoPool();
+	size_t getCellVideoPoolLimit() const;
 
 	void renderCarousel(const Transform4x4f& parentTrans);	
 	
@@ -178,10 +183,12 @@ private:
 
 	bool			mCellVideoEnabled;
 	bool			mCellVideoFoldersOnly;
-	bool			mCellVideoAudio;
 	float			mCellVideoDelay;
 	float			mCellVideoRoundCorners;
 	Vector2f		mCellVideoSize;
+	std::vector<std::shared_ptr<VideoComponent>> mCellVideoPool;
+	std::vector<int> mActiveCellVideoIndices;
+	int mActiveCellVideoCount;
 
 	// Mouse support
 	int				mPressedCursor;

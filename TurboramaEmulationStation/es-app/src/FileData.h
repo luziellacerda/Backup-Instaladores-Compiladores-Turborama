@@ -9,6 +9,7 @@
 #include <memory>
 #include <vector>
 #include <stack>
+#include <cstdint>
 #include "KeyboardMapping.h"
 #include "SystemData.h"
 #include "SaveState.h"
@@ -86,7 +87,7 @@ public:
 	inline FileType getType() const { return mType; }
 	
 	inline FolderData* getParent() const { return mParent; }
-	inline void setParent(FolderData* parent) { mParent = parent; }
+	void setParent(FolderData* parent);
 
 	inline SystemData* getSystem() const { return mSystem; }
 
@@ -150,10 +151,10 @@ public:
 	virtual const MetaDataList& getMetadata() const { return mMetadata; }
 	virtual MetaDataList& getMetadata() { return mMetadata; }
 
-	void setMetadata(MetaDataList value) { getMetadata() = value; } 
+	void setMetadata(MetaDataList value);
 	
 	std::string getMetadata(MetaDataId key) const { return getMetadata().get(key); }
-	void setMetadata(MetaDataId key, const std::string& value) { return getMetadata().set(key, value); }
+	void setMetadata(MetaDataId key, const std::string& value);
 
 	void detectLanguageAndRegion(bool overWrite);
 
@@ -192,10 +193,12 @@ public:
 private:
 	std::string getKeyboardMappingFilePath();
 	std::string getMessageFromExitCode(int exitCode);
+	const std::string resolveCarouselVideoPath(bool forceRefresh);
 	MetaDataList mMetadata;
 
 protected:	
 	std::string  findLocalArt(const std::string& type = "", std::vector<std::string> exts = { ".png", ".jpg" });
+	void invalidateCarouselVideoPathCache();
 
 	static FileData* mRunningGame;
 
@@ -204,6 +207,16 @@ protected:
 	FileType mType;
 	SystemData* mSystem;
 	std::string* mDisplayName;
+
+	// Resolving a folder video can walk every descendant and probe several media
+	// layouts. Successful lookups remain cached until metadata/tree generation
+	// changes; only negative results expire, allowing newly copied media to appear
+	// without putting filesystem probes back in the render loop.
+	std::string mCarouselVideoPathCache;
+	std::string mCarouselVideoMetadataPathCache;
+	std::uint64_t mCarouselVideoCacheGeneration = 0;
+	long long mCarouselVideoCacheCheckedAt = 0;
+	bool mCarouselVideoPathCacheValid = false;
 };
 
 class CollectionFileData : public FileData

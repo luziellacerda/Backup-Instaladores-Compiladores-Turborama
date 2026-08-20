@@ -222,33 +222,42 @@ void Settings::setDefaults()
 	mIntMap["ScraperResizeHeight"] = 0;
 
 #if defined(_WIN64) || defined(X86_64)
-	// LZ TURBO premium theme: balanced image cache + explicit RAM budget for stability.
+	// 64-bit desktop: balanced image cache and a bounded decoder-buffer budget.
 	mIntMap["MaxVRAM"] = 3072;
 	mIntMap["MaxRAM"] = 2048;
 	mIntMap["MaxVideoRAM"] = 768;
 #elif defined(_WIN32) || defined(X86)
-	// Safer default for 32-bit Windows builds.
+	// 32-bit desktop: stay within the smaller address space.
 	mIntMap["MaxVRAM"] = 1024;
+	mIntMap["MaxRAM"] = 768;
+	mIntMap["MaxVideoRAM"] = 192;
 #elif defined(TINKERBOARD) || defined(ODROIDN2) || defined(ODROIDC2) || defined(ODROIDXU4) || defined(RPI4)
-	// Boards > 1Gb RAM
+	// Boards with more than 1 GB of RAM.
 	mIntMap["MaxVRAM"] = 512;
 	mIntMap["MaxRAM"] = 1024;
+	mIntMap["MaxVideoRAM"] = 256;
 #elif defined(ODROIDGOA) || defined(GAMEFORCE) || defined(RK3326) || defined(RPIZERO2) || defined(RPI2) || defined(RPI3) || defined(ROCKPRO64)
-	// Boards with 1Gb RAM
+	// Boards with 1 GB of RAM.
 	mIntMap["MaxVRAM"] = 128;
 	mIntMap["MaxRAM"] = 384;
+	mIntMap["MaxVideoRAM"] = 128;
 #elif defined(_RPI_)
-	// Rpi 0, 1
+	// Older Raspberry Pi 0/1 models.
 	mIntMap["MaxVRAM"] = 128;
 	mIntMap["MaxRAM"] = 256;
+	mIntMap["MaxVideoRAM"] = 64;
 #else
-	// Other boards
+	// Conservative fallback for other boards.
 	mIntMap["MaxVRAM"] = 100;
 	mIntMap["MaxRAM"] = 256;
+	mIntMap["MaxVideoRAM"] = 64;
 #endif
 
 	mIntMap["MaxAsyncQueue"] = 12;
 	mIntMap["MaxConcurrentVideos"] = 3;
+	// 0 keeps the theme XML's maxLogoCount authoritative. Positive values allow
+	// low-memory installations to add a separate carousel decoder cap.
+	mIntMap["MaxConcurrentCarouselVideos"] = 0;
 	mBoolMap["EnforceVideoLimit"] = true;
 
 	mStringMap["TransitionStyle"] = "auto";

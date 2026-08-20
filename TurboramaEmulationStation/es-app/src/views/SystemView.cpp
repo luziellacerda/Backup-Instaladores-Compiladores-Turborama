@@ -32,12 +32,22 @@
 #include "utils/FileSystemUtil.h"
 
 #include <cmath>
+#include <chrono>
 #include <iomanip>
 #include <sstream>
 
 namespace
 {
 	const char* FRONT_CAROUSEL_VIDEO_TAG = "video_celula_ativa_v2";
+	const char* FRONT_BASE_BACKGROUND_VIDEO_TAG = "background_movie";
+	const char* FRONT_ANIMATED_BACKGROUND_VIDEO_TAG = "default_background";
+	const long long FRONT_VIDEO_CACHE_TTL_MS = 5000;
+
+	long long frontVideoCacheNow()
+	{
+		return std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
+	}
 
 	std::string resolveFrontCarouselVideoPath(SystemData* system, const std::string& configuredPath)
 	{
@@ -45,7 +55,7 @@ namespace
 			return configuredPath;
 
 		if (system == nullptr || system->getTheme() == nullptr)
-			return configuredPath;
+			return "";
 
 		std::string mediaName = system->getThemeFolder();
 		if (mediaName == "fbneo")
@@ -55,12 +65,12 @@ namespace
 		else if (mediaName == "saturn")
 			mediaName = "saturno";
 		else
-			return configuredPath;
+			return "";
 
 		const std::string themeRoot = system->getTheme()->getVariable("themePath");
 		const std::string mediaRelativePath = system->getTheme()->getVariable("theme.caratulasPath");
 		if (themeRoot.empty() || mediaRelativePath.empty())
-			return configuredPath;
+			return "";
 
 		const std::string mediaFolder = Utils::FileSystem::resolveRelativePath(
 			mediaRelativePath, themeRoot, true);
@@ -72,7 +82,9 @@ namespace
 			return aliasPath;
 		}
 
-		return configuredPath;
+		// Cache a negative lookup too.  Theme reload is the invalidation point;
+		// render must not hit the filesystem once per cell and frame.
+		return "";
 	}
 }
 
@@ -95,6 +107,10 @@ SystemView::SystemView(Window* window) : GuiComponent(window),
 	mDisable = false;
 	mLastCursor = 0;
 	mFrontCarouselMaxVisible = 3;
+	mFrontCarouselSyncedCursor = -1;
+	mFrontCarouselSyncedCount = 0;
+	mFrontCarouselSyncedEntryCount = 0;
+	mFrontCarouselSyncValid = false;
 	mFrontCarouselVideoModeDirty = false;
 	mFrontCarouselVideoModePreview = false;
 	mExtrasFadeOldCursor = -1;
@@ -159,6 +175,12 @@ void SystemView::clearEntries()
 	}
 
 	mEntries.clear();
+	mFrontCarouselActiveVideoIndices.clear();
+	mFrontCarouselSyncValid = false;
+	mFrontCarouselSyncedCursor = -1;
+	mFrontCarouselSyncedCount = 0;
+	mFrontCarouselSyncedEntryCount = 0;
+	mFrontCarouselSyncedMode.clear();
 	mCarousel.clear();
 }
 
@@ -222,15 +244,40 @@ void SystemView::loadExtras(SystemData* system)
 	// from the normal extras so it can be parented to its own animated system cell
 	// instead of being rendered as a fixed screen overlay.
 	auto themedExtras = ThemeData::makeExtras(system->getTheme(), "system", mWindow);
+
+	// The TURBORAMA front layout supplies background_movie as its full-screen
+	// base.  The optional animated-background include can resolve
+	// default_background to that exact same movie and placement, which otherwise
+	// starts a second VLC decoder just to draw the same frames again.  Find the
+	// base up front so the duplicate can be discarded regardless of XML order.
+	VideoVlcComponent* baseBackgroundVideo = nullptr;
+	std::string baseBackgroundVideoPath;
+	for (GuiComponent* extra : themedExtras)
+	{
+		if (extra->getTag() != FRONT_BASE_BACKGROUND_VIDEO_TAG ||
+			!extra->isKindOf<VideoVlcComponent>() || !extra->isVisible() ||
+			extra->getOpacity() != 0xFF || extra->hasStoryBoard())
+			continue;
+
+		baseBackgroundVideoPath = extra->getProperty("path").s;
+		if (!baseBackgroundVideoPath.empty())
+		{
+			baseBackgroundVideo = dynamic_cast<VideoVlcComponent*>(extra);
+			break;
+		}
+	}
+
 	std::vector<GuiComponent*> extras;
 	std::shared_ptr<VideoVlcComponent> frontCarouselVideo;
 	std::string frontCarouselVideoPath;
+	std::string frontCarouselVideoConfiguredPath;
 	for (auto extra : themedExtras)
 	{
 		if (extra->getTag() == FRONT_CAROUSEL_VIDEO_TAG && extra->isKindOf<VideoVlcComponent>())
 		{
+			frontCarouselVideoConfiguredPath = extra->getProperty("path").s;
 			frontCarouselVideoPath = resolveFrontCarouselVideoPath(
-				system, extra->getProperty("path").s);
+				system, frontCarouselVideoConfiguredPath);
 
 			if (frontCarouselVideo == nullptr)
 			{
@@ -241,6 +288,8 @@ void SystemView::loadExtras(SystemData* system)
 				frontCarouselVideo->setVisible(false);
 				frontCarouselVideo->setTag("frontSystemCarouselVideo");
 				frontCarouselVideo->setPlayAudio(false);
+				frontCarouselVideo->setConcurrentPlaybackLimit(
+					Math::max(1, mFrontCarouselMaxVisible));
 				frontCarouselVideo->setEffect(VideoVlcFlags::SIZE);
 			}
 			else
@@ -249,10 +298,28 @@ void SystemView::loadExtras(SystemData* system)
 			continue;
 		}
 
+		if (baseBackgroundVideo != nullptr &&
+			extra->getTag() == FRONT_ANIMATED_BACKGROUND_VIDEO_TAG &&
+			extra->isKindOf<VideoVlcComponent>() &&
+			extra->getProperty("path").s == baseBackgroundVideoPath &&
+			extra->getPosition() == baseBackgroundVideo->getPosition() &&
+			extra->getSize() == baseBackgroundVideo->getSize() &&
+			extra->getOrigin() == baseBackgroundVideo->getOrigin())
+		{
+			// Preserve this element's independent z-index, opacity and storyboard,
+			// but borrow the decoded texture from background_movie.
+			dynamic_cast<VideoVlcComponent*>(extra)->setSharedVideoSource(baseBackgroundVideo);
+			LOG(LogDebug) << "[SystemView] sharing duplicate front background decoder for "
+				<< system->getName() << ": " << baseBackgroundVideoPath;
+		}
+
 		extras.push_back(extra);
 
 		if (extra->isKindOf<VideoComponent>())
 		{
+			// Every SystemView video is decorative. Decode no audio here; the normal
+			// selected-game preview lives in the game view and keeps its audio policy.
+			dynamic_cast<VideoComponent*>(extra)->setPlayAudio(false);
 			auto elem = system->getTheme()->getElement("system", extra->getTag(), "video");
 			if (elem != nullptr && elem->has("path") && Utils::String::startsWith(elem->get<std::string>("path"), "{random"))
 				((VideoComponent*)extra)->setPlaylist(std::make_shared<SystemRandomPlaylist>(system, SystemRandomPlaylist::VIDEO));
@@ -295,6 +362,8 @@ void SystemView::loadExtras(SystemData* system)
 		data.backgroundExtras = extras;
 		data.frontCarouselVideo = frontCarouselVideo;
 		data.frontCarouselVideoPath = frontCarouselVideoPath;
+		data.frontCarouselVideoConfiguredPath = frontCarouselVideoConfiguredPath;
+		data.frontCarouselVideoCheckedAt = frontVideoCacheNow();
 		mEntries.push_back(data);
 	}
 	else
@@ -302,6 +371,8 @@ void SystemView::loadExtras(SystemData* system)
 		it->backgroundExtras = extras;
 		it->frontCarouselVideo = frontCarouselVideo;
 		it->frontCarouselVideoPath = frontCarouselVideoPath;
+		it->frontCarouselVideoConfiguredPath = frontCarouselVideoConfiguredPath;
+		it->frontCarouselVideoCheckedAt = frontVideoCacheNow();
 	}
 
 	SystemRandomPlaylist::resetCache();
@@ -1533,6 +1604,7 @@ void  SystemView::getViewElements(const std::shared_ptr<ThemeData>& theme)
 		{
 			VideoVlcComponent* sv = new VideoVlcComponent(mWindow);
 			sv->applyTheme(theme, "system", name, ThemeFlags::ALL);
+			sv->setPlayAudio(false);
 			mStaticBackgrounds.push_back(sv);
 		}
 	}
@@ -1916,8 +1988,8 @@ void SystemView::getDefaultElements()
 
 void SystemView::getCarouselFromTheme(const ThemeData::ThemeElement* elem)
 {
-	mFrontCarouselMaxVisible = elem->has("maxLogoCount") ?
-		(int)Math::round(elem->get<float>("maxLogoCount")) : 3;
+	mFrontCarouselMaxVisible = Math::max(1, elem->has("maxLogoCount") ?
+		(int)Math::round(elem->get<float>("maxLogoCount")) : 3);
 
 	if (elem->has("systemInfoDelay"))
 		mSystemInfoDelay = elem->get<float>("systemInfoDelay");
@@ -2103,11 +2175,13 @@ void SystemView::syncFrontCarouselVideos()
 	}
 
 	const std::string videoMode = Settings::getInstance()->getString("FrontSystemCarouselVideoMode");
+	bool forceReactivate = false;
 	if (mFrontCarouselVideoModeDirty)
 	{
 		// The theme menu stops the existing VLC players while it is on top. Force
 		// their media path to be assigned again after changing mode; otherwise the
 		// stopped player can leave only the underlying cell image visible.
+		hideFrontCarouselVideos();
 		for (auto& entry : mEntries)
 		{
 			if (entry.frontCarouselVideo == nullptr)
@@ -2117,29 +2191,105 @@ void SystemView::syncFrontCarouselVideos()
 			entry.frontCarouselVideo->setVideo("");
 		}
 		mFrontCarouselVideoModeDirty = false;
+		forceReactivate = true;
 	}
 
 	if (videoMode == "images")
 	{
-		hideFrontCarouselVideos();
+		if (!mFrontCarouselActiveVideoIndices.empty())
+			hideFrontCarouselVideos();
+		mFrontCarouselSyncedCursor = cursor;
+		mFrontCarouselSyncedCount = 0;
+		mFrontCarouselSyncedEntryCount = (int)mEntries.size();
+		mFrontCarouselSyncedMode = videoMode;
+		mFrontCarouselSyncValid = true;
 		return;
 	}
 
 	const bool showAllVisible = videoMode == "all";
 	const int entryCount = (int)mEntries.size();
-	const int scrollBuffer = mCarousel.getScrollingVelocity() == 0 ? 2 : 5;
-	const int visibleRadius = showAllVisible ?
-		Math::min(entryCount / 2, Math::max(0, mFrontCarouselMaxVisible / 2 + scrollBuffer)) : 0;
+	const int requestedCount = showAllVisible ?
+		Math::min(entryCount, Math::max(1, mFrontCarouselMaxVisible)) : 1;
+	const bool syncChanged = forceReactivate || !mFrontCarouselSyncValid ||
+		cursor != mFrontCarouselSyncedCursor ||
+		requestedCount != mFrontCarouselSyncedCount ||
+		entryCount != mFrontCarouselSyncedEntryCount ||
+		videoMode != mFrontCarouselSyncedMode;
 
-	for (int i = 0; i < entryCount; i++)
+	if (!syncChanged)
 	{
-		const int linearDistance = abs(i - cursor);
-		const int circularDistance = Math::min(linearDistance, entryCount - linearDistance);
-		if (i == cursor || (showAllVisible && circularDistance <= visibleRadius))
-			showFrontCarouselVideo(mEntries[i], i);
-		else
-			hideFrontCarouselVideo(mEntries[i]);
+		// A negative media lookup is the only stable-state work. Retry only the
+		// handful of active cells after its TTL; successful paths never probe disk.
+		const long long now = frontVideoCacheNow();
+		for (int index : mFrontCarouselActiveVideoIndices)
+		{
+			if (index < 0 || index >= entryCount)
+				continue;
+
+			SystemViewData& data = mEntries[index];
+			const bool retryNegative = data.frontCarouselVideo != nullptr &&
+				data.frontCarouselVideoPath.empty() &&
+				!data.frontCarouselVideoConfiguredPath.empty() &&
+				now - data.frontCarouselVideoCheckedAt >= FRONT_VIDEO_CACHE_TTL_MS;
+			const bool retryMissingCell = data.frontCarouselVideo != nullptr &&
+				!data.frontCarouselVideoPath.empty() &&
+				!data.frontCarouselVideo->isVisible();
+			if (retryNegative || retryMissingCell)
+				showFrontCarouselVideo(data, index);
+		}
+		return;
 	}
+
+	// Update decoder limits only when configuration/lifecycle changes, never on
+	// every rendered frame. A newly reloaded component is covered by !SyncValid.
+	if (!mFrontCarouselSyncValid || requestedCount != mFrontCarouselSyncedCount ||
+		entryCount != mFrontCarouselSyncedEntryCount)
+	{
+		for (auto& entry : mEntries)
+			if (entry.frontCarouselVideo != nullptr)
+				entry.frontCarouselVideo->setConcurrentPlaybackLimit(requestedCount);
+	}
+
+	// maxLogoCount describes cells, not a radius. Build the exact circular
+	// window only when its inputs change; an even count gets its spare cell on
+	// the forward side. Keep the selected cell first for decoder allocation.
+	std::vector<int> desiredIndices;
+	desiredIndices.reserve(requestedCount);
+	const int firstOffset = -(requestedCount - 1) / 2;
+	for (int offset = 0; offset < requestedCount; offset++)
+	{
+		int index = (cursor + firstOffset + offset) % entryCount;
+		if (index < 0)
+			index += entryCount;
+		desiredIndices.push_back(index);
+	}
+	std::sort(desiredIndices.begin(), desiredIndices.end());
+	auto selected = std::find(desiredIndices.begin(), desiredIndices.end(), cursor);
+	if (selected != desiredIndices.end())
+	{
+		desiredIndices.erase(selected);
+		desiredIndices.insert(desiredIndices.begin(), cursor);
+	}
+
+	// Hide departures before showing arrivals. Only the small previous/current
+	// windows are compared, so library size no longer affects per-frame work.
+	for (int index : mFrontCarouselActiveVideoIndices)
+		if (index >= 0 && index < entryCount &&
+			std::find(desiredIndices.begin(), desiredIndices.end(), index) == desiredIndices.end())
+			hideFrontCarouselVideo(mEntries[index]);
+
+	for (int index : desiredIndices)
+		if (std::find(mFrontCarouselActiveVideoIndices.begin(),
+			mFrontCarouselActiveVideoIndices.end(), index) ==
+			mFrontCarouselActiveVideoIndices.end())
+			showFrontCarouselVideo(mEntries[index], index);
+
+	mFrontCarouselActiveVideoIndices.swap(desiredIndices);
+	mFrontCarouselSyncedCursor = cursor;
+	mFrontCarouselSyncedCount = requestedCount;
+	mFrontCarouselSyncedEntryCount = entryCount;
+	mFrontCarouselSyncedMode = videoMode;
+	mFrontCarouselSyncValid = true;
 }
 
 void SystemView::invalidateFrontCarouselVideoMode()
@@ -2156,8 +2306,26 @@ void SystemView::invalidateFrontCarouselVideoMode()
 
 void SystemView::showFrontCarouselVideo(SystemViewData& data, int index)
 {
-	if (data.frontCarouselVideo == nullptr || data.frontCarouselVideoPath.empty() ||
-		!Utils::FileSystem::exists(data.frontCarouselVideoPath))
+	// loadExtras validates and caches this path (including a negative result).
+	if (data.frontCarouselVideo == nullptr)
+	{
+		hideFrontCarouselVideo(data);
+		return;
+	}
+
+	if (data.frontCarouselVideoPath.empty() &&
+		!data.frontCarouselVideoConfiguredPath.empty())
+	{
+		const long long now = frontVideoCacheNow();
+		if (now - data.frontCarouselVideoCheckedAt >= FRONT_VIDEO_CACHE_TTL_MS)
+		{
+			data.frontCarouselVideoPath = resolveFrontCarouselVideoPath(
+				data.object, data.frontCarouselVideoConfiguredPath);
+			data.frontCarouselVideoCheckedAt = now;
+		}
+	}
+
+	if (data.frontCarouselVideoPath.empty())
 	{
 		hideFrontCarouselVideo(data);
 		return;
@@ -2197,7 +2365,9 @@ void SystemView::showFrontCarouselVideo(SystemViewData& data, int index)
 	data.frontCarouselVideo->setOrigin(0.5f, 0.5f);
 	data.frontCarouselVideo->setPosition(parentSize.x() * 0.5f, parentSize.y() * 0.5f, 0.0f);
 	data.frontCarouselVideo->setMaxSize(parentSize.x(), parentSize.y());
-	data.frontCarouselVideo->setVideo(data.frontCarouselVideoPath);
+	// The resolver already validated this cached path. Avoid VideoComponent's
+	// second ResourceManager::fileExists() call on every activation.
+	data.frontCarouselVideo->setVideo(data.frontCarouselVideoPath, false);
 	// A player may have been created after SystemView::topWindow(true), notably
 	// during a theme reload. Ensure it consumes the active/preview state before
 	// onShow() evaluates VideoComponent::manageState().
@@ -2228,12 +2398,28 @@ void SystemView::hideFrontCarouselVideo(SystemViewData& data)
 
 void SystemView::hideFrontCarouselVideos()
 {
-	for (auto& entry : mEntries)
-		hideFrontCarouselVideo(entry);
+	for (int index : mFrontCarouselActiveVideoIndices)
+		if (index >= 0 && index < (int)mEntries.size())
+			hideFrontCarouselVideo(mEntries[index]);
+
+	mFrontCarouselActiveVideoIndices.clear();
+	mFrontCarouselSyncValid = false;
 }
 
 void SystemView::releaseFrontCarouselVideo(SystemViewData& data)
 {
+	for (auto it = mFrontCarouselActiveVideoIndices.begin();
+		it != mFrontCarouselActiveVideoIndices.end(); ++it)
+	{
+		const int index = *it;
+		if (index >= 0 && index < (int)mEntries.size() && &mEntries[index] == &data)
+		{
+			mFrontCarouselActiveVideoIndices.erase(it);
+			mFrontCarouselSyncValid = false;
+			break;
+		}
+	}
+
 	if (data.frontCarouselVideo == nullptr)
 		return;
 
@@ -2244,6 +2430,8 @@ void SystemView::releaseFrontCarouselVideo(SystemViewData& data)
 		videoParent->removeChild(data.frontCarouselVideo.get());
 	data.frontCarouselVideo.reset();
 	data.frontCarouselVideoPath.clear();
+	data.frontCarouselVideoConfiguredPath.clear();
+	data.frontCarouselVideoCheckedAt = 0;
 }
 
 SystemData* SystemView::getActiveSystem()

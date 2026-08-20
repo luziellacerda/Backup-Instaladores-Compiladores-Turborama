@@ -37,11 +37,28 @@
 #include "CreditManager.h"
 #include "CreditWarningOverlay.h"
 #include <chrono>
+#include <atomic>
 
 using namespace Utils::Platform;
 
 namespace
 {
+	// A media mutation can affect a collection wrapper or any ancestor folder,
+	// not just the FileData that received the metadata update. A single cheap
+	// generation therefore invalidates all path caches without maintaining a
+	// second dependency tree. Mutations are rare; reads happen every frame.
+	std::atomic<std::uint64_t> sCarouselVideoCacheGeneration(1);
+	// Media can also be copied directly to disk, outside the metadata/tree update
+	// paths below. Keep negative folder results short-lived without putting any
+	// filesystem probes back in the per-frame render path.
+	const long long CAROUSEL_VIDEO_CACHE_TTL_MS = 5000;
+
+	long long carouselVideoCacheNow()
+	{
+		return std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
+	}
+
 #ifdef WIN32
 	// Native, non-activating warning used while an external emulator owns the
 	// screen. The regular EmulationStation notification cannot be rendered while
@@ -377,6 +394,38 @@ FileData::FileData(FileType type, const std::string& path, SystemData* system)
 	mMetadata.resetChangedFlag();
 }
 
+void FileData::setParent(FolderData* parent)
+{
+	if (mParent == parent)
+		return;
+
+	mParent = parent;
+	invalidateCarouselVideoPathCache();
+}
+
+void FileData::setMetadata(MetaDataList value)
+{
+	getMetadata() = value;
+	invalidateCarouselVideoPathCache();
+}
+
+void FileData::setMetadata(MetaDataId key, const std::string& value)
+{
+	MetaDataList& metadata = getMetadata();
+	metadata.set(key, value);
+
+	// Treat setting the same path as an update too: scrapers/importers may replace
+	// the file contents in place and then write the unchanged metadata value.
+	if (key == MetaDataId::Video)
+		invalidateCarouselVideoPathCache();
+}
+
+void FileData::invalidateCarouselVideoPathCache()
+{
+	mCarouselVideoPathCacheValid = false;
+	sCarouselVideoCacheGeneration.fetch_add(1, std::memory_order_relaxed);
+}
+
 const std::string FileData::getPath() const
 {
 	if (mPath.empty())
@@ -661,9 +710,27 @@ const std::string FileData::getVideoPath()
 
 const std::string FileData::getCarouselVideoPath()
 {
+	return resolveCarouselVideoPath(false);
+}
+
+const std::string FileData::resolveCarouselVideoPath(bool forceRefresh)
+{
+	const long long now = carouselVideoCacheNow();
+	const std::uint64_t generation =
+		sCarouselVideoCacheGeneration.load(std::memory_order_relaxed);
+	const std::string configuredVideo = getMetadata(MetaDataId::Video);
+
+	if (!forceRefresh && mCarouselVideoPathCacheValid &&
+		mCarouselVideoCacheGeneration == generation &&
+		mCarouselVideoMetadataPathCache == configuredVideo &&
+		(!mCarouselVideoPathCache.empty() ||
+			now - mCarouselVideoCacheCheckedAt < CAROUSEL_VIDEO_CACHE_TTL_MS))
+		return mCarouselVideoPathCache;
+
+	std::string resolvedVideo;
 	const std::string directVideo = getVideoPath();
-	if (!directVideo.empty() && Utils::FileSystem::exists(directVideo))
-		return directVideo;
+	if (!directVideo.empty() && Utils::FileSystem::exists(directVideo, false))
+		resolvedVideo = directVideo;
 
 	auto findVideoByRomPath = [](FileData* game, const std::string& configuredVideo)
 	{
@@ -680,7 +747,7 @@ const std::string FileData::getCarouselVideoPath()
 			for (const auto& extension : extensions)
 			{
 				const std::string candidate = configuredParent + "/" + romStem + extension;
-				if (Utils::FileSystem::exists(candidate))
+				if (Utils::FileSystem::exists(candidate, false))
 					return candidate;
 			}
 		}
@@ -697,33 +764,37 @@ const std::string FileData::getCarouselVideoPath()
 		for (const auto& extension : extensions)
 		{
 			const std::string candidate = systemRoot + "/media/videos/" + relativeStem + extension;
-			if (Utils::FileSystem::exists(candidate))
+			if (Utils::FileSystem::exists(candidate, false))
 				return candidate;
 		}
 
 		return std::string();
 	};
 
-	if (getType() == GAME)
-		return findVideoByRomPath(this, directVideo);
-
-	if (getType() != FOLDER)
-		return "";
-
-	// Folder carousel cells work identically for every system. If the folder has
-	// no media of its own, use the first valid video from any descendant game.
-	for (auto game : ((FolderData*)this)->getFilesRecursive(GAME, false, nullptr, false))
+	if (resolvedVideo.empty() && getType() == GAME)
+		resolvedVideo = findVideoByRomPath(this, directVideo);
+	else if (resolvedVideo.empty() && getType() == FOLDER)
 	{
-		const std::string video = game->getVideoPath();
-		if (!video.empty() && Utils::FileSystem::exists(video))
-			return video;
-
-		const std::string videoByRom = findVideoByRomPath(game, video);
-		if (!videoByRom.empty())
-			return videoByRom;
+		// A folder refresh also refreshes each consulted child, avoiding staggered
+		// parent/child TTLs that could otherwise keep a changed disk file stale for
+		// two cache intervals. Normal frame reads still hit both cache levels.
+		for (auto game : ((FolderData*)this)->getFilesRecursive(GAME, false, nullptr, false))
+		{
+			resolvedVideo = game->resolveCarouselVideoPath(true);
+			if (!resolvedVideo.empty())
+				break;
+		}
 	}
 
-	return "";
+	mCarouselVideoPathCache = resolvedVideo;
+	// getVideoPath() may discover local art and update Video metadata while this
+	// lookup is in progress, so capture both values after resolution completes.
+	mCarouselVideoMetadataPathCache = getMetadata(MetaDataId::Video);
+	mCarouselVideoCacheGeneration =
+		sCarouselVideoCacheGeneration.load(std::memory_order_relaxed);
+	mCarouselVideoCacheCheckedAt = now;
+	mCarouselVideoPathCacheValid = true;
+	return mCarouselVideoPathCache;
 }
 
 const std::string FileData::getMarqueePath()
@@ -1852,7 +1923,9 @@ void FolderData::addChild(FileData* file, bool assignParent)
 	mChildren.push_back(file);
 
 	if (assignParent)
-		file->setParent(this);	
+		file->setParent(this);
+	else
+		invalidateCarouselVideoPathCache();
 }
 
 void FolderData::removeChild(FileData* file)
@@ -2304,6 +2377,7 @@ FolderData::~FolderData()
 }
 
 void FolderData::clear() {
+	const bool hadChildren = !mChildren.empty();
 	if (mOwnsChildrens)
 		for (auto* child : mChildren)
 		{
@@ -2311,6 +2385,8 @@ void FolderData::clear() {
 			delete child;
 		}
 	mChildren.clear();
+	if (hadChildren)
+		invalidateCarouselVideoPathCache();
 }
 
 void FolderData::removeFromVirtualFolders(FileData* game)
@@ -2326,6 +2402,7 @@ void FolderData::removeFromVirtualFolders(FileData* game)
 		if ((*it) == game)
 		{
 			mChildren.erase(it);
+			invalidateCarouselVideoPathCache();
 			return;
 		}
 	}

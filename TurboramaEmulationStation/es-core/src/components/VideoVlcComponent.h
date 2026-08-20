@@ -5,8 +5,11 @@
 #include "VideoComponent.h"
 #include "ThemeData.h"
 #include "renderers/Renderer.h"
+#include <atomic>
+#include <cstddef>
 #include <mutex>
 #include <set>
+#include <string>
 #include <vector>
 
 struct libvlc_instance_t;
@@ -26,6 +29,8 @@ struct VideoContext
 		poolIndex = -1;
 		bufferWidth = 0;
 		bufferHeight = 0;
+		carouselVideo = false;
+		countAgainstConcurrentLimit = false;
 	}
 
 	~VideoContext()
@@ -43,15 +48,18 @@ struct VideoContext
 		surfaces[1] = nullptr;
 	}
 
-	int					surfaceId;
+	std::atomic<int>			surfaceId;
 	unsigned char*		surfaces[2];	
 	std::mutex			mutexes[2];
-	bool				hasFrame[2];
+	std::atomic<bool>		hasFrame[2];
 
 	VideoComponent*		component;
+	std::mutex			componentMutex;
 	int					poolIndex;
 	int					bufferWidth;
 	int					bufferHeight;
+	bool				carouselVideo;
+	bool				countAgainstConcurrentLimit;
 };
 
 
@@ -72,6 +80,10 @@ struct VideoBufferPoolEntry
 	int height;
 	unsigned char* surfaces[2];
 	bool inUse;
+	bool retiring;
+	bool carouselVideo;
+	bool countAgainstConcurrentLimit;
+	unsigned long long lastUsed;
 };
 
 class VideoVlcComponent : public VideoComponent
@@ -88,6 +100,7 @@ class VideoVlcComponent : public VideoComponent
 public:
 	static void init();
 	static void releaseContext(VideoContext* ctx);
+	static void clearBufferPool();
 
 	VideoVlcComponent(Window* window);
 	virtual ~VideoVlcComponent();
@@ -117,6 +130,12 @@ public:
 	void setProperty(const std::string name, const ThemeData::ThemeElement::Property& value) override;
 
 	void setEffect(VideoVlcFlags::VideoVlcEffect effect) { mEffect = effect; }
+	// A positive value caps active + retiring players in this component's
+	// carousel bucket. Zero keeps the global setting/no additional cap.
+	void setConcurrentPlaybackLimit(int value) { mConcurrentPlaybackLimit = value > 0 ? value : 0; }
+	// Render the same decoded frame through this component's own transform,
+	// opacity, z-index and storyboard without starting a second VLC player.
+	void setSharedVideoSource(VideoVlcComponent* source);
 
 	bool getLinearSmooth() { return mLinearSmooth; }
 	void setLinearSmooth(bool value = true) { mLinearSmooth = value; }
@@ -151,8 +170,21 @@ private:
 
 	void onMediaParsed();
 	size_t getVideoBufferBytes() const;
-	static size_t getActiveVideoBufferBytes();
-	static size_t estimatePendingVideoBufferBytes();
+	size_t estimatePendingVideoBufferBytes() const;
+	bool updatePlaybackReservation(size_t bytes);
+	bool createMedia(bool forceSoftwareDecoder);
+	bool trySoftwareDecoderFallback();
+	void failPlayback(unsigned retryDelay, bool countFailure = true);
+	void resetPlaybackFailures();
+	void clearPlaybackDeferred();
+	void deferPlayback(unsigned retryDelay);
+	void releaseMediaForDecoderRetry();
+	bool isCarouselVideo() const;
+	bool isThemeManagedVideo();
+	bool shouldPlayAudio();
+	static void queueMediaPlayerRelease(VideoContext* ctx, libvlc_media_player_t* player);
+	static void trimBufferPoolLocked(size_t maxFreeBytes, size_t maxTotalBytes);
+	static size_t getBufferPoolCacheLimitBytes(size_t maxVideoBytes);
 	static int getMaxVideoRamMb();
 	bool mIsParsing;
 
@@ -162,6 +194,7 @@ private:
 	int computePlaybackPriority();
 	static void notifyPlaybackSlotAvailable();
 	static int getEffectiveMaxConcurrentVideos();
+	static int getEffectiveMaxConcurrentCarouselVideos();
 
 	struct ActiveVideoPlayer
 	{
@@ -174,7 +207,11 @@ private:
 	static std::set<VideoVlcComponent*>		sDeferredPlayers;
 	static std::mutex						sBufferPoolMutex;
 	static std::vector<VideoBufferPoolEntry> sVideoBufferPool;
+	static unsigned long long				sBufferPoolUseCounter;
+	static size_t						sVideoBufferBudgetBytes;
 	bool									mIsRegisteredActive;
+	size_t								mReservedVideoBytes;
+	int									mConcurrentPlaybackLimit;
 
 private:
 	void crop(float left, float top, float right, float bot);
@@ -199,6 +236,18 @@ private:
 	long long						mLastPlaybackTime;
 	unsigned int					mLastPlaybackProgressTick;
 	unsigned int					mLastPlaybackRestartTick;
+	unsigned int					mPlaybackStartedTick;
+	int								mPlaybackRestartAttempts;
+	bool							mUsingHardwareDecoder;
+	bool							mHardwareFallbackAttempted;
+	bool							mHasAudioTrack;
+	bool							mAudioPlaybackRegistered;
+	bool							mPowerSaverPaused;
+	std::string						mSoftwareDecoderPath;
+	std::string						mPlaybackFailurePath;
+	int								mPlaybackFailureCount;
+	unsigned int					mPlaybackFailureBlockedUntil;
+	VideoVlcComponent*				mSharedVideoSource;
 
 	bool							mLinearSmooth;
 	float							mSaturation;

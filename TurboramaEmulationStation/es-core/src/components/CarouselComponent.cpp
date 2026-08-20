@@ -11,6 +11,8 @@
 #include "components/VideoComponent.h"
 #include "components/VideoVlcComponent.h"
 #include "utils/FileSystemUtil.h"
+#include <algorithm>
+#include <cmath>
 
 // buffer values for scrolling velocity (left, stopped, right)
 const int logoBuffersLeft[] = { -5, -2, -1 };
@@ -64,10 +66,10 @@ CarouselComponent::CarouselComponent(Window* window) :
 
 	mCellVideoEnabled = false;
 	mCellVideoFoldersOnly = true;
-	mCellVideoAudio = false;
 	mCellVideoDelay = 0.0f;
 	mCellVideoRoundCorners = 0.0f;
 	mCellVideoSize = Vector2f(0.98f, 0.98f);
+	mActiveCellVideoCount = 0;
 }
 
 CarouselComponent::~CarouselComponent()
@@ -81,6 +83,50 @@ void CarouselComponent::clearEntries()
 	stopCellVideo();
 	mWasRendered = false;
 	mEntries.clear();
+}
+
+void CarouselComponent::clear()
+{
+	// Detach every active player before IList destroys its owning entry. Released
+	// wrappers remain in the bounded pool and can be reused when the list is
+	// populated again (the normal system/theme refresh sequence).
+	for (auto& entry : mEntries)
+		releaseCellVideo(entry.data);
+	mActiveCellVideoIndices.clear();
+	mActiveCellVideoCount = 0;
+	mWasRendered = false;
+
+	// Preserve IList::clear semantics: reset the cursor, stop list movement and
+	// deliver the usual CURSOR_STOPPED notification.
+	IList<CarouselComponentData, IBindable*>::clear();
+}
+
+bool CarouselComponent::remove(IBindable* obj)
+{
+	auto entry = findEntry(obj);
+	if (entry == end())
+		return false;
+
+	const int removedIndex = (int)(entry - mEntries.begin());
+	releaseCellVideo(entry->data);
+
+	// IList::remove erases the entry before notifying the cursor callback. Keep
+	// the active-index bookkeeping in the post-erase coordinate space so that a
+	// callback cannot release or reactivate the neighboring cell by mistake.
+	std::vector<int> remappedIndices;
+	remappedIndices.reserve(mActiveCellVideoIndices.size());
+	for (int index : mActiveCellVideoIndices)
+	{
+		if (index == removedIndex)
+			continue;
+		remappedIndices.push_back(index > removedIndex ? index - 1 : index);
+	}
+	mActiveCellVideoIndices.swap(remappedIndices);
+	mActiveCellVideoCount = (int)mActiveCellVideoIndices.size();
+
+	const bool removed = IList<CarouselComponentData, IBindable*>::remove(obj);
+	trimCellVideoPool();
+	return removed;
 }
 
 int CarouselComponent::moveCursorFast(bool forward)
@@ -499,14 +545,71 @@ void CarouselComponent::renderCarousel(const Transform4x4f& trans)
 		bufferRight = 0;
 	}
 
-	std::vector<bool> renderedEntries(mEntries.size(), false);
+	std::vector<int> renderPositions;
+	for (int i = center - logoCount / 2 + bufferLeft;
+		i <= center + logoCount / 2 + bufferRight; i++)
+		renderPositions.push_back(i);
 
-	auto renderLogo = [this, carouselTrans, logoSpacing, xOff, yOff, &renderedEntries](int i)
+	// Image/animation buffers remain intact, but only the XML-requested number
+	// of central cells may own decoders. Pick the closest distinct entries to the
+	// moving camera so buffered, off-screen entries always fall back to covers.
+	std::vector<int> videoPositions = renderPositions;
+	std::stable_sort(videoPositions.begin(), videoPositions.end(),
+		[this](int left, int right)
+		{
+			const float leftDistance = std::abs((float)left - mCamOffset);
+			const float rightDistance = std::abs((float)right - mCamOffset);
+			if (leftDistance != rightDistance)
+				return leftDistance < rightDistance;
+
+			// Match SystemView's exact window: with an even maxLogoCount, the
+			// unpaired cell belongs to the forward (positive-index) side.
+			return left > right;
+		});
+
+	std::vector<int> videoEntries;
+	videoEntries.reserve(logoCount);
+	for (int position : videoPositions)
+	{
+		if (logoCount <= 0)
+			break;
+
+		int index = position % (int)mEntries.size();
+		if (index < 0)
+			index += (int)mEntries.size();
+
+		if (std::find(videoEntries.begin(), videoEntries.end(), index) == videoEntries.end())
+		{
+			videoEntries.push_back(index);
+			if ((int)videoEntries.size() >= logoCount)
+				break;
+		}
+	}
+
+	// Recycle players before assigning the newly central entries. This permits a
+	// cell hand-off in the same frame without constructing another VLC wrapper.
+	// Both vectors are bounded by maxLogoCount, so this stays independent of the
+	// total library size.
+	for (int index : mActiveCellVideoIndices)
+		if (std::find(videoEntries.begin(), videoEntries.end(), index) == videoEntries.end() &&
+			index >= 0 && index < (int)mEntries.size())
+			releaseCellVideo(mEntries[index].data);
+
+	mActiveCellVideoIndices.clear();
+	for (int index : videoEntries)
+	{
+		auto& entry = mEntries[index];
+		ensureLogo(entry);
+		prepareCellVideo(entry);
+		if (entry.data.cellVideo != nullptr)
+			mActiveCellVideoIndices.push_back(index);
+	}
+
+	auto renderLogo = [this, carouselTrans, logoSpacing, xOff, yOff](int i)
 	{
 		int index = i % (int)mEntries.size();
 		if (index < 0)
 			index += (int)mEntries.size();
-		renderedEntries[index] = true;
 
 		Transform4x4f logoTrans = carouselTrans;
 
@@ -537,7 +640,6 @@ void CarouselComponent::renderCarousel(const Transform4x4f& trans)
 
 		auto& entry = mEntries.at(index);
 		ensureLogo(entry);
-		prepareCellVideo(entry);
 
 		const std::shared_ptr<GuiComponent> &comp = entry.data.logo;
 		if (mType == CarouselType::VERTICAL_WHEEL || mType == CarouselType::HORIZONTAL_WHEEL)
@@ -560,7 +662,7 @@ void CarouselComponent::renderCarousel(const Transform4x4f& trans)
 
 
 	std::vector<int> activePositions;
-	for (int i = center - logoCount / 2 + bufferLeft; i <= center + logoCount / 2 + bufferRight; i++)
+	for (int i : renderPositions)
 	{
 		int index = i % (int)mEntries.size();
 		if (index < 0)
@@ -571,15 +673,9 @@ void CarouselComponent::renderCarousel(const Transform4x4f& trans)
 		else
 			renderLogo(i);
 	}
-	
+
 	for (auto activePos : activePositions)
 		renderLogo(activePos);
-
-	// Release decoders as soon as their cells leave the rendered carousel range.
-	// The entry retains its static cover and recreates only its own player later.
-	for (int index = 0; index < (int)mEntries.size(); index++)
-		if (!renderedEntries[index] && mEntries[index].data.cellVideo != nullptr)
-			releaseCellVideo(mEntries[index].data);
 }
 
 void CarouselComponent::getCarouselFromTheme(const ThemeData::ThemeElement* elem)
@@ -606,7 +702,10 @@ void CarouselComponent::getCarouselFromTheme(const ThemeData::ThemeElement* elem
 	if (elem->has("logoPos"))
 		mLogoPos = elem->get<Vector2f>("logoPos") * size;
 	if (elem->has("maxLogoCount"))
-		mMaxLogoCount = (int)Math::round(elem->get<float>("maxLogoCount"));
+		// Rendering divides by this value and the video pool uses it as a size.
+		// Treat invalid theme values as one visible cell instead of allowing a
+		// divide-by-zero or a negative value to become a huge size_t allocation.
+		mMaxLogoCount = Math::max(1, (int)Math::round(elem->get<float>("maxLogoCount")));
 	if (elem->has("logoRotation"))
 		mLogoRotation = elem->get<float>("logoRotation");
 	if (elem->has("logoRotationOrigin"))
@@ -676,8 +775,6 @@ void CarouselComponent::getCarouselFromTheme(const ThemeData::ThemeElement* elem
 		mCellVideoEnabled = elem->get<bool>("cellVideoEnabled");
 	if (elem->has("cellVideoFoldersOnly"))
 		mCellVideoFoldersOnly = elem->get<bool>("cellVideoFoldersOnly");
-	if (elem->has("cellVideoAudio"))
-		mCellVideoAudio = elem->get<bool>("cellVideoAudio");
 	if (elem->has("cellVideoDelay"))
 		mCellVideoDelay = Math::max(0.0f, elem->get<float>("cellVideoDelay"));
 	if (elem->has("cellVideoSize"))
@@ -693,6 +790,8 @@ void CarouselComponent::configureCellVideo()
 	if (!mCellVideoEnabled ||
 		!Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying"))
 		stopCellVideo();
+
+	trimCellVideoPool();
 }
 
 void CarouselComponent::prepareCellVideo(IList<CarouselComponentData, IBindable*>::Entry& entry)
@@ -713,9 +812,9 @@ void CarouselComponent::prepareCellVideo(IList<CarouselComponentData, IBindable*
 	}
 
 	const std::string videoPath = entry.object->getProperty("carouselVideo").toString();
-	const bool available = !videoPath.empty() && Utils::FileSystem::exists(videoPath);
-
-	if (!available)
+	// FileData resolves and validates this property through its media cache. Do
+	// not repeat an exists() probe for every rendered cell on every frame.
+	if (videoPath.empty())
 	{
 		releaseCellVideo(entry.data);
 		return;
@@ -723,9 +822,10 @@ void CarouselComponent::prepareCellVideo(IList<CarouselComponentData, IBindable*
 
 	if (entry.data.cellVideo == nullptr)
 	{
-		auto video = std::make_shared<VideoVlcComponent>(mWindow);
-		video->setEffect(VideoVlcFlags::SIZE);
-		video->setTag("carouselCellVideo");
+		auto video = acquireCellVideo();
+		if (video == nullptr)
+			return;
+
 		video->setOrigin(0.5f, 0.5f);
 
 		// Item templates keep their focus storyboard on the first themed container.
@@ -743,19 +843,25 @@ void CarouselComponent::prepareCellVideo(IList<CarouselComponentData, IBindable*
 		video->setMaxSize(mLogoSize.x() * mCellVideoSize.x(),
 			mLogoSize.y() * mCellVideoSize.y());
 		video->setStartDelay((int)(mCellVideoDelay * 1000.0f));
-		video->setPlayAudio(mCellVideoAudio);
+		// Embedded cell players are deliberately silent. The selected game's main
+		// preview is a separate component and retains its existing audio behavior.
+		video->setPlayAudio(false);
 		video->setRoundCorners(mCellVideoRoundCorners);
 		video->setVisible(true);
 		videoParent->addChild(video.get());
 		video->setZIndex(12060);
 		video->onShow();
 		entry.data.cellVideo = video;
+		mActiveCellVideoCount++;
 	}
+
+	if (auto* vlcVideo = dynamic_cast<VideoVlcComponent*>(entry.data.cellVideo.get()))
+		vlcVideo->setConcurrentPlaybackLimit((int)getCellVideoPoolLimit());
 
 	if (entry.data.cellVideoPath != videoPath)
 	{
 		entry.data.cellVideo->stopPlayback();
-		entry.data.cellVideo->setVideo(videoPath);
+		entry.data.cellVideo->setVideo(videoPath, false);
 		entry.data.cellVideoPath = videoPath;
 		LOG(LogInfo) << "[CarouselCellVideo] playing cell " << entry.name << ": " << videoPath;
 	}
@@ -771,15 +877,92 @@ void CarouselComponent::releaseCellVideo(CarouselComponentData& data)
 	if (data.cellVideo == nullptr)
 		return;
 
-	data.cellVideo->stopPlayback();
-	data.cellVideo->setVideo("");
-	data.cellVideo->setVisible(false);
-	data.cellVideo->onHide();
-	GuiComponent* videoParent = data.cellVideo->getParent();
+	auto video = data.cellVideo;
+	video->stopPlayback();
+	video->setVideo("", false);
+	video->setVisible(false);
+	video->onHide();
+	GuiComponent* videoParent = video->getParent();
 	if (videoParent != nullptr)
-		videoParent->removeChild(data.cellVideo.get());
+		videoParent->removeChild(video.get());
 	data.cellVideo.reset();
 	data.cellVideoPath.clear();
+	if (mActiveCellVideoCount > 0)
+		mActiveCellVideoCount--;
+
+	if ((size_t)mActiveCellVideoCount + mCellVideoPool.size() < getCellVideoPoolLimit())
+		mCellVideoPool.push_back(video);
+}
+
+std::shared_ptr<VideoComponent> CarouselComponent::acquireCellVideo()
+{
+	const size_t limit = getCellVideoPoolLimit();
+	if (limit == 0 || (size_t)mActiveCellVideoCount >= limit)
+		return nullptr;
+
+	// Active and idle wrappers together never exceed the XML cell count. Idle
+	// wrappers have no media/context, but bounding both keeps the pool predictable
+	// when a theme lowers maxLogoCount at runtime.
+	const size_t idleLimit = limit - (size_t)mActiveCellVideoCount;
+	while (mCellVideoPool.size() > idleLimit)
+		mCellVideoPool.pop_back();
+
+	while (!mCellVideoPool.empty())
+	{
+		auto video = mCellVideoPool.back();
+		mCellVideoPool.pop_back();
+		if (video != nullptr)
+		{
+			if (auto* vlcVideo = dynamic_cast<VideoVlcComponent*>(video.get()))
+				vlcVideo->setConcurrentPlaybackLimit((int)getCellVideoPoolLimit());
+			return video;
+		}
+	}
+
+	auto video = std::make_shared<VideoVlcComponent>(mWindow);
+	video->setEffect(VideoVlcFlags::SIZE);
+	video->setTag("carouselCellVideo");
+	video->setPlayAudio(false);
+	video->setConcurrentPlaybackLimit((int)getCellVideoPoolLimit());
+	return video;
+}
+
+size_t CarouselComponent::getCellVideoPoolLimit() const
+{
+	if (!mCellVideoEnabled || mMaxLogoCount <= 0 || mEntries.empty())
+		return 0;
+
+	return (size_t)Math::min(mMaxLogoCount, (int)mEntries.size());
+}
+
+void CarouselComponent::trimCellVideoPool()
+{
+	const size_t limit = getCellVideoPoolLimit();
+
+	// Theme reloads can lower maxLogoCount while players are still active. Keep
+	// the nearest entries (the vector is stored nearest-first) and retire the
+	// excess immediately instead of waiting for another render pass.
+	while ((size_t)mActiveCellVideoCount > limit && !mActiveCellVideoIndices.empty())
+	{
+		const int index = mActiveCellVideoIndices.back();
+		mActiveCellVideoIndices.pop_back();
+		if (index >= 0 && index < (int)mEntries.size())
+			releaseCellVideo(mEntries[index].data);
+	}
+
+	const size_t idleLimit = (size_t)mActiveCellVideoCount < limit ?
+		limit - (size_t)mActiveCellVideoCount : 0;
+	while (mCellVideoPool.size() > idleLimit)
+		mCellVideoPool.pop_back();
+
+	const int concurrentLimit = (int)getCellVideoPoolLimit();
+	for (int index : mActiveCellVideoIndices)
+		if (index >= 0 && index < (int)mEntries.size())
+			if (auto* video = dynamic_cast<VideoVlcComponent*>(mEntries[index].data.cellVideo.get()))
+				video->setConcurrentPlaybackLimit(concurrentLimit);
+	for (auto& pooledVideo : mCellVideoPool)
+		if (auto* video = dynamic_cast<VideoVlcComponent*>(pooledVideo.get()))
+			video->setConcurrentPlaybackLimit(concurrentLimit);
 }
 
 void CarouselComponent::refreshCellVideo()
@@ -794,15 +977,20 @@ void CarouselComponent::refreshCellVideo()
 
 	// Do not transfer a player here. Visible entries are refreshed independently
 	// by renderCarousel, preserving the ownership of every folder cell.
-	for (auto& entry : mEntries)
-		if (entry.data.cellVideo != nullptr && !entry.data.cellVideo->isPlaying())
-			entry.data.cellVideo->resumePlayback();
+	for (int index : mActiveCellVideoIndices)
+		if (index >= 0 && index < (int)mEntries.size() &&
+			mEntries[index].data.cellVideo != nullptr &&
+			!mEntries[index].data.cellVideo->isPlaying())
+			mEntries[index].data.cellVideo->resumePlayback();
 }
 
 void CarouselComponent::stopCellVideo()
 {
-	for (auto& entry : mEntries)
-		releaseCellVideo(entry.data);
+	for (int index : mActiveCellVideoIndices)
+		if (index >= 0 && index < (int)mEntries.size())
+			releaseCellVideo(mEntries[index].data);
+	mActiveCellVideoIndices.clear();
+	mActiveCellVideoCount = 0;
 }
 
 void CarouselComponent::onShow()
