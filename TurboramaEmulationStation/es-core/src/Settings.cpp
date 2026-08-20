@@ -138,7 +138,6 @@ void Settings::setDefaults()
 	mBoolMap["DrawFramerate"] = false;
 	mBoolMap["ScrollLoadMedias"] = false;
 	mBoolMap["CarouselCellVideoKeepPlaying"] = true;
-	mBoolMap["FrontSystemCarouselAllVideos"] = false;
 	mBoolMap["ShowExit"] = true;
 	mBoolMap["ExitOnRebootRequired"] = false;
 	mBoolMap["Windowed"] = false;
@@ -147,6 +146,7 @@ void Settings::setDefaults()
 	mBoolMap["SplashScreenProgress"] = true;
 	mBoolMap["StartupOnGameList"] = false;
 	mStringMap["StartupSystem"] = "lastsystem";
+	mStringMap["FrontSystemCarouselVideoMode"] = "selected";
 	mStringMap["ShowTags"] = "";
 	mBoolMap["UseFileCache"] = true;
 

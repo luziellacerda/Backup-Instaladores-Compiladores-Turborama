@@ -2050,7 +2050,14 @@ void SystemView::syncFrontCarouselVideos()
 		return;
 	}
 
-	const bool showAllVisible = Settings::getInstance()->getBool("FrontSystemCarouselAllVideos");
+	const std::string videoMode = Settings::getInstance()->getString("FrontSystemCarouselVideoMode");
+	if (videoMode == "images")
+	{
+		hideFrontCarouselVideos();
+		return;
+	}
+
+	const bool showAllVisible = videoMode == "all";
 	const int entryCount = (int)mEntries.size();
 	const int scrollBuffer = mCarousel.getScrollingVelocity() == 0 ? 2 : 5;
 	const int visibleRadius = showAllVisible ?
