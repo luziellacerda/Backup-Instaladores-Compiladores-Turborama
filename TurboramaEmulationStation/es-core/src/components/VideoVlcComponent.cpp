@@ -83,6 +83,9 @@ VideoVlcComponent::VideoVlcComponent(Window* window) : VideoComponent(window),
 
 	mLoops = -1;
 	mCurrentLoop = 0;
+	mLastPlaybackTime = -1;
+	mLastPlaybackProgressTick = SDL_GetTicks();
+	mLastPlaybackRestartTick = 0;
 
 	// Get an empty texture for rendering the video
 	mTexture = nullptr;// TextureResource::get("");
@@ -953,6 +956,49 @@ void VideoVlcComponent::handleLooping()
 	if (mIsPlaying && mMediaPlayer && mMedia && !mIsParsing)
 	{
 		libvlc_state_t state = libvlc_media_player_get_state(mMediaPlayer);
+		const bool isCarouselCellVideo =
+			getTag() == "carouselCellVideo" || getTag() == "frontSystemCarouselVideo";
+
+		if (isCarouselCellVideo)
+		{
+			const unsigned int now = SDL_GetTicks();
+			const long long playbackTime = (long long)libvlc_media_player_get_time(mMediaPlayer);
+
+			if (playbackTime >= 0 &&
+				(mLastPlaybackTime < 0 || playbackTime > mLastPlaybackTime ||
+					playbackTime + 500 < mLastPlaybackTime))
+			{
+				mLastPlaybackTime = playbackTime;
+				mLastPlaybackProgressTick = now;
+			}
+
+			const bool terminalState =
+				state == libvlc_Ended || state == libvlc_Stopped || state == libvlc_Error;
+			const bool unexpectedlyPaused =
+				state == libvlc_Paused && now - mLastPlaybackProgressTick >= 1500;
+			const bool stalledWhilePlaying =
+				state == libvlc_Playing && playbackTime >= 0 &&
+				now - mLastPlaybackProgressTick >= 4000;
+
+			if ((terminalState || unexpectedlyPaused || stalledWhilePlaying) &&
+				now - mLastPlaybackRestartTick >= 1000)
+			{
+				// VLC can keep reporting the component as playing while a short cell
+				// video is already stopped on its final frame. Reattach the same media
+				// and restart only this dedicated cell player.
+				libvlc_media_player_set_media(mMediaPlayer, mMedia);
+				if (!getPlayAudio() || !Settings::getInstance()->getBool("VideoAudio"))
+					libvlc_audio_set_mute(mMediaPlayer, 1);
+				libvlc_media_player_play(mMediaPlayer);
+
+				mLastPlaybackTime = -1;
+				mLastPlaybackProgressTick = now;
+				mLastPlaybackRestartTick = now;
+			}
+
+			return;
+		}
+
 		if (state == libvlc_Ended)
 		{
 			if (mLoops >= 0)
@@ -1073,6 +1119,9 @@ void VideoVlcComponent::onMediaParsed()
 		return;
 
 	mContext = rentContext();
+	mLastPlaybackTime = -1;
+	mLastPlaybackProgressTick = SDL_GetTicks();
+	mLastPlaybackRestartTick = 0;
 
 	if (hasAudioTrack)
 	{
@@ -1143,6 +1192,8 @@ void VideoVlcComponent::startVideo()
 	// WIN32 ? libvlc_media_add_option(mMedia, ":avcodec-hw=dxva2");
 	// RPI/OMX ? libvlc_media_add_option(mMedia, ":codec=mediacodec,iomx,all"); .
 
+	const bool isCarouselCellVideo =
+		getTag() == "carouselCellVideo" || getTag() == "frontSystemCarouselVideo";
 	std::string options = SystemConf::getInstance()->get("vlc.options");
 	if (!options.empty())
 	{
@@ -1152,9 +1203,12 @@ void VideoVlcComponent::startVideo()
 #if WIN32
 	else
 	{
-		libvlc_media_add_option(mMedia, ":avcodec-hw=any");
+		libvlc_media_add_option(mMedia,
+			isCarouselCellVideo ? ":avcodec-hw=none" : ":avcodec-hw=any");
 		libvlc_media_add_option(mMedia, ":no-spu");
 	}
+	if (isCarouselCellVideo)
+		libvlc_media_add_option(mMedia, ":input-repeat=65535");
 #endif
 
 	// If we have a playlist : most videos have a fader, skip it 1 second
@@ -1222,6 +1276,9 @@ void VideoVlcComponent::stopVideo()
 	}		
 
 	mTexture = nullptr;
+	mLastPlaybackTime = -1;
+	mLastPlaybackProgressTick = SDL_GetTicks();
+	mLastPlaybackRestartTick = 0;
 
 	AudioManager::setVideoPlaying(false);
 }
@@ -1392,6 +1449,8 @@ void VideoVlcComponent::resumeVideo()
 
 	mIsPlaying = true;
 	libvlc_media_player_play(mMediaPlayer);
+	mLastPlaybackTime = -1;
+	mLastPlaybackProgressTick = SDL_GetTicks();
 	PowerSaver::pause();
 	AudioManager::setVideoPlaying(true);
 }

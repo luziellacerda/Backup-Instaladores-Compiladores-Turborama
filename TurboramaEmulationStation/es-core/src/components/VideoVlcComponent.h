@@ -196,6 +196,9 @@ private:
 
 	int								mCurrentLoop;
 	int								mLoops;
+	long long						mLastPlaybackTime;
+	unsigned int					mLastPlaybackProgressTick;
+	unsigned int					mLastPlaybackRestartTick;
 
 	bool							mLinearSmooth;
 	float							mSaturation;
