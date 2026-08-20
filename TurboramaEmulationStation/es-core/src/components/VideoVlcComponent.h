@@ -117,6 +117,7 @@ public:
 	void setProperty(const std::string name, const ThemeData::ThemeElement::Property& value) override;
 
 	void setEffect(VideoVlcFlags::VideoVlcEffect effect) { mEffect = effect; }
+	bool hasVideoFrame() const override;
 
 	bool getLinearSmooth() { return mLinearSmooth; }
 	void setLinearSmooth(bool value = true) { mLinearSmooth = value; }

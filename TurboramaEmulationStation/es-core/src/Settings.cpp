@@ -136,7 +136,8 @@ void Settings::setDefaults()
 	mBoolMap["IgnoreLeadingArticles"] = Settings::_IgnoreLeadingArticles;
 	mBoolMap["ShowFoldersFirst"] = Settings::_ShowFoldersFirst;
 	mBoolMap["DrawFramerate"] = false;
-	mBoolMap["ScrollLoadMedias"] = false;	
+	mBoolMap["ScrollLoadMedias"] = false;
+	mBoolMap["CarouselCellVideoKeepPlaying"] = true;
 	mBoolMap["ShowExit"] = true;
 	mBoolMap["ExitOnRebootRequired"] = false;
 	mBoolMap["Windowed"] = false;

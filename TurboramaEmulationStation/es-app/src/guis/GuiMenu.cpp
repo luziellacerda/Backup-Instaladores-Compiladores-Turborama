@@ -4751,6 +4751,9 @@ void GuiMenu::openUISettings()
 	s->addOptionList(_("GAME LAUNCH TRANSITION"), { { _("auto"), "auto" },{ _("fade"), "fade" },{ _("fast fade"), "fast fade" },{ _("slide"), "slide" },{ _("fast slide"), "fast slide" },{ _("instant"), "instant" } }, "GameTransitionStyle", true);
 
 	s->addSwitch(_("GAME MEDIAS DURING FAST SCROLLING"), "ScrollLoadMedias", false); 
+	s->addSwitch(_("VIDEO ANIMADO NA CELULA DO CARROSSEL"),
+		_("Ligado: video dentro da celula. Desligado: imagem fixa. Os dois acompanham a transicao normal do carrossel."),
+		"CarouselCellVideoKeepPlaying", true, nullptr);
 
 	s->addSwitch(_("SHOW CLOCK"), "DrawClock", true);
 	s->addSwitch(_("ON-SCREEN HELP"), "ShowHelpPrompts", true, [s] { s->setVariable("reloadAll", true); });

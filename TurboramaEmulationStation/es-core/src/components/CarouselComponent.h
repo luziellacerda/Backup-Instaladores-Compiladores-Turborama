@@ -123,7 +123,7 @@ private:
 
 	void getCarouselFromTheme(const ThemeData::ThemeElement* elem);
 	void configureCellVideo();
-	void refreshCellVideo();
+	void refreshCellVideo(bool preserveExistingWhenUnavailable = false);
 	void stopCellVideo();
 
 	void renderCarousel(const Transform4x4f& parentTrans);	
@@ -179,6 +179,7 @@ private:
 	bool			mCellVideoEnabled;
 	bool			mCellVideoFoldersOnly;
 	bool			mCellVideoAvailable;
+	int				mCellVideoIndex;
 	bool			mCellVideoAudio;
 	float			mCellVideoDelay;
 	float			mCellVideoRoundCorners;

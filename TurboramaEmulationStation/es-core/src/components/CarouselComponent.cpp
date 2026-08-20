@@ -66,6 +66,7 @@ CarouselComponent::CarouselComponent(Window* window) :
 	mCellVideoEnabled = false;
 	mCellVideoFoldersOnly = true;
 	mCellVideoAvailable = false;
+	mCellVideoIndex = -1;
 	mCellVideoAudio = false;
 	mCellVideoDelay = 0.0f;
 	mCellVideoRoundCorners = 0.0f;
@@ -198,6 +199,13 @@ void CarouselComponent::update(int deltaTime)
 	listUpdate(deltaTime);	
 
 	GuiComponent::update(deltaTime);
+
+	// Checkbox off is the image-only mode. Let VLC produce one valid frame,
+	// then freeze it; the same texture follows the normal carousel transform.
+	if (mCellVideo != nullptr && mCellVideoAvailable && mCellVideo->isPlaying() &&
+		!Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying") &&
+		mCellVideo->hasVideoFrame())
+		mCellVideo->pausePlayback();
 }
 
 void CarouselComponent::onCursorChanged(const CursorState& state)
@@ -229,10 +237,10 @@ void CarouselComponent::onCursorChanged(const CursorState& state)
 		if (state == CURSOR_STOPPED && mLastCursorState != state && mCursorChangedCallback)
 			mCursorChangedCallback(state);
 
-		if (state == CURSOR_STOPPED)
-			refreshCellVideo();
-		else
-			stopCellVideo();
+		// A movement callback already owns the video hand-off. Do not interrupt it
+		// when releasing the key before the carousel animation has completed.
+		if (state == CURSOR_STOPPED && !isAnimationPlaying(0))
+			refreshCellVideo(true);
 
 		mLastCursorState = state;
 		return;
@@ -249,9 +257,12 @@ void CarouselComponent::onCursorChanged(const CursorState& state)
 			transition_style = "slide";
 	}
 	
-	// Stop the previous cell immediately while the carousel is moving. The
-	// selected folder video is started again only after the cursor settles.
-	stopCellVideo();
+	// Keep the player attached to the previous cell until the movement ends.
+	// With the option disabled we freeze its last frame, avoiding an empty cell.
+	// With the option enabled playback continues while that cell moves.
+	if (mCellVideo != nullptr && mCellVideoAvailable &&
+		!Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying"))
+		mCellVideo->pausePlayback();
 
 	if (!mScrollSound.empty())
 		Sound::get(mScrollSound)->play();
@@ -352,13 +363,10 @@ void CarouselComponent::onCursorChanged(const CursorState& state)
 	mLastCursor = mCursor;
 	mLastCursorState = state;
 
-	setAnimation(anim, 0);
-
-	// With ScrollLoadMedias enabled, a cursor move is reported directly as
-	// CURSOR_STOPPED and no second callback follows. Start the new cell here so
-	// revisiting a folder always restores its video.
-	if (state == CURSOR_STOPPED)
-		refreshCellVideo();
+	// The callback is also required with ScrollLoadMedias enabled because that
+	// mode reports a move directly as CURSOR_STOPPED. Repeated moves replace the
+	// animation and keep the original player alive until the last move finishes.
+	setAnimation(anim, 0, [this] { refreshCellVideo(true); });
 }
 
 void CarouselComponent::render(const Transform4x4f& parentTrans)
@@ -562,7 +570,7 @@ void CarouselComponent::renderCarousel(const Transform4x4f& trans)
 		// The video uses the exact same transform as the selected logo. Rendering
 		// it here (instead of as a screen overlay) makes it a real part of the
 		// center carousel cell, including clipping and carousel movement.
-		if (index == mCursor && mCellVideo != nullptr && mCellVideoAvailable)
+		if (index == mCellVideoIndex && mCellVideo != nullptr && mCellVideoAvailable)
 		{
 			mCellVideo->setOrigin(comp->getOrigin());
 			mCellVideo->setPosition(comp->getPosition());
@@ -733,7 +741,7 @@ void CarouselComponent::configureCellVideo()
 	mCellVideo->setRoundCorners(mCellVideoRoundCorners);
 }
 
-void CarouselComponent::refreshCellVideo()
+void CarouselComponent::refreshCellVideo(bool preserveExistingWhenUnavailable)
 {
 	if (!mCellVideoEnabled || mCellVideo == nullptr || !isShowing() || mScreensaverActive || mDisable)
 	{
@@ -755,14 +763,27 @@ void CarouselComponent::refreshCellVideo()
 
 	if (!available)
 	{
+		// Keep the previous folder cell populated while neighboring cells are
+		// selected. Depending on the system checkbox it remains animated or shows
+		// the paused last frame as a static fallback image.
+		if (preserveExistingWhenUnavailable && mCellVideoAvailable)
+			return;
+
 		stopCellVideo();
 		return;
 	}
 
+	if (mCellVideoPath != videoPath)
+	{
+		mCellVideo->stopPlayback();
+		mCellVideo->setVideo(videoPath);
+	}
+
 	mCellVideoPath = videoPath;
 	mCellVideoAvailable = true;
-	mCellVideo->setVideo(videoPath);
+	mCellVideoIndex = mCursor;
 	mCellVideo->setVisible(true);
+	mCellVideo->resumePlayback();
 	mCellVideo->update(0);
 	LOG(LogInfo) << "[CarouselCellVideo] playing selected cell: " << videoPath;
 }
@@ -770,13 +791,15 @@ void CarouselComponent::refreshCellVideo()
 void CarouselComponent::stopCellVideo()
 {
 	mCellVideoAvailable = false;
+	mCellVideoIndex = -1;
 	mCellVideoPath.clear();
 
 	if (mCellVideo == nullptr)
 		return;
 
-	mCellVideo->setVisible(false);
+	mCellVideo->stopPlayback();
 	mCellVideo->setVideo("");
+	mCellVideo->setVisible(false);
 	mCellVideo->update(0);
 }
 
