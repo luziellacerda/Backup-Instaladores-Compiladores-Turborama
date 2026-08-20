@@ -4390,6 +4390,11 @@ void GuiMenu::openThemeConfiguration(Window* mWindow, GuiComponent* s, std::shar
 
 	if (systemTheme.empty())
 	{
+		themeconfig->addGroup(_("CARROSSEL FRONTAL"));
+		themeconfig->addSwitch(_("VIDEOS EM TODAS AS CELULAS"),
+			_("Desmarcado: somente a celula central reproduz video e as laterais mostram imagens. Marcado: todas as celulas visiveis reproduzem seus videos."),
+			"FrontSystemCarouselAllVideos", true, nullptr);
+
 		themeconfig->addGroup(_("TOOLS"));
 
 		themeconfig->addEntry(_("RESET CUSTOMIZATIONS"), false, [s, themeconfig, window]

@@ -35,6 +35,11 @@
 #include <iomanip>
 #include <sstream>
 
+namespace
+{
+	const char* FRONT_CAROUSEL_VIDEO_TAG = "video_celula_ativa_v2";
+}
+
 SystemView::SystemView(Window* window) : GuiComponent(window),
 	mViewNeedsReload(true),
 	mSystemInfo(window, _("SYSTEM INFO"), Font::get(FONT_SIZE_SMALL), 0x33333300, ALIGN_CENTER),
@@ -53,6 +58,7 @@ SystemView::SystemView(Window* window) : GuiComponent(window),
 	mScreensaverActive = false;
 	mDisable = false;
 	mLastCursor = 0;
+	mFrontCarouselMaxVisible = 3;
 	mExtrasFadeOldCursor = -1;
 
 	mSystemInfoDelay = 2000;
@@ -92,19 +98,20 @@ SystemView::SystemView(Window* window) : GuiComponent(window),
 
 SystemView::~SystemView()
 {
+	clearEntries();
 	mCarousel.attach(nullptr);
 
 	for (auto sb : mStaticBackgrounds)
 		delete sb;
 
 	mStaticBackgrounds.clear();
-	clearEntries();
 }
 
 void SystemView::clearEntries()
 {
 	for (auto& entry : mEntries)
 	{
+		releaseFrontCarouselVideo(entry);
 		setExtraRequired(entry, false);
 
 		for (auto extra : entry.backgroundExtras)
@@ -164,6 +171,8 @@ void SystemView::loadExtras(SystemData* system)
 	auto it = std::find_if(mEntries.begin(), mEntries.end(), [system](const SystemViewData& ss) { return ss.object == system; });
 	if (it != mEntries.cend())
 	{
+		releaseFrontCarouselVideo(*it);
+
 		// delete any existing extras
 		for (auto extra : it->backgroundExtras)
 			delete extra;
@@ -171,10 +180,38 @@ void SystemView::loadExtras(SystemData* system)
 		it->backgroundExtras.clear();
 	}
 
-	// make background extras
-	auto extras = ThemeData::makeExtras(system->getTheme(), "system", mWindow);
-	for (auto extra : extras)
+	// The front carousel player belongs exclusively to SystemView. It is removed
+	// from the normal extras so it can be parented to its own animated system cell
+	// instead of being rendered as a fixed screen overlay.
+	auto themedExtras = ThemeData::makeExtras(system->getTheme(), "system", mWindow);
+	std::vector<GuiComponent*> extras;
+	std::shared_ptr<VideoVlcComponent> frontCarouselVideo;
+	std::string frontCarouselVideoPath;
+	for (auto extra : themedExtras)
 	{
+		if (extra->getTag() == FRONT_CAROUSEL_VIDEO_TAG && extra->isKindOf<VideoVlcComponent>())
+		{
+			frontCarouselVideoPath = extra->getProperty("path").s;
+
+			if (frontCarouselVideo == nullptr)
+			{
+				frontCarouselVideo = std::shared_ptr<VideoVlcComponent>(
+					dynamic_cast<VideoVlcComponent*>(extra));
+				frontCarouselVideo->stopPlayback();
+				frontCarouselVideo->setVideo("");
+				frontCarouselVideo->setVisible(false);
+				frontCarouselVideo->setTag("frontSystemCarouselVideo");
+				frontCarouselVideo->setPlayAudio(false);
+				frontCarouselVideo->setEffect(VideoVlcFlags::SIZE);
+			}
+			else
+				delete extra;
+
+			continue;
+		}
+
+		extras.push_back(extra);
+
 		if (extra->isKindOf<VideoComponent>())
 		{
 			auto elem = system->getTheme()->getElement("system", extra->getTag(), "video");
@@ -217,10 +254,16 @@ void SystemView::loadExtras(SystemData* system)
 		SystemViewData data;
 		data.object = system;
 		data.backgroundExtras = extras;
+		data.frontCarouselVideo = frontCarouselVideo;
+		data.frontCarouselVideoPath = frontCarouselVideoPath;
 		mEntries.push_back(data);
 	}
 	else
+	{
 		it->backgroundExtras = extras;
+		it->frontCarouselVideo = frontCarouselVideo;
+		it->frontCarouselVideoPath = frontCarouselVideoPath;
+	}
 
 	SystemRandomPlaylist::resetCache();
 }
@@ -1462,7 +1505,8 @@ void  SystemView::getViewElements(const std::shared_ptr<ThemeData>& theme)
 
 //  Render system carousel
 void SystemView::renderCarousel(const Transform4x4f& trans)
-{	
+{
+	syncFrontCarouselVideos();
 	mCarousel.render(trans);
 }
 
@@ -1833,6 +1877,9 @@ void SystemView::getDefaultElements()
 
 void SystemView::getCarouselFromTheme(const ThemeData::ThemeElement* elem)
 {
+	mFrontCarouselMaxVisible = elem->has("maxLogoCount") ?
+		(int)Math::round(elem->get<float>("maxLogoCount")) : 3;
+
 	if (elem->has("systemInfoDelay"))
 		mSystemInfoDelay = elem->get<float>("systemInfoDelay");
 
@@ -1845,6 +1892,7 @@ void SystemView::onShow()
 	GuiComponent::onShow();
 
 	mCarousel.onShow();
+	syncFrontCarouselVideos();
 
 	for (auto sb : mStaticBackgrounds)
 		sb->onShow();
@@ -1870,6 +1918,7 @@ void SystemView::onHide()
 {
 	GuiComponent::onHide();
 
+	hideFrontCarouselVideos();
 	mCarousel.onHide();
 
 	updateExtras([this](GuiComponent* p) { p->onHide(); });
@@ -1881,6 +1930,7 @@ void SystemView::onHide()
 void SystemView::onScreenSaverActivate()
 {
 	mScreensaverActive = true;
+	hideFrontCarouselVideos();
 	updateExtras([this](GuiComponent* p) { p->onScreenSaverActivate(); });
 
 	for (auto sb : mStaticBackgrounds)
@@ -1890,6 +1940,7 @@ void SystemView::onScreenSaverActivate()
 void SystemView::onScreenSaverDeactivate()
 {
 	mScreensaverActive = false;
+	syncFrontCarouselVideos();
 	updateExtras([this](GuiComponent* p) { p->onScreenSaverDeactivate(); });
 
 	for (auto sb : mStaticBackgrounds)
@@ -1899,6 +1950,10 @@ void SystemView::onScreenSaverDeactivate()
 void SystemView::topWindow(bool isTop)
 {
 	mDisable = !isTop;
+	if (isTop)
+		syncFrontCarouselVideos();
+	else
+		hideFrontCarouselVideos();
 	updateExtras([this, isTop](GuiComponent* p) { p->topWindow(isTop); });
 
 	for (auto sb : mStaticBackgrounds)
@@ -1977,6 +2032,127 @@ void SystemView::finishCarouselVideoActivation()
 		else
 			activateExtras(i, true, isCurrent);
 	}
+}
+
+void SystemView::syncFrontCarouselVideos()
+{
+	if (!isShowing() || mScreensaverActive || mDisable)
+	{
+		hideFrontCarouselVideos();
+		return;
+	}
+
+	auto carousel = mCarousel.asCarousel();
+	const int cursor = mCarousel.getCursorIndex();
+	if (carousel == nullptr || cursor < 0 || cursor >= (int)mEntries.size())
+	{
+		hideFrontCarouselVideos();
+		return;
+	}
+
+	const bool showAllVisible = Settings::getInstance()->getBool("FrontSystemCarouselAllVideos");
+	const int entryCount = (int)mEntries.size();
+	const int scrollBuffer = mCarousel.getScrollingVelocity() == 0 ? 2 : 5;
+	const int visibleRadius = showAllVisible ?
+		Math::min(entryCount / 2, Math::max(0, mFrontCarouselMaxVisible / 2 + scrollBuffer)) : 0;
+
+	for (int i = 0; i < entryCount; i++)
+	{
+		const int linearDistance = abs(i - cursor);
+		const int circularDistance = Math::min(linearDistance, entryCount - linearDistance);
+		if (i == cursor || (showAllVisible && circularDistance <= visibleRadius))
+			showFrontCarouselVideo(mEntries[i], i);
+		else
+			hideFrontCarouselVideo(mEntries[i]);
+	}
+}
+
+void SystemView::showFrontCarouselVideo(SystemViewData& data, int index)
+{
+	if (data.frontCarouselVideo == nullptr || data.frontCarouselVideoPath.empty() ||
+		!Utils::FileSystem::exists(data.frontCarouselVideoPath))
+	{
+		hideFrontCarouselVideo(data);
+		return;
+	}
+
+	auto carousel = mCarousel.asCarousel();
+	if (carousel == nullptr)
+	{
+		hideFrontCarouselVideo(data);
+		return;
+	}
+
+	const std::shared_ptr<GuiComponent> logo = carousel->getLogo(index);
+	if (logo == nullptr)
+	{
+		hideFrontCarouselVideo(data);
+		return;
+	}
+
+	GuiComponent* videoParent = logo.get();
+	CarouselItemTemplate* itemTemplate = dynamic_cast<CarouselItemTemplate*>(logo.get());
+	if (itemTemplate != nullptr && itemTemplate->getChildCount() > 0)
+		videoParent = itemTemplate->getChild(0);
+
+	if (data.frontCarouselVideo->getParent() != videoParent)
+	{
+		GuiComponent* oldParent = data.frontCarouselVideo->getParent();
+		if (oldParent != nullptr)
+			oldParent->removeChild(data.frontCarouselVideo.get());
+
+		videoParent->addChild(data.frontCarouselVideo.get());
+		data.frontCarouselVideo->setZIndex(12060);
+		videoParent->sortChildren();
+	}
+
+	const Vector2f parentSize = videoParent->getSize();
+	data.frontCarouselVideo->setOrigin(0.5f, 0.5f);
+	data.frontCarouselVideo->setPosition(parentSize.x() * 0.5f, parentSize.y() * 0.5f, 0.0f);
+	data.frontCarouselVideo->setMaxSize(parentSize.x(), parentSize.y());
+	data.frontCarouselVideo->setVideo(data.frontCarouselVideoPath);
+
+	const bool wasVisible = data.frontCarouselVideo->isVisible();
+	data.frontCarouselVideo->setVisible(true);
+	if (!wasVisible)
+	{
+		data.frontCarouselVideo->onShow();
+		LOG(LogInfo) << "[FrontSystemCarouselVideo] playing system "
+			<< data.object->getName() << ": " << data.frontCarouselVideoPath;
+	}
+	if (!data.frontCarouselVideo->isPlaying())
+		data.frontCarouselVideo->resumePlayback();
+	data.frontCarouselVideo->update(0);
+}
+
+void SystemView::hideFrontCarouselVideo(SystemViewData& data)
+{
+	if (data.frontCarouselVideo == nullptr || !data.frontCarouselVideo->isVisible())
+		return;
+
+	data.frontCarouselVideo->stopPlayback();
+	data.frontCarouselVideo->setVisible(false);
+	data.frontCarouselVideo->onHide();
+}
+
+void SystemView::hideFrontCarouselVideos()
+{
+	for (auto& entry : mEntries)
+		hideFrontCarouselVideo(entry);
+}
+
+void SystemView::releaseFrontCarouselVideo(SystemViewData& data)
+{
+	if (data.frontCarouselVideo == nullptr)
+		return;
+
+	hideFrontCarouselVideo(data);
+	data.frontCarouselVideo->setVideo("");
+	GuiComponent* videoParent = data.frontCarouselVideo->getParent();
+	if (videoParent != nullptr)
+		videoParent->removeChild(data.frontCarouselVideo.get());
+	data.frontCarouselVideo.reset();
+	data.frontCarouselVideoPath.clear();
 }
 
 SystemData* SystemView::getActiveSystem()

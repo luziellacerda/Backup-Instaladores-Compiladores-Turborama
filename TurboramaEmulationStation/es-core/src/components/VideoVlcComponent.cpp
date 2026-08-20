@@ -231,7 +231,14 @@ bool VideoVlcComponent::acquirePlaybackSlot()
 	// compete with the general three-player limit, otherwise adjacent cells keep
 	// entering the deferred queue and visibly reload while the carousel moves.
 	// The global video RAM check below remains authoritative for every player.
-	const bool isCarouselCellVideo = getTag() == "carouselCellVideo";
+	const auto isDedicatedCarouselVideo = [](VideoVlcComponent* component)
+	{
+		if (component == nullptr)
+			return false;
+		const std::string& componentTag = component->getTag();
+		return componentTag == "carouselCellVideo" || componentTag == "frontSystemCarouselVideo";
+	};
+	const bool isCarouselCellVideo = isDedicatedCarouselVideo(this);
 
 	size_t maxVideoBytes = (size_t)getMaxVideoRamMb() * 1024 * 1024;
 	size_t activeVideoBytes = getActiveVideoBufferBytes();
@@ -255,7 +262,7 @@ bool VideoVlcComponent::acquirePlaybackSlot()
 
 	int limitedPlayerCount = 0;
 	for (const auto& player : sActivePlayers)
-		if (player.component != nullptr && player.component->getTag() != "carouselCellVideo")
+		if (player.component != nullptr && !isDedicatedCarouselVideo(player.component))
 			limitedPlayerCount++;
 
 	while (limitedPlayerCount >= maxVideos)
@@ -266,7 +273,7 @@ bool VideoVlcComponent::acquirePlaybackSlot()
 		for (int i = 0; i < (int)sActivePlayers.size(); i++)
 		{
 			if (sActivePlayers[i].component == nullptr ||
-				sActivePlayers[i].component->getTag() == "carouselCellVideo")
+				isDedicatedCarouselVideo(sActivePlayers[i].component))
 				continue;
 
 			if (sActivePlayers[i].priority < weakestPriority)

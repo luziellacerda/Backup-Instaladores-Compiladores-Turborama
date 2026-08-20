@@ -138,6 +138,7 @@ void Settings::setDefaults()
 	mBoolMap["DrawFramerate"] = false;
 	mBoolMap["ScrollLoadMedias"] = false;
 	mBoolMap["CarouselCellVideoKeepPlaying"] = true;
+	mBoolMap["FrontSystemCarouselAllVideos"] = false;
 	mBoolMap["ShowExit"] = true;
 	mBoolMap["ExitOnRebootRequired"] = false;
 	mBoolMap["Windowed"] = false;

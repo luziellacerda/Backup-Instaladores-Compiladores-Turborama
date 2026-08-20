@@ -30,6 +30,8 @@ struct SystemViewData
 {
 	SystemData* object;
 	std::vector<GuiComponent*> backgroundExtras;
+	std::shared_ptr<VideoVlcComponent> frontCarouselVideo;
+	std::string frontCarouselVideoPath;
 };
 
 
@@ -89,6 +91,11 @@ private:
 
 	void	 activateExtras(int cursor, bool activate = true, bool allowVideos = true);
 	void	 finishCarouselVideoActivation();
+	void	 syncFrontCarouselVideos();
+	void	 showFrontCarouselVideo(SystemViewData& data, int index);
+	void	 hideFrontCarouselVideo(SystemViewData& data);
+	void	 hideFrontCarouselVideos();
+	void	 releaseFrontCarouselVideo(SystemViewData& data);
 	void	 updateSystemInfoText();
 	void	 updateExtras(const std::function<void(GuiComponent*)>& func);
 	void	 clearEntries();
@@ -143,6 +150,7 @@ private:
 
 	std::vector<GuiComponent*>			mStaticBackgrounds;
 	std::vector<SystemViewData>			mEntries;
+	int									mFrontCarouselMaxVisible;
 
 	float			mCamOffset;
 	float			mExtrasCamOffset;
