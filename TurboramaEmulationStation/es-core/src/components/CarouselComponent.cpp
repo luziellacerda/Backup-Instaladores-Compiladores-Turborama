@@ -185,10 +185,6 @@ void CarouselComponent::update(int deltaTime)
 		const std::shared_ptr<GuiComponent> &comp = mEntries.at(i).data.logo;
 		if (comp != nullptr)
 			comp->update(deltaTime);
-
-		const std::shared_ptr<VideoComponent>& video = mEntries.at(i).data.cellVideo;
-		if (video != nullptr)
-			video->update(deltaTime);
 	}
 	
 	listUpdate(deltaTime);	
@@ -556,19 +552,10 @@ void CarouselComponent::renderCarousel(const Transform4x4f& trans)
 		if (!mAnyLogoHasScaleStoryboard)
 			comp->setScale(scale);
 		
+		// The video is a child of the themed item container. Rendering the entry once
+		// makes the player inherit the exact same focus scale, tilt and movement as
+		// the cover instead of remaining visually fixed over the carousel.
 		comp->render(logoTrans);
-
-		// Each folder owns a distinct player. It therefore keeps the same transform
-		// and content while moving instead of jumping to the next carousel entry.
-		const std::shared_ptr<VideoComponent>& video = entry.data.cellVideo;
-		if (video != nullptr)
-		{
-			video->setOrigin(comp->getOrigin());
-			video->setPosition(comp->getPosition());
-			video->setScale(comp->getScale());
-			video->setOpacity(comp->getOpacity());
-			video->render(logoTrans);
-		}
 	};
 
 
@@ -739,9 +726,17 @@ void CarouselComponent::prepareCellVideo(IList<CarouselComponentData, IBindable*
 		auto video = std::make_shared<VideoVlcComponent>(mWindow);
 		video->setEffect(VideoVlcFlags::SIZE);
 		video->setTag("carouselCellVideo");
-		video->setDefaultZIndex(12060);
 		video->setOrigin(0.5f, 0.5f);
-		video->setPosition(mLogoSize.x() * 0.5f, mLogoSize.y() * 0.5f, 0.0f);
+
+		// Item templates keep their focus storyboard on the first themed container.
+		// Parenting the player there makes every system inherit the theme animation.
+		GuiComponent* videoParent = entry.data.logo.get();
+		CarouselItemTemplate* itemTemplate = dynamic_cast<CarouselItemTemplate*>(entry.data.logo.get());
+		if (itemTemplate != nullptr && itemTemplate->getChildCount() > 0)
+			videoParent = itemTemplate->getChild(0);
+
+		const Vector2f parentSize = videoParent->getSize();
+		video->setPosition(parentSize.x() * 0.5f, parentSize.y() * 0.5f, 0.0f);
 		// The entry transform already applies the active/inactive carousel scale.
 		// Multiplying the player bounds by mLogoScale here as well makes landscape
 		// videos wider than their cell and removes the gap to adjacent entries.
@@ -751,6 +746,8 @@ void CarouselComponent::prepareCellVideo(IList<CarouselComponentData, IBindable*
 		video->setPlayAudio(mCellVideoAudio);
 		video->setRoundCorners(mCellVideoRoundCorners);
 		video->setVisible(true);
+		videoParent->addChild(video.get());
+		video->setZIndex(12060);
 		video->onShow();
 		entry.data.cellVideo = video;
 	}
@@ -778,6 +775,9 @@ void CarouselComponent::releaseCellVideo(CarouselComponentData& data)
 	data.cellVideo->setVideo("");
 	data.cellVideo->setVisible(false);
 	data.cellVideo->onHide();
+	GuiComponent* videoParent = data.cellVideo->getParent();
+	if (videoParent != nullptr)
+		videoParent->removeChild(data.cellVideo.get());
 	data.cellVideo.reset();
 	data.cellVideoPath.clear();
 }
@@ -822,10 +822,6 @@ void CarouselComponent::onShow()
 		auto logo = mEntries.at(i).data.logo;
 		if (logo)
 			logo->onShow();
-
-		auto video = mEntries.at(i).data.cellVideo;
-		if (video)
-			video->onShow();
 	}
 
 	if (mCursor >= 0 && mCursor < mEntries.size())
