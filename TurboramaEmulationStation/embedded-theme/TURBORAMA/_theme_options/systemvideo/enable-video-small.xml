@@ -8,7 +8,7 @@
 
           <!-- VÍDEO 1 PRINCIPAL -->
           <video name="system_video" extra="true">
-               <maxSize>0.240 0.338</maxSize>
+               <minSize>0.240 0.338</minSize>
                <effect>none</effect>
                <roundCorners>5</roundCorners>
                <showSnapshotNoVideo>false</showSnapshotNoVideo>
@@ -21,7 +21,7 @@
 
           <!-- VÍDEO 2 -->
           <video name="system_video_2" extra="true">
-               <maxSize>0.240 0.338</maxSize>
+               <minSize>0.240 0.338</minSize>
                <effect>none</effect>
                <roundCorners>5</roundCorners>
                <showSnapshotNoVideo>false</showSnapshotNoVideo>
@@ -34,7 +34,7 @@
 
           <!-- VÍDEO 3 -->
           <video name="system_video_3" extra="true">
-               <maxSize>0.240 0.338</maxSize>
+               <minSize>0.240 0.338</minSize>
                <effect>none</effect>
                <roundCorners>5</roundCorners>
                <showSnapshotNoVideo>false</showSnapshotNoVideo>
@@ -132,19 +132,19 @@
           <!-- VÍDEO 1 -->
           <video name="system_video" extra="true">
                <pos>0.680 0.740</pos>
-               <maxSize>0.190 0.150</maxSize>
+               <minSize>0.130 0.130</minSize>
           </video>
 
           <!-- VÍDEO 2 -->
           <video name="system_video_2" extra="true">
                <pos>0.540 0.740</pos>
-               <maxSize>0.190 0.150</maxSize>
+               <minSize>0.130 0.130</minSize>
           </video>
 
           <!-- VÍDEO 3 -->
           <video name="system_video_3" extra="true">
                <pos>0.820 0.740</pos>
-               <maxSize>0.170 0.150</maxSize>
+               <minSize>0.130 0.130</minSize>
           </video>
 
           <!-- BORDA VÍDEO 1 -->

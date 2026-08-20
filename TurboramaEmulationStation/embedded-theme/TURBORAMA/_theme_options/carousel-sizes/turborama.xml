@@ -73,7 +73,7 @@
           <!-- VÍDEO 1 PRINCIPAL -->
           <video name="system_video" extra="true">
                <origin>0 0</origin>
-               <size>0.240 0.338</size>
+               <minSize>0.240 0.338</minSize>
                <effect>none</effect>
                <roundCorners>5</roundCorners>
                <showSnapshotNoVideo>false</showSnapshotNoVideo>
@@ -88,7 +88,7 @@
           <!-- VÍDEO 2 -->
           <video name="system_video_2" extra="true">
                <origin>0 0</origin>
-               <size>0.240 0.338</size>
+               <minSize>0.240 0.338</minSize>
                <effect>none</effect>
                <roundCorners>5</roundCorners>
                <showSnapshotNoVideo>false</showSnapshotNoVideo>
@@ -103,7 +103,7 @@
           <!-- VÍDEO 3 -->
           <video name="system_video_3" extra="true">
                <origin>0 0</origin>
-               <size>0.240 0.338</size>
+               <minSize>0.240 0.338</minSize>
                <effect>none</effect>
                <roundCorners>5</roundCorners>
                <showSnapshotNoVideo>false</showSnapshotNoVideo>
@@ -209,29 +209,29 @@
      <!-- ======================================================= -->
      <view name="system" ifSubset="carousel:medium">
 
-          <!-- VÍDEO 1 -->
+          <!-- VÍDEO 1 - preenche a célula preservando a proporção -->
           <video name="system_video" extra="true">
                <pos>0.680 0.740</pos>
                <origin>0 0</origin>
-               <size>0.130 0.130</size>
+               <minSize>0.130 0.130</minSize>
                <zIndex>95</zIndex>
           </video>
 
 
-          <!-- VÍDEO 2 -->
+          <!-- VÍDEO 2 - preenche a célula preservando a proporção -->
           <video name="system_video_2" extra="true">
                <pos>0.540 0.740</pos>
                <origin>0 0</origin>
-               <size>0.130 0.130</size>
+               <minSize>0.130 0.130</minSize>
                <zIndex>95</zIndex>
           </video>
 
 
-          <!-- VÍDEO 3 -->
+          <!-- VÍDEO 3 - preenche a célula preservando a proporção -->
           <video name="system_video_3" extra="true">
                <pos>0.820 0.740</pos>
                <origin>0 0</origin>
-               <size>0.130 0.130</size>
+               <minSize>0.130 0.130</minSize>
                <zIndex>95</zIndex>
           </video>
 
