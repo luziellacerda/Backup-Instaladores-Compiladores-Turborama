@@ -226,6 +226,13 @@ bool VideoVlcComponent::acquirePlaybackSlot()
 	if (priority <= 0)
 		return false;
 
+	// Carousel cell videos are decoded at their small on-screen target size and
+	// already remain bounded to the rendered carousel range. They must not
+	// compete with the general three-player limit, otherwise adjacent cells keep
+	// entering the deferred queue and visibly reload while the carousel moves.
+	// The global video RAM check below remains authoritative for every player.
+	const bool isCarouselCellVideo = getTag() == "carouselCellVideo";
+
 	size_t maxVideoBytes = (size_t)getMaxVideoRamMb() * 1024 * 1024;
 	size_t activeVideoBytes = getActiveVideoBufferBytes();
 	size_t pendingVideoBytes = estimatePendingVideoBufferBytes();
@@ -236,6 +243,9 @@ bool VideoVlcComponent::acquirePlaybackSlot()
 	if (!Settings::getInstance()->getBool("EnforceVideoLimit"))
 		return true;
 
+	if (isCarouselCellVideo)
+		return true;
+
 	int maxVideos = getEffectiveMaxConcurrentVideos();
 
 	std::unique_lock<std::mutex> lock(sActivePlayersMutex);
@@ -243,13 +253,22 @@ bool VideoVlcComponent::acquirePlaybackSlot()
 	if (mIsRegisteredActive)
 		return true;
 
-	while ((int)sActivePlayers.size() >= maxVideos)
+	int limitedPlayerCount = 0;
+	for (const auto& player : sActivePlayers)
+		if (player.component != nullptr && player.component->getTag() != "carouselCellVideo")
+			limitedPlayerCount++;
+
+	while (limitedPlayerCount >= maxVideos)
 	{
 		int weakestIdx = -1;
 		int weakestPriority = priority;
 
 		for (int i = 0; i < (int)sActivePlayers.size(); i++)
 		{
+			if (sActivePlayers[i].component == nullptr ||
+				sActivePlayers[i].component->getTag() == "carouselCellVideo")
+				continue;
+
 			if (sActivePlayers[i].priority < weakestPriority)
 			{
 				weakestPriority = sActivePlayers[i].priority;
@@ -263,6 +282,7 @@ bool VideoVlcComponent::acquirePlaybackSlot()
 		VideoVlcComponent* victim = sActivePlayers[weakestIdx].component;
 		sActivePlayers.erase(sActivePlayers.begin() + weakestIdx);
 		victim->mIsRegisteredActive = false;
+		limitedPlayerCount--;
 
 		lock.unlock();
 		victim->stopVideo();
