@@ -346,6 +346,8 @@ static std::map<std::string, std::function<BindableProperty(FileData*)>> propert
 	{ "image",				[](FileData* file) { return BindableProperty(file->getImagePath(), BindablePropertyType::Path); } },
 	{ "thumbnail",			[](FileData* file) { return BindableProperty(file->getThumbnailPath(false), BindablePropertyType::Path); } },
 	{ "video",				[](FileData* file) { return BindableProperty(file->getVideoPath(), BindablePropertyType::Path); } },
+	{ "carouselImage",		[](FileData* file) { return BindableProperty(file->getCarouselImagePath(), BindablePropertyType::Path); } },
+	{ "carouselVideo",		[](FileData* file) { return BindableProperty(file->getCarouselVideoPath(), BindablePropertyType::Path); } },
 	{ "marquee",			[](FileData* file) { return BindableProperty(file->getMarqueePath(), BindablePropertyType::Path); } },
 	{ "favorite",			[](FileData* file) { return file->getFavorite(); } },
 	{ "hidden",				[](FileData* file) { return file->getHidden(); } },
@@ -657,6 +659,73 @@ const std::string FileData::getVideoPath()
 	return video;
 }
 
+const std::string FileData::getCarouselVideoPath()
+{
+	const std::string directVideo = getVideoPath();
+	if (!directVideo.empty() && Utils::FileSystem::exists(directVideo))
+		return directVideo;
+
+	auto findVideoByRomPath = [](FileData* game, const std::string& configuredVideo)
+	{
+		FileData* source = game->getSourceFileData();
+		const std::string romPath = Utils::FileSystem::getCanonicalPath(source->getPath());
+		const std::string romStem = Utils::FileSystem::getStem(romPath);
+		const std::vector<std::string> extensions = { ".mp4", ".webm", ".mkv", ".avi" };
+
+		// Scraped XMLs can retain an obsolete hashed filename while the matching
+		// video is still present beside it under the ROM's real filename.
+		if (!configuredVideo.empty())
+		{
+			const std::string configuredParent = Utils::FileSystem::getParent(configuredVideo);
+			for (const auto& extension : extensions)
+			{
+				const std::string candidate = configuredParent + "/" + romStem + extension;
+				if (Utils::FileSystem::exists(candidate))
+					return candidate;
+			}
+		}
+
+		// Generic RetroBat layout, including arbitrary nested ROM folders:
+		// <system>/media/videos/<relative ROM path without extension>.<ext>
+		const std::string systemRoot = Utils::FileSystem::getCanonicalPath(source->getSystem()->getStartPath());
+		std::string relativeRom = Utils::FileSystem::createRelativePath(romPath, systemRoot, false);
+		if (Utils::String::startsWith(relativeRom, "./"))
+			relativeRom = relativeRom.substr(2);
+
+		const std::string relativeParent = Utils::FileSystem::getParent(relativeRom);
+		const std::string relativeStem = relativeParent.empty() ? romStem : relativeParent + "/" + romStem;
+		for (const auto& extension : extensions)
+		{
+			const std::string candidate = systemRoot + "/media/videos/" + relativeStem + extension;
+			if (Utils::FileSystem::exists(candidate))
+				return candidate;
+		}
+
+		return std::string();
+	};
+
+	if (getType() == GAME)
+		return findVideoByRomPath(this, directVideo);
+
+	if (getType() != FOLDER)
+		return "";
+
+	// Folder carousel cells work identically for every system. If the folder has
+	// no media of its own, use the first valid video from any descendant game.
+	for (auto game : ((FolderData*)this)->getFilesRecursive(GAME, false, nullptr, false))
+	{
+		const std::string video = game->getVideoPath();
+		if (!video.empty() && Utils::FileSystem::exists(video))
+			return video;
+
+		const std::string videoByRom = findVideoByRomPath(game, video);
+		if (!videoByRom.empty())
+			return videoByRom;
+	}
+
+	return "";
+}
+
 const std::string FileData::getMarqueePath()
 {
 	std::string marquee = getMetadata(MetaDataId::Marquee);
@@ -711,6 +780,77 @@ const std::string FileData::getImagePath()
 	}
 
 	return image;
+}
+
+const std::string FileData::getCarouselImagePath()
+{
+	std::string image = getImagePath();
+	if (!image.empty() && Utils::FileSystem::exists(image))
+		return image;
+
+	image = getThumbnailPath(false);
+	if (!image.empty() && Utils::FileSystem::exists(image))
+		return image;
+
+	auto findImageByRomPath = [](FileData* game, const std::string& configuredImage)
+	{
+		FileData* source = game->getSourceFileData();
+		const std::string romPath = Utils::FileSystem::getCanonicalPath(source->getPath());
+		const std::string romStem = Utils::FileSystem::getStem(romPath);
+		const std::vector<std::string> extensions = { ".png", ".jpg", ".jpeg", ".webp" };
+
+		if (!configuredImage.empty())
+		{
+			const std::string configuredParent = Utils::FileSystem::getParent(configuredImage);
+			for (const auto& extension : extensions)
+			{
+				const std::string candidate = configuredParent + "/" + romStem + extension;
+				if (Utils::FileSystem::exists(candidate))
+					return candidate;
+			}
+		}
+
+		const std::string systemRoot = Utils::FileSystem::getCanonicalPath(source->getSystem()->getStartPath());
+		std::string relativeRom = Utils::FileSystem::createRelativePath(romPath, systemRoot, false);
+		if (Utils::String::startsWith(relativeRom, "./"))
+			relativeRom = relativeRom.substr(2);
+
+		const std::string relativeParent = Utils::FileSystem::getParent(relativeRom);
+		const std::string relativeStem = relativeParent.empty() ? romStem : relativeParent + "/" + romStem;
+		for (const auto& extension : extensions)
+		{
+			const std::string candidate = systemRoot + "/media/images/" + relativeStem + extension;
+			if (Utils::FileSystem::exists(candidate))
+				return candidate;
+		}
+
+		return std::string();
+	};
+
+	if (getType() == GAME)
+		return findImageByRomPath(this, image);
+
+	if (getType() != FOLDER)
+		return "";
+
+	// The image-only checkbox mode follows the same global fallback rule as the
+	// video mode, so a folder cell never depends on system-specific XML names.
+	for (auto game : ((FolderData*)this)->getFilesRecursive(GAME, false, nullptr, false))
+	{
+		image = game->getImagePath();
+		if (!image.empty() && Utils::FileSystem::exists(image))
+			return image;
+
+		image = game->getThumbnailPath(false);
+		if (!image.empty() && Utils::FileSystem::exists(image))
+			return image;
+
+		const std::string imageByRom = findImageByRomPath(game, image);
+		if (!imageByRom.empty())
+			return imageByRom;
+	}
+
+	return "";
 }
 
 std::string FileData::getKey()

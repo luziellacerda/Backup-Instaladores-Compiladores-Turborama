@@ -109,11 +109,9 @@ public:
 	}
 
 	// Explicit playback controls for components that keep a video attached while
-	// their visual container is moving. Pausing preserves the last decoded frame.
-	void pausePlayback() { pauseVideo(); }
+	// their visual container is moving.
 	void resumePlayback() { resumeVideo(); }
 	void stopPlayback() { stopVideo(); }
-	virtual bool hasVideoFrame() const { return false; }
 
 	virtual void onVideoStarted();
 

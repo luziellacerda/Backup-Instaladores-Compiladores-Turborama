@@ -200,12 +200,6 @@ void CarouselComponent::update(int deltaTime)
 
 	GuiComponent::update(deltaTime);
 
-	// Checkbox off is the image-only mode. Let VLC produce one valid frame,
-	// then freeze it; the same texture follows the normal carousel transform.
-	if (mCellVideo != nullptr && mCellVideoAvailable && mCellVideo->isPlaying() &&
-		!Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying") &&
-		mCellVideo->hasVideoFrame())
-		mCellVideo->pausePlayback();
 }
 
 void CarouselComponent::onCursorChanged(const CursorState& state)
@@ -257,12 +251,10 @@ void CarouselComponent::onCursorChanged(const CursorState& state)
 			transition_style = "slide";
 	}
 	
-	// Keep the player attached to the previous cell until the movement ends.
-	// With the option disabled we freeze its last frame, avoiding an empty cell.
-	// With the option enabled playback continues while that cell moves.
-	if (mCellVideo != nullptr && mCellVideoAvailable &&
-		!Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying"))
-		mCellVideo->pausePlayback();
+	// Video mode keeps the player attached to the previous cell until the
+	// movement ends. Image mode has no player: its bound cover moves normally.
+	if (!Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying"))
+		stopCellVideo();
 
 	if (!mScrollSound.empty())
 		Sound::get(mScrollSound)->play();
@@ -743,7 +735,9 @@ void CarouselComponent::configureCellVideo()
 
 void CarouselComponent::refreshCellVideo(bool preserveExistingWhenUnavailable)
 {
-	if (!mCellVideoEnabled || mCellVideo == nullptr || !isShowing() || mScreensaverActive || mDisable)
+	if (!mCellVideoEnabled || mCellVideo == nullptr ||
+		!Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying") ||
+		!isShowing() || mScreensaverActive || mDisable)
 	{
 		stopCellVideo();
 		return;
@@ -757,15 +751,14 @@ void CarouselComponent::refreshCellVideo(bool preserveExistingWhenUnavailable)
 	}
 
 	const bool isFolder = object->getProperty("isFolder").toBoolean();
-	const std::string videoPath = object->getProperty("video").toString();
+	const std::string videoPath = object->getProperty("carouselVideo").toString();
 	const bool available = (!mCellVideoFoldersOnly || isFolder) &&
 		!videoPath.empty() && Utils::FileSystem::exists(videoPath);
 
 	if (!available)
 	{
-		// Keep the previous folder cell populated while neighboring cells are
-		// selected. Depending on the system checkbox it remains animated or shows
-		// the paused last frame as a static fallback image.
+		// In video mode, keep the previous folder cell animated while neighboring
+		// cells are selected. Image mode is rendered by the item template instead.
 		if (preserveExistingWhenUnavailable && mCellVideoAvailable)
 			return;
 

@@ -786,11 +786,6 @@ void VideoVlcComponent::render(const Transform4x4f& parentTrans)
 	}
 }
 
-bool VideoVlcComponent::hasVideoFrame() const
-{
-	return mTexture != nullptr && mTexture->isLoaded();
-}
-
 VideoContext* VideoVlcComponent::rentContext()
 {
 	VideoContext* ctx = new VideoContext();

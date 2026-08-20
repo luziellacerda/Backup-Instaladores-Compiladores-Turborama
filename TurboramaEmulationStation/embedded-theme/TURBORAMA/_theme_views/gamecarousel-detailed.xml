@@ -385,9 +385,9 @@
          <transitionSpeed>${gc-carousel-transition-speed}</transitionSpeed>
          <defaultTransition>slide</defaultTransition>
          <imageSource>boxart</imageSource>
-         <!-- Player nativo do CarouselComponent. O caminho vem do campo
-              <video> do item selecionado no gamelist.xml. -->
-         <cellVideoEnabled>${gc-snes-revista-enabled}</cellVideoEnabled>
+         <!-- Player nativo do CarouselComponent. Para pastas, aceita a midia
+              propria ou a primeira midia valida de qualquer jogo descendente. -->
+         <cellVideoEnabled>true</cellVideoEnabled>
          <cellVideoFoldersOnly>true</cellVideoFoldersOnly>
          <cellVideoAudio>false</cellVideoAudio>
          <cellVideoDelay>0</cellVideoDelay>
@@ -404,6 +404,28 @@
                <scaleOrigin>0.5 0.5</scaleOrigin>
                <rotationOrigin>0.5 0.5</rotationOrigin>
                <zIndex>12010</zIndex>
+
+               <!-- Fallback global para subpastas: usa a arte propria da pasta
+                    ou a primeira imagem valida de seus jogos descendentes. -->
+               <image name="folderCarouselCover"
+                      pos="0.5 0.5"
+                      origin="0.5 0.5"
+                      maxSize="0.980 0.980"
+                      linearSmooth="true"
+                      color="${gc-carousel-inactive-color}"
+                      saturation="${gc-carousel-inactive-saturation}"
+                      zIndex="12019">
+                  <path>{game:carouselImage}</path>
+                  <visible>{game:isFolder} &amp;&amp; exists({game:carouselImage})</visible>
+                  <storyboard event="activate">
+                     <animation property="color" to="FFFFFFFF" duration="190" mode="easeOutCubic" />
+                     <animation property="saturation" to="1" duration="190" mode="easeOutCubic" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="color" to="${gc-carousel-inactive-color}" duration="180" mode="easeOut" />
+                     <animation property="saturation" to="${gc-carousel-inactive-saturation}" duration="180" mode="easeOut" />
+                  </storyboard>
+               </image>
 
                <!-- SNES: a propria capa ocupa a celula, sem moldura e sem deformacao. -->
                <image name="snesProportionalCover"
