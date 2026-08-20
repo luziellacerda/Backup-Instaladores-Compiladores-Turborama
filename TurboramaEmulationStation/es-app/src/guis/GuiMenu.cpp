@@ -4391,7 +4391,7 @@ void GuiMenu::openThemeConfiguration(Window* mWindow, GuiComponent* s, std::shar
 	if (systemTheme.empty())
 	{
 		themeconfig->addGroup(_("CARROSSEL FRONTAL"));
-		themeconfig->addOptionList(_("MODO DE MIDIA DAS CELULAS"),
+		auto frontCarouselVideoMode = themeconfig->addOptionList(_("MODO DE MIDIA DAS CELULAS"),
 			_("Escolha entre imagens fixas, video somente na celula central ou videos em todas as celulas visiveis."),
 			{
 				{ _("SOMENTE IMAGENS"), "images" },
@@ -4399,6 +4399,15 @@ void GuiMenu::openThemeConfiguration(Window* mWindow, GuiComponent* s, std::shar
 				{ _("VIDEOS EM TODAS AS CELULAS"), "all" }
 			},
 			"FrontSystemCarouselVideoMode", true, nullptr);
+
+		// This setting must survive both BACK and START. Some menu stacks are
+		// destroyed directly by START, bypassing GuiSettings::close(), so persist
+		// the selected mode as soon as the option changes.
+		frontCarouselVideoMode->setSelectedChangedCallback([](const std::string& mode)
+		{
+			Settings::getInstance()->setString("FrontSystemCarouselVideoMode", mode);
+			Settings::getInstance()->saveFile();
+		});
 
 		themeconfig->addGroup(_("TOOLS"));
 
