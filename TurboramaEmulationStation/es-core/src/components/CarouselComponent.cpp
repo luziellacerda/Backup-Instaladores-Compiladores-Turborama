@@ -200,6 +200,14 @@ void CarouselComponent::update(int deltaTime)
 
 	GuiComponent::update(deltaTime);
 
+	// A cell player can be interrupted externally by VLC resource management.
+	// Keep the selected folder alive without rebuilding or changing its path.
+	if (mCellVideoAvailable && mCellVideo != nullptr &&
+		mCellVideoIndex == mCursor && !isAnimationPlaying(0) &&
+		Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying") &&
+		!mCellVideo->isPlaying())
+		mCellVideo->resumePlayback();
+
 }
 
 void CarouselComponent::onCursorChanged(const CursorState& state)
@@ -234,7 +242,7 @@ void CarouselComponent::onCursorChanged(const CursorState& state)
 		// A movement callback already owns the video hand-off. Do not interrupt it
 		// when releasing the key before the carousel animation has completed.
 		if (state == CURSOR_STOPPED && !isAnimationPlaying(0))
-			refreshCellVideo(true);
+			refreshCellVideo(false);
 
 		mLastCursorState = state;
 		return;
@@ -355,10 +363,10 @@ void CarouselComponent::onCursorChanged(const CursorState& state)
 	mLastCursor = mCursor;
 	mLastCursorState = state;
 
-	// The callback is also required with ScrollLoadMedias enabled because that
-	// mode reports a move directly as CURSOR_STOPPED. Repeated moves replace the
-	// animation and keep the original player alive until the last move finishes.
-	setAnimation(anim, 0, [this] { refreshCellVideo(true); });
+	// Repeated moves keep the original player attached during the animation. At
+	// the end, settle it on the current center cell; a non-folder target reveals
+	// the static cover left in the item template instead of retaining an orphan.
+	setAnimation(anim, 0, [this] { refreshCellVideo(false); });
 }
 
 void CarouselComponent::render(const Transform4x4f& parentTrans)
