@@ -38,6 +38,42 @@
 namespace
 {
 	const char* FRONT_CAROUSEL_VIDEO_TAG = "video_celula_ativa_v2";
+
+	std::string resolveFrontCarouselVideoPath(SystemData* system, const std::string& configuredPath)
+	{
+		if (!configuredPath.empty() && Utils::FileSystem::exists(configuredPath))
+			return configuredPath;
+
+		if (system == nullptr || system->getTheme() == nullptr)
+			return configuredPath;
+
+		std::string mediaName = system->getThemeFolder();
+		if (mediaName == "fbneo")
+			mediaName = "fba";
+		else if (mediaName == "megacd")
+			mediaName = "segacd";
+		else if (mediaName == "saturn")
+			mediaName = "saturno";
+		else
+			return configuredPath;
+
+		const std::string themeRoot = system->getTheme()->getVariable("themePath");
+		const std::string mediaRelativePath = system->getTheme()->getVariable("theme.caratulasPath");
+		if (themeRoot.empty() || mediaRelativePath.empty())
+			return configuredPath;
+
+		const std::string mediaFolder = Utils::FileSystem::resolveRelativePath(
+			mediaRelativePath, themeRoot, true);
+		const std::string aliasPath = Utils::FileSystem::combine(mediaFolder, mediaName + ".mp4");
+		if (Utils::FileSystem::exists(aliasPath))
+		{
+			LOG(LogInfo) << "[FrontSystemCarouselVideo] using media alias for "
+				<< system->getName() << ": " << aliasPath;
+			return aliasPath;
+		}
+
+		return configuredPath;
+	}
 }
 
 SystemView::SystemView(Window* window) : GuiComponent(window),
@@ -191,7 +227,8 @@ void SystemView::loadExtras(SystemData* system)
 	{
 		if (extra->getTag() == FRONT_CAROUSEL_VIDEO_TAG && extra->isKindOf<VideoVlcComponent>())
 		{
-			frontCarouselVideoPath = extra->getProperty("path").s;
+			frontCarouselVideoPath = resolveFrontCarouselVideoPath(
+				system, extra->getProperty("path").s);
 
 			if (frontCarouselVideo == nullptr)
 			{
