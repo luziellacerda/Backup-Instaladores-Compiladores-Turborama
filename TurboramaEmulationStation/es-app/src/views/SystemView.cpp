@@ -1991,6 +1991,16 @@ void SystemView::topWindow(bool isTop)
 	mDisable = !isTop;
 	if (isTop)
 		mFrontCarouselVideoModePreview = false;
+
+	// Front-carousel players are deliberately removed from backgroundExtras and
+	// reparented into the carousel cells. Consequently updateExtras() below does
+	// not propagate the window state to them. Players rebuilt while a menu is on
+	// top otherwise keep mIsTopWindow=false forever and enter a start/stop loop
+	// as soon as the system view becomes visible again.
+	for (auto& entry : mEntries)
+		if (entry.frontCarouselVideo != nullptr)
+			entry.frontCarouselVideo->topWindow(isTop);
+
 	if (isTop)
 		syncFrontCarouselVideos();
 	else
@@ -2136,6 +2146,12 @@ void SystemView::invalidateFrontCarouselVideoMode()
 {
 	mFrontCarouselVideoModeDirty = true;
 	mFrontCarouselVideoModePreview = true;
+
+	// The mode can be previewed while the theme menu is still the top window.
+	// These players are not part of backgroundExtras, so enable them explicitly.
+	for (auto& entry : mEntries)
+		if (entry.frontCarouselVideo != nullptr)
+			entry.frontCarouselVideo->topWindow(true);
 }
 
 void SystemView::showFrontCarouselVideo(SystemViewData& data, int index)
@@ -2182,6 +2198,10 @@ void SystemView::showFrontCarouselVideo(SystemViewData& data, int index)
 	data.frontCarouselVideo->setPosition(parentSize.x() * 0.5f, parentSize.y() * 0.5f, 0.0f);
 	data.frontCarouselVideo->setMaxSize(parentSize.x(), parentSize.y());
 	data.frontCarouselVideo->setVideo(data.frontCarouselVideoPath);
+	// A player may have been created after SystemView::topWindow(true), notably
+	// during a theme reload. Ensure it consumes the active/preview state before
+	// onShow() evaluates VideoComponent::manageState().
+	data.frontCarouselVideo->topWindow(!mDisable || mFrontCarouselVideoModePreview);
 
 	const bool wasVisible = data.frontCarouselVideo->isVisible();
 	data.frontCarouselVideo->setVisible(true);
