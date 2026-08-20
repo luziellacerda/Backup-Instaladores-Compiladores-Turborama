@@ -45,6 +45,7 @@ public:
 
 	void onThemeChanged(const std::shared_ptr<ThemeData>& theme);
 	void reloadTheme(SystemData* system);
+	void invalidateFrontCarouselVideoMode();
 
 	SystemData* getActiveSystem();
 
@@ -151,6 +152,7 @@ private:
 	std::vector<GuiComponent*>			mStaticBackgrounds;
 	std::vector<SystemViewData>			mEntries;
 	int									mFrontCarouselMaxVisible;
+	bool								mFrontCarouselVideoModeDirty;
 
 	float			mCamOffset;
 	float			mExtrasCamOffset;

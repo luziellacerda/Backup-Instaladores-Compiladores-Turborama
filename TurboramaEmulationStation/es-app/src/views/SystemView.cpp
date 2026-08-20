@@ -95,6 +95,7 @@ SystemView::SystemView(Window* window) : GuiComponent(window),
 	mDisable = false;
 	mLastCursor = 0;
 	mFrontCarouselMaxVisible = 3;
+	mFrontCarouselVideoModeDirty = false;
 	mExtrasFadeOldCursor = -1;
 
 	mSystemInfoDelay = 2000;
@@ -2088,6 +2089,22 @@ void SystemView::syncFrontCarouselVideos()
 	}
 
 	const std::string videoMode = Settings::getInstance()->getString("FrontSystemCarouselVideoMode");
+	if (mFrontCarouselVideoModeDirty)
+	{
+		// The theme menu stops the existing VLC players while it is on top. Force
+		// their media path to be assigned again after changing mode; otherwise the
+		// stopped player can leave only the underlying cell image visible.
+		for (auto& entry : mEntries)
+		{
+			if (entry.frontCarouselVideo == nullptr)
+				continue;
+
+			entry.frontCarouselVideo->stopPlayback();
+			entry.frontCarouselVideo->setVideo("");
+		}
+		mFrontCarouselVideoModeDirty = false;
+	}
+
 	if (videoMode == "images")
 	{
 		hideFrontCarouselVideos();
@@ -2109,6 +2126,11 @@ void SystemView::syncFrontCarouselVideos()
 		else
 			hideFrontCarouselVideo(mEntries[i]);
 	}
+}
+
+void SystemView::invalidateFrontCarouselVideoMode()
+{
+	mFrontCarouselVideoModeDirty = true;
 }
 
 void SystemView::showFrontCarouselVideo(SystemViewData& data, int index)

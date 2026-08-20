@@ -22,6 +22,7 @@
 #include "guis/GuiControllersSettings.h"
 #include "views/UIModeController.h"
 #include "views/ViewController.h"
+#include "views/SystemView.h"
 #include "CollectionSystemManager.h"
 #include "EmulationStation.h"
 #include "Scripting.h"
@@ -4407,6 +4408,7 @@ void GuiMenu::openThemeConfiguration(Window* mWindow, GuiComponent* s, std::shar
 		{
 			Settings::getInstance()->setString("FrontSystemCarouselVideoMode", mode);
 			Settings::getInstance()->saveFile();
+			ViewController::get()->getSystemListView()->invalidateFrontCarouselVideoMode();
 		});
 
 		themeconfig->addGroup(_("TOOLS"));
