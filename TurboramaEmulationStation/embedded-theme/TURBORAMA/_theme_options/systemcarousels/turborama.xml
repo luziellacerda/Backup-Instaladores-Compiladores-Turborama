@@ -61,7 +61,7 @@ Por isso, o video fica como elemento extra sobre a celula ativa, com zIndex alto
                   <path ifSubset="colorset:blue">${themePath}/${theme.caratulasPath}/default.png</path>
                   <path ifSubset="colorset:black">${themePath}/${theme.caratulasPath}/default-b.png</path>
                   <visible>!exists({system:logo})</visible>
-                  <roundCorners>0.02</roundCorners>
+                  <roundCorners>0.10</roundCorners>
                   <zIndex>4</zIndex>
                </image>
 
@@ -169,7 +169,7 @@ Por isso, o video fica como elemento extra sobre a celula ativa, com zIndex alto
          <showSnapshotNoVideo>false</showSnapshotNoVideo>
          <showSnapshotDelay>false</showSnapshotDelay>
          <effect>none</effect>
-         <roundCorners>0.0200</roundCorners>
+         <roundCorners>0.10</roundCorners>
       </video>
 
    </view>
