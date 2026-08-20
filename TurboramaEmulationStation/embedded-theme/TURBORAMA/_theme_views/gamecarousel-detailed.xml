@@ -376,15 +376,23 @@
               permanecem iguais; somente o brilho deixa de ser cortado. -->
          <pos>0.038 0.087</pos>
          <size>0.924 0.347</size>
-         <logoSize>0.1172 0.7013</logoSize>
-         <logoScale>1.00</logoScale>
-         <scaledLogoSpacing>0.940</scaledLogoSpacing>
-         <maxLogoCount>8</maxLogoCount>
+         <logoSize>${gc-carousel-logo-size}</logoSize>
+         <logoScale>${gc-carousel-engine-scale}</logoScale>
+         <scaledLogoSpacing>${gc-carousel-logo-spacing}</scaledLogoSpacing>
+         <maxLogoCount>${gc-carousel-logo-count}</maxLogoCount>
          <logoAlignment>center</logoAlignment>
          <minLogoOpacity>${gc-carousel-min-opacity}</minLogoOpacity>
          <transitionSpeed>${gc-carousel-transition-speed}</transitionSpeed>
          <defaultTransition>slide</defaultTransition>
          <imageSource>boxart</imageSource>
+         <!-- Player nativo do CarouselComponent. O caminho vem do campo
+              <video> do item selecionado no gamelist.xml. -->
+         <cellVideoEnabled>${gc-snes-revista-enabled}</cellVideoEnabled>
+         <cellVideoFoldersOnly>true</cellVideoFoldersOnly>
+         <cellVideoAudio>false</cellVideoAudio>
+         <cellVideoDelay>0</cellVideoDelay>
+         <cellVideoSize>0.980 0.980</cellVideoSize>
+         <cellVideoRoundCorners>0.004</cellVideoRoundCorners>
          <color>00000000</color>
          <!-- O carrossel inteiro fica acima das barras, painéis e textos da página.
               O motor já desenha o item selecionado por último, garantindo que
@@ -397,6 +405,45 @@
                <rotationOrigin>0.5 0.5</rotationOrigin>
                <zIndex>12010</zIndex>
 
+               <!-- SNES: a propria capa ocupa a celula, sem moldura e sem deformacao. -->
+               <image name="snesProportionalCover"
+                      pos="0.5 0.5"
+                      origin="0.5 0.5"
+                      maxSize="0.980 0.980"
+                      linearSmooth="true"
+                      color="${gc-carousel-inactive-color}"
+                      saturation="${gc-carousel-inactive-saturation}"
+                      zIndex="12020">
+                  <path>firstfile({game:image}, directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:boxart}, directory({game:path}) + "/media/box3/" + {game:stem} + ".png", directory({game:path}) + "/media/box3d/" + {game:stem} + ".png", {game:thumbnail})</path>
+                  <visible>${gc-snes-proportional-cover} &amp;&amp; (exists({game:image}) || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:boxart}) || exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") || exists({game:thumbnail}))</visible>
+                  <storyboard event="activate">
+                     <animation property="color" to="FFFFFFFF" duration="190" mode="easeOutCubic" />
+                     <animation property="saturation" to="1" duration="190" mode="easeOutCubic" />
+                     <animation property="opacity" from="0.18" to="1" begin="115" duration="185" mode="easeOutCubic" />
+                  </storyboard>
+                  <storyboard event="deactivate">
+                     <animation property="color" to="${gc-carousel-inactive-color}" duration="180" mode="easeOut" />
+                     <animation property="saturation" to="${gc-carousel-inactive-saturation}" duration="180" mode="easeOut" />
+                     <animation property="opacity" from="1" to="0.22" duration="110" mode="easeIn" />
+                     <animation property="opacity" from="0.22" to="1" begin="110" duration="150" mode="easeOutCubic" />
+                  </storyboard>
+               </image>
+
+               <text name="snesProportionalMissingName"
+                      pos="0.08 0.12"
+                     size="0.84 0.76"
+                     alignment="center"
+                     verticalAlignment="center"
+                     multiLine="true">
+                  <text>{game:name}</text>
+                  <visible>${gc-snes-proportional-cover} &amp;&amp; !exists({game:image}) &amp;&amp; !exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") &amp;&amp; !exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") &amp;&amp; !exists({game:boxart}) &amp;&amp; !exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; !exists({game:thumbnail})</visible>
+                  <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
+                  <fontSize>0.016</fontSize>
+                  <lineSpacing>1.08</lineSpacing>
+                  <color>E5E5E5FF</color>
+                  <zIndex>12022</zIndex>
+               </text>
+
                <!-- O shader usa o canal alfa da própria capa: não existe card atrás. -->
                <image name="selectedBox3dOutline"
                       pos="0.5 0.50"
@@ -404,7 +451,7 @@
                       maxSize="0.980 0.960"
                       linearSmooth="true">
                   <path>firstfile(directory({game:path}) + "/media/box3/" + {game:stem} + ".png", directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</path>
-                  <visible>exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</visible>
+                  <visible>!${gc-snes-proportional-cover} &amp;&amp; (exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png"))</visible>
                   <color>00000000</color>
                   <zIndex>12015</zIndex>
                   <storyboard event="activate">
@@ -425,7 +472,7 @@
                       maxSize="0.920 0.910"
                       linearSmooth="true">
                   <path>firstfile(directory({game:path}) + "/media/box3/" + {game:stem} + ".png", directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</path>
-                  <visible>exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</visible>
+                  <visible>!${gc-snes-proportional-cover} &amp;&amp; (exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png"))</visible>
                   <color>${gc-carousel-inactive-color}</color>
                   <saturation>${gc-carousel-inactive-saturation}</saturation>
                   <zIndex>12020</zIndex>
@@ -451,7 +498,7 @@
                       size="0.920 0.910"
                       linearSmooth="true">
                   <path>firstfile(directory({game:path}) + "/media/box3/" + {game:stem} + ".png", directory({game:path}) + "/media/box3d/" + {game:stem} + ".png")</path>
-                  <visible>${gc-carousel-page-turn-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png"))</visible>
+                  <visible>!${gc-snes-proportional-cover} &amp;&amp; ${gc-carousel-page-turn-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png"))</visible>
                   <color>FFFFFFFF</color>
                   <opacity>0</opacity>
                   <zIndex>12032</zIndex>
@@ -480,7 +527,7 @@
                       maxSize="1.090 0.995"
                       linearSmooth="true">
                   <path>firstfile({game:thumbnail}, {game:boxart})</path>
-                  <visible>!exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; (exists({game:thumbnail}) || exists({game:boxart}))</visible>
+                  <visible>!${gc-snes-proportional-cover} &amp;&amp; !exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; (exists({game:thumbnail}) || exists({game:boxart}))</visible>
                   <color>00000000</color>
                   <zIndex>12015</zIndex>
                   <storyboard event="activate">
@@ -501,7 +548,7 @@
                       maxSize="1.035 0.950"
                       linearSmooth="true">
                   <path>firstfile({game:thumbnail}, {game:boxart})</path>
-                  <visible>!exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; (exists({game:thumbnail}) || exists({game:boxart}))</visible>
+                  <visible>!${gc-snes-proportional-cover} &amp;&amp; !exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; (exists({game:thumbnail}) || exists({game:boxart}))</visible>
                   <color>${gc-carousel-inactive-color}</color>
                   <saturation>${gc-carousel-inactive-saturation}</saturation>
                   <zIndex>12020</zIndex>
@@ -527,7 +574,7 @@
                       size="0.840 0.950"
                       linearSmooth="true">
                   <path>firstfile({game:thumbnail}, {game:boxart})</path>
-                  <visible>${gc-carousel-page-turn-enabled} &amp;&amp; !exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; (exists({game:thumbnail}) || exists({game:boxart}))</visible>
+                  <visible>!${gc-snes-proportional-cover} &amp;&amp; ${gc-carousel-page-turn-enabled} &amp;&amp; !exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; (exists({game:thumbnail}) || exists({game:boxart}))</visible>
                   <color>FFFFFFFF</color>
                   <opacity>0</opacity>
                   <zIndex>12032</zIndex>
@@ -554,7 +601,7 @@
                       origin="0.5 0.5"
                       size="0.060 0.865">
                   <path>${themePath}/_theme_inc/images/pixel-blanco.png</path>
-                  <visible>${gc-carousel-page-turn-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") || exists({game:thumbnail}) || exists({game:boxart}))</visible>
+                  <visible>!${gc-snes-proportional-cover} &amp;&amp; ${gc-carousel-page-turn-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") || exists({game:thumbnail}) || exists({game:boxart}))</visible>
                   <color>000000B0</color>
                   <colorEnd>FFFFFF20</colorEnd>
                   <gradientType>horizontal</gradientType>
@@ -691,7 +738,7 @@
                      verticalAlignment="center"
                      multiLine="true">
                   <text>{game:name}</text>
-                  <visible>!exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; !exists({game:thumbnail}) &amp;&amp; !exists({game:boxart})</visible>
+                  <visible>!${gc-snes-proportional-cover} &amp;&amp; !exists(directory({game:path}) + "/media/box3/" + {game:stem} + ".png") &amp;&amp; !exists(directory({game:path}) + "/media/box3d/" + {game:stem} + ".png") &amp;&amp; !exists({game:thumbnail}) &amp;&amp; !exists({game:boxart})</visible>
                   <fontPath>${themePath}/_theme_inc/fonts/SST Bold.ttf</fontPath>
                   <fontSize>0.017</fontSize>
                   <lineSpacing>1.08</lineSpacing>
@@ -819,7 +866,7 @@
          <fontSize>0.012</fontSize>
          <color>B3B3B3FF</color>
          <alignment>right</alignment>
-         <visible>exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mp4") || exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".webm") || exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mkv") || exists({game:video})</visible>
+         <visible>!{game:isFolder} &amp;&amp; (exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mp4") || exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".webm") || exists(directory({game:path}) + "/media/videos/" + {game:stem} + ".mkv") || exists({game:video}))</visible>
          <visible ifSubset="game-video:off">false</visible>
          <zIndex>40</zIndex>
       </text>
@@ -840,11 +887,11 @@
       <!-- Pilha sincronizada: dois jogos anteriores, jogo selecionado e dois próximos.
            O movimento de revista e todo o restante do layout são preservados. -->
       <image name="selectedHeroPageOuterFar" extra="false">
-         <path>firstfile(directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:image})</path>
+         <path>firstfile(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory({game:path}) + "/media/revista/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename({game:image}), directory({game:path}) + "/media/revista/" + {game:stem} + ".png", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg")</path>
          <origin>0.5 0.5</origin>
          <pos>0.088 0.714</pos>
          <maxSize>0.125 0.358</maxSize>
-         <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
+         <visible>${gc-snes-revista-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg"))</visible>
          <linearSmooth>true</linearSmooth>
          <color>FFFFFFFF</color>
          <opacity>${gc-magazine-opacity-outer-far}</opacity>
@@ -870,11 +917,11 @@
       </image>
 
       <image name="selectedHeroPageOuterNear" extra="false">
-         <path>firstfile(directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:image})</path>
+         <path>firstfile(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory({game:path}) + "/media/revista/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename({game:image}), directory({game:path}) + "/media/revista/" + {game:stem} + ".png", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg")</path>
          <origin>0.5 0.5</origin>
          <pos>0.099 0.709</pos>
          <maxSize>0.135 0.382</maxSize>
-         <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
+         <visible>${gc-snes-revista-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg"))</visible>
          <linearSmooth>true</linearSmooth>
          <color>6B6B6BFF</color>
          <opacity>${gc-magazine-opacity-outer-near}</opacity>
@@ -900,11 +947,11 @@
       </image>
 
       <image name="selectedHeroPageFar" extra="false">
-         <path>firstfile(directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:image})</path>
+         <path>firstfile(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory({game:path}) + "/media/revista/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename({game:image}), directory({game:path}) + "/media/revista/" + {game:stem} + ".png", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg")</path>
          <origin>0.5 0.5</origin>
          <pos>0.110 0.704</pos>
          <maxSize>0.145 0.406</maxSize>
-         <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
+         <visible>${gc-snes-revista-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg"))</visible>
          <linearSmooth>true</linearSmooth>
          <color>A3A3A3FF</color>
          <opacity>${gc-magazine-opacity-far}</opacity>
@@ -930,11 +977,11 @@
       </image>
 
       <image name="selectedHeroPageNear" extra="false">
-         <path>firstfile(directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:image})</path>
+         <path>firstfile(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory({game:path}) + "/media/revista/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename({game:image}), directory({game:path}) + "/media/revista/" + {game:stem} + ".png", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg")</path>
          <origin>0.5 0.5</origin>
          <pos>0.121 0.699</pos>
          <maxSize>0.155 0.428</maxSize>
-         <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
+         <visible>${gc-snes-revista-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg"))</visible>
          <linearSmooth>true</linearSmooth>
          <color>E6E6E6FF</color>
          <opacity>${gc-magazine-opacity-near}</opacity>
@@ -960,11 +1007,11 @@
       </image>
 
       <image name="selectedHeroCover" extra="false">
-         <path>firstfile(directory({game:path}) + "/media/images/" + {game:stem} + ".png", directory({game:path}) + "/media/images/" + {game:stem} + ".jpg", directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg", {game:image})</path>
+         <path>firstfile(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory({game:path}) + "/media/revista/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename({game:image}), directory({game:path}) + "/media/revista/" + {game:stem} + ".png", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg")</path>
          <origin>0.5 0.5</origin>
          <pos>0.132 0.694</pos>
          <maxSize>0.165 0.450</maxSize>
-         <visible>exists(directory({game:path}) + "/media/images/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/images/" + {game:stem} + ".jpeg") || exists({game:image})</visible>
+         <visible>${gc-snes-revista-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg"))</visible>
          <linearSmooth>true</linearSmooth>
          <color>FFFFFFFF</color>
          <roundCorners>0.004</roundCorners>

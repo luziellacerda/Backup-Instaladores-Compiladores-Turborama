@@ -58,6 +58,7 @@ set(ES_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SaveStateConfigFile.h    
 	${CMAKE_CURRENT_SOURCE_DIR}/src/CustomFeatures.h
 	${CMAKE_CURRENT_SOURCE_DIR}/src/DeveloperMenuAuth.h
+	${CMAKE_CURRENT_SOURCE_DIR}/src/ThemeChangeAuth.h
 
     # GuiComponents    
     ${CMAKE_CURRENT_SOURCE_DIR}/src/components/ScraperSearchComponent.h    
@@ -177,6 +178,7 @@ set(ES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SaveStateConfigFile.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/CustomFeatures.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/DeveloperMenuAuth.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/ThemeChangeAuth.cpp
 
     # GuiComponents    
     ${CMAKE_CURRENT_SOURCE_DIR}/src/components/ScraperSearchComponent.cpp	

@@ -56,6 +56,7 @@ private:
         void openScreensaverOptions();  
         void openSoundSettings();
         void openUISettings();
+		void openThemeSetSelection(GuiSettings* parentSettings);
         void openUpdatesSettings();
         
         void openSystemSettings();

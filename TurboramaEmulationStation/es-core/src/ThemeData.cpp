@@ -578,6 +578,12 @@ std::map<std::string, std::map<std::string, ThemeData::ElementPropertyType>> The
 		{ "transitionSpeed", FLOAT },
 		{ "scaledLogoSpacing", FLOAT },
 		{ "scrollSound", PATH },
+		{ "cellVideoEnabled", BOOLEAN },
+		{ "cellVideoFoldersOnly", BOOLEAN },
+		{ "cellVideoAudio", BOOLEAN },
+		{ "cellVideoDelay", FLOAT },
+		{ "cellVideoSize", NORMALIZED_PAIR },
+		{ "cellVideoRoundCorners", FLOAT },
 		{ "zIndex", FLOAT },
 		{ "systemInfoDelay", FLOAT },
 		{ "systemInfoCountOnly", BOOLEAN } } },
@@ -602,6 +608,12 @@ std::map<std::string, std::map<std::string, ThemeData::ElementPropertyType>> The
 		{ "transitionSpeed", FLOAT },
 		{ "scaledLogoSpacing", FLOAT },
 		{ "scrollSound", PATH },
+		{ "cellVideoEnabled", BOOLEAN },
+		{ "cellVideoFoldersOnly", BOOLEAN },
+		{ "cellVideoAudio", BOOLEAN },
+		{ "cellVideoDelay", FLOAT },
+		{ "cellVideoSize", NORMALIZED_PAIR },
+		{ "cellVideoRoundCorners", FLOAT },
 		{ "zIndex", FLOAT },
 		{ "imageSource", STRING } } },			// image, thumbnail, marquee
 
@@ -2364,12 +2376,12 @@ std::vector<GuiComponent*> ThemeData::makeExtras(const std::shared_ptr<ThemeData
 
 std::map<std::string, ThemeSet> ThemeData::getThemeSets()
 {
+	std::map<std::string, ThemeSet> sets;
+
 	if (EmbeddedTheme::isAvailable())
 	{
-		std::map<std::string, ThemeSet> embeddedSets;
 		ThemeSet embeddedSet = { EmbeddedTheme::getRootPath() };
-		embeddedSets[EmbeddedTheme::THEME_SET_ID] = embeddedSet;
-		return embeddedSets;
+		sets[EmbeddedTheme::THEME_SET_ID] = embeddedSet;
 	}
 
 	std::vector<std::string> paths =
@@ -2382,9 +2394,7 @@ std::map<std::string, ThemeSet> ThemeData::getThemeSets()
 #endif
 	};
 
-	std::map<std::string, ThemeSet> sets;
-
-	for (auto path : VectorHelper::distinct(paths, [](auto x) { return x; }))	
+	for (auto path : VectorHelper::distinct(paths, [](auto x) { return x; }))
 	{
 		if (!Utils::FileSystem::isDirectory(path))
 			continue;
@@ -2396,9 +2406,11 @@ std::map<std::string, ThemeSet> ThemeData::getThemeSets()
 			if (Utils::String::startsWith(Utils::FileSystem::getFileName(*it), "."))
 				continue;
 
-			if(Utils::FileSystem::isDirectory(*it))
+			if (Utils::FileSystem::isDirectory(*it))
 			{
 				ThemeSet set = {*it};
+				if (EmbeddedTheme::isActiveThemeSet(set.getName()))
+					continue;
 				sets[set.getName()] = set;
 			}
 		}

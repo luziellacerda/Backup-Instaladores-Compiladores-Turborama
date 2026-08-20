@@ -11,6 +11,7 @@
 
 class ThemeData;
 class IBindable;
+class VideoComponent;
 
 struct CarouselComponentData
 {
@@ -121,6 +122,9 @@ private:
 	virtual void topWindow(bool isTop) override;
 
 	void getCarouselFromTheme(const ThemeData::ThemeElement* elem);
+	void configureCellVideo();
+	void refreshCellVideo();
+	void stopCellVideo();
 
 	void renderCarousel(const Transform4x4f& parentTrans);	
 	
@@ -167,6 +171,19 @@ private:
 	bool			mAnyLogoHasOpacityStoryboard;
 
 	float			mScaledSpacing;
+
+	// A single native VLC player is rendered with the selected logo transform.
+	// This keeps video playback inside the carousel cell without creating a
+	// decoder for every item template.
+	VideoComponent*	mCellVideo;
+	bool			mCellVideoEnabled;
+	bool			mCellVideoFoldersOnly;
+	bool			mCellVideoAvailable;
+	bool			mCellVideoAudio;
+	float			mCellVideoDelay;
+	float			mCellVideoRoundCorners;
+	Vector2f		mCellVideoSize;
+	std::string		mCellVideoPath;
 
 	// Mouse support
 	int				mPressedCursor;

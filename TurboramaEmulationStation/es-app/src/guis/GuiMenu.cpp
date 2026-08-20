@@ -57,6 +57,7 @@
 #include "guis/GuiBluetoothPair.h"
 #include "guis/GuiBluetoothDevices.h"
 #include "DeveloperMenuAuth.h"
+#include "ThemeChangeAuth.h"
 #include "EmbeddedTheme.h"
 #include "scrapers/ThreadedScraper.h"
 #include "FileSorts.h"
@@ -293,6 +294,37 @@ namespace
 			window->pushGui(new GuiTextEditPopupKeyboard(window, title, "", callback, false, "OK", true));
 		else
 			window->pushGui(new GuiTextEditPopup(window, title, "", callback, false, "OK", true));
+	}
+
+	void editThemeChangePassword(Window* window, std::string title, std::string,
+		const std::function<void(std::string)>& onSave)
+	{
+		pushSecretTextEdit(window, title, [window, onSave](const std::string& password)
+		{
+			if (password.empty())
+			{
+				window->pushGui(new GuiMsgBox(window, _("A SENHA DO TEMA NAO PODE FICAR VAZIA."), _("OK"), nullptr));
+				return;
+			}
+
+			window->postToUiThread([window, onSave, password]
+			{
+				pushSecretTextEdit(window, _("CONFIRME A NOVA SENHA DO TEMA"),
+					[window, onSave, password](const std::string& confirmation)
+					{
+						if (confirmation != password)
+						{
+							window->pushGui(new GuiMsgBox(window,
+								_("AS SENHAS NAO COINCIDEM. A SENHA DO TEMA NAO FOI ALTERADA."),
+								_("OK"), nullptr));
+							return;
+						}
+
+						onSave(password);
+						window->displayNotificationMessage(_("Senha do tema atualizada"));
+					});
+			});
+		});
 	}
 
 	void requireNonDefaultAdminPassword(Window* window, const std::function<void()>& onReady)
@@ -4491,6 +4523,83 @@ void GuiMenu::openThemeConfiguration(Window* mWindow, GuiComponent* s, std::shar
 	mWindow->pushGui(themeconfig);
 }
 
+void GuiMenu::openThemeSetSelection(GuiSettings* parentSettings)
+{
+	if (parentSettings == nullptr)
+		return;
+
+	auto themeSets = ThemeData::getThemeSets();
+	if (themeSets.empty())
+	{
+		mWindow->pushGui(new GuiMsgBox(mWindow, _("NENHUM TEMA DISPONIVEL."), _("OK"), nullptr));
+		return;
+	}
+
+	auto selector = new GuiSettings(mWindow, _("ALTERAR TEMA").c_str());
+	auto themeSet = std::make_shared<OptionListComponent<std::string>>(mWindow, _("THEME SET"), false);
+	const std::string currentTheme = Settings::getInstance()->getString("ThemeSet");
+
+	std::vector<std::string> themeList;
+	for (auto it = themeSets.begin(); it != themeSets.end(); ++it)
+		themeList.push_back(it->first);
+
+	std::sort(themeList.begin(), themeList.end(), [](const std::string& a, const std::string& b)
+	{
+		return Utils::String::toLower(a).compare(Utils::String::toLower(b)) < 0;
+	});
+
+	for (const auto& themeName : themeList)
+	{
+		const std::string displayName = EmbeddedTheme::isActiveThemeSet(themeName)
+			? _("TurboRama (Built-in)") : themeName;
+		themeSet->add(displayName, themeName, themeName == currentTheme);
+	}
+
+	selector->addWithLabel(_("THEME SET"), themeSet);
+	selector->addSaveFunc([selector, parentSettings, themeSet]
+	{
+		const std::string oldTheme = Settings::getInstance()->getString("ThemeSet");
+		const std::string newTheme = themeSet->getSelected();
+		if (oldTheme == newTheme || !Settings::getInstance()->getBool("ThemeChangeEnabled"))
+			return;
+
+		saveSubsetSettings();
+		Settings::getInstance()->setString("ThemeSet", newTheme);
+
+		Settings::getInstance()->setString("ThemeRegionName", "");
+		Settings::getInstance()->setString("ThemeColorSet", "");
+		Settings::getInstance()->setString("ThemeIconSet", "");
+		Settings::getInstance()->setString("ThemeMenu", "");
+		Settings::getInstance()->setString("ThemeSystemView", "");
+		Settings::getInstance()->setString("ThemeGamelistView", "");
+		Settings::getInstance()->setString("GamelistViewStyle", "");
+		Settings::getInstance()->setString("DefaultGridSize", "");
+
+		for (auto setting : Settings::getInstance()->getStringMap())
+			if (Utils::String::startsWith(setting.first, "subset."))
+				Settings::getInstance()->setString(setting.first, "");
+
+		for (auto system : SystemData::sSystemVector)
+			system->setSystemViewMode("automatic", Vector2f(0, 0));
+
+		loadSubsetSettings(newTheme);
+		parentSettings->setVariable("reloadCollections", true);
+		parentSettings->setVariable("reloadAll", true);
+		parentSettings->setVariable("reloadGuiMenu", true);
+		selector->setVariable("themeChanged", true);
+		Scripting::fireEvent("theme-changed", newTheme, oldTheme);
+	});
+
+	Window* window = mWindow;
+	selector->onFinalize([selector, parentSettings, window]
+	{
+		if (selector->getVariable("themeChanged"))
+			window->postToUiThread([parentSettings] { parentSettings->close(); });
+	});
+
+	mWindow->pushGui(selector);
+}
+
 void GuiMenu::openUISettings() 
 {
 	auto pthis = this;
@@ -4507,74 +4616,90 @@ void GuiMenu::openUISettings()
 
 	const std::string currentThemeSet = Settings::getInstance()->getString("ThemeSet");
 	const bool usingEmbeddedTheme = EmbeddedTheme::isActiveThemeSet(currentThemeSet);
+	auto themeChangeEnabled = std::make_shared<SwitchComponent>(mWindow);
+	themeChangeEnabled->setState(Settings::getInstance()->getBool("ThemeChangeEnabled"));
+	s->addWithDescription(_("PERMITIR ALTERAR TEMA COM SENHA"),
+		_("Libera o botao de troca. A selecao do tema continua protegida pela senha exclusiva do tema."),
+		themeChangeEnabled);
+	s->addSaveFunc([s, themeChangeEnabled]
+	{
+		const bool enabled = themeChangeEnabled->getState();
+		const std::string oldTheme = Settings::getInstance()->getString("ThemeSet");
+		const bool restoreEmbedded = !enabled && !EmbeddedTheme::isActiveThemeSet(oldTheme);
 
-	std::shared_ptr<OptionListComponent<std::string>> theme_set;
+		if (restoreEmbedded)
+			saveSubsetSettings();
+
+		Settings::getInstance()->setBool("ThemeChangeEnabled", enabled);
+		if (!restoreEmbedded)
+			return;
+
+		Settings::getInstance()->setString("ThemeSet", EmbeddedTheme::THEME_SET_ID);
+		Settings::getInstance()->setString("ThemeRegionName", "");
+		Settings::getInstance()->setString("ThemeColorSet", "");
+		Settings::getInstance()->setString("ThemeIconSet", "");
+		Settings::getInstance()->setString("ThemeMenu", "");
+		Settings::getInstance()->setString("ThemeSystemView", "");
+		Settings::getInstance()->setString("ThemeGamelistView", "");
+		Settings::getInstance()->setString("GamelistViewStyle", "");
+		Settings::getInstance()->setString("DefaultGridSize", "");
+
+		for (auto setting : Settings::getInstance()->getStringMap())
+			if (Utils::String::startsWith(setting.first, "subset."))
+				Settings::getInstance()->setString(setting.first, "");
+
+		for (auto system : SystemData::sSystemVector)
+			system->setSystemViewMode("automatic", Vector2f(0, 0));
+
+		loadSubsetSettings(EmbeddedTheme::THEME_SET_ID);
+		s->setVariable("reloadCollections", true);
+		s->setVariable("reloadAll", true);
+		s->setVariable("reloadGuiMenu", true);
+		Scripting::fireEvent("theme-changed", EmbeddedTheme::THEME_SET_ID, oldTheme);
+	});
+
+	s->addInputTextRow(_("ALTERAR SENHA DO TEMA"),
+		ThemeChangeAuth::hasCustomPassword() ? "configured" : "admin", true,
+		&editThemeChangePassword,
+		[](const std::string& password)
+		{
+			if (ThemeChangeAuth::setPassword(password))
+				Settings::getInstance()->saveFile();
+		});
+
+	std::shared_ptr<OptionListComponent<std::string>> theme_set = nullptr;
 
 	if (system != nullptr && (EmbeddedTheme::isAvailable() || !themeSets.empty()))
 	{
-		if (EmbeddedTheme::isAvailable() && usingEmbeddedTheme)
+		const std::string currentThemeName = usingEmbeddedTheme ? _("TurboRama (Built-in)") : currentThemeSet;
+		auto currentTheme = std::make_shared<TextComponent>(mWindow, currentThemeName,
+			theme->Text.font, theme->Text.color, ALIGN_RIGHT);
+		s->addWithDescription(_("TEMA ATUAL"),
+			_("Use o botao ALTERAR TEMA. A senha inicial exclusiva do tema e admin."), currentTheme);
+
+		s->addSubMenu(_("ALTERAR TEMA"), [this, s, themeChangeEnabled, window]
 		{
-			auto builtInTheme = std::make_shared<TextComponent>(mWindow, _("TurboRama (Built-in)"), theme->Text.font, theme->Text.color, ALIGN_RIGHT);
-			s->addWithDescription(_("THEME SET"), _("Protected built-in theme."), builtInTheme);
-		}
-		else if (!themeSets.empty())
-		{
-			auto selectedSet = themeSets.find(currentThemeSet);
-			if (selectedSet == themeSets.end())
-				selectedSet = themeSets.begin();
-
-			theme_set = std::make_shared<OptionListComponent<std::string> >(mWindow, _("THEME SET"), false);
-
-			std::vector<std::string> themeList;
-			for (auto it = themeSets.begin(); it != themeSets.end(); it++)
-				themeList.push_back(it->first);
-
-			std::sort(themeList.begin(), themeList.end(), [](const std::string& a, const std::string& b) -> bool { return Utils::String::toLower(a).compare(Utils::String::toLower(b)) < 0; });
-
-			for (auto themeName : themeList)
-				theme_set->add(themeName, themeName, themeName == selectedSet->first);
-
-			s->addWithLabel(_("THEME SET"), theme_set);
-		}
-
-		if (theme_set != nullptr)
-		{
-		s->addSaveFunc([s, theme_set, pthis, window, system]
-		{
-			std::string oldTheme = Settings::getInstance()->getString("ThemeSet");
-			if (oldTheme != theme_set->getSelected())
-			{			
-				saveSubsetSettings();
-
-				Settings::getInstance()->setString("ThemeSet", theme_set->getSelected());
-
-				// theme changed without setting options, forcing options to avoid crash/blank theme
-				Settings::getInstance()->setString("ThemeRegionName", "");
-				Settings::getInstance()->setString("ThemeColorSet", "");
-				Settings::getInstance()->setString("ThemeIconSet", "");
-				Settings::getInstance()->setString("ThemeMenu", "");
-				Settings::getInstance()->setString("ThemeSystemView", "");
-				Settings::getInstance()->setString("ThemeGamelistView", "");
-				Settings::getInstance()->setString("GamelistViewStyle", "");
-				Settings::getInstance()->setString("DefaultGridSize", "");
-
-				for(auto sm : Settings::getInstance()->getStringMap())
-					if (Utils::String::startsWith(sm.first, "subset."))
-						Settings::getInstance()->setString(sm.first, "");
-
-				for (auto sysIt = SystemData::sSystemVector.cbegin(); sysIt != SystemData::sSystemVector.cend(); sysIt++)
-					(*sysIt)->setSystemViewMode("automatic", Vector2f(0,0));
-
-				loadSubsetSettings(theme_set->getSelected());
-
-				s->setVariable("reloadCollections", true);
-				s->setVariable("reloadAll", true);
-				s->setVariable("reloadGuiMenu", true);
-
-				Scripting::fireEvent("theme-changed", theme_set->getSelected(), oldTheme);				
+			if (!themeChangeEnabled->getState())
+			{
+				window->pushGui(new GuiMsgBox(window,
+					_("ATIVE 'PERMITIR ALTERAR TEMA COM SENHA' PRIMEIRO."), _("OK"), nullptr));
+				return;
 			}
+
+			Settings::getInstance()->setBool("ThemeChangeEnabled", true);
+			Settings::getInstance()->saveFile();
+			pushSecretTextEdit(window, _("SENHA PARA ALTERAR TEMA"),
+				[this, s, window](const std::string& password)
+				{
+					if (!ThemeChangeAuth::verify(password))
+					{
+						window->pushGui(new GuiMsgBox(window, _("SENHA DO TEMA INCORRETA"), _("OK"), nullptr));
+						return;
+					}
+
+					window->postToUiThread([this, s] { openThemeSetSelection(s); });
+				});
 		});
-		}
 
 		bool showThemeConfiguration = system->getTheme()->hasSubsets() || system->getTheme()->hasView("grid");
 		if (showThemeConfiguration)

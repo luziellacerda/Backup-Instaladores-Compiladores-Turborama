@@ -104,18 +104,24 @@ std::string CarouselGameListView::getSelectedHeroCoverPath(FileData* file) const
 
 	const std::string directory = Utils::FileSystem::getParent(file->getPath());
 	const std::string stem = Utils::FileSystem::getStem(file->getPath());
-	const std::string mediaDirectory = Utils::FileSystem::combine(directory, "media/images");
+	const std::string revistaDirectory = Utils::FileSystem::combine(file->getSystem()->getStartPath(), "media/revista");
+	const std::string mediaDirectories[] = {
+		Utils::FileSystem::combine(revistaDirectory, Utils::FileSystem::getFileName(directory)),
+		revistaDirectory
+	};
 	const std::string extensions[] = { ".png", ".jpg", ".jpeg" };
 
-	for (const auto& extension : extensions)
+	for (const auto& mediaDirectory : mediaDirectories)
 	{
-		const std::string candidate = Utils::FileSystem::combine(mediaDirectory, stem + extension);
-		if (Utils::FileSystem::exists(candidate))
-			return candidate;
+		for (const auto& extension : extensions)
+		{
+			const std::string candidate = Utils::FileSystem::combine(mediaDirectory, stem + extension);
+			if (Utils::FileSystem::exists(candidate))
+				return candidate;
+		}
 	}
 
-	const std::string image = file->getImagePath();
-	return Utils::FileSystem::exists(image) ? image : "";
+	return "";
 }
 
 FileData* CarouselGameListView::getNeighbourGame(int offset)

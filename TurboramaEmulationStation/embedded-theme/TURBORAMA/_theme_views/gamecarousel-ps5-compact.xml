@@ -117,8 +117,9 @@
       <gamecarousel name="gamecarousel">
          <pos>0.038 0.067</pos>
          <size>0.924 0.285</size>
-         <logoSize>0.1172 0.760</logoSize>
-         <maxLogoCount>9</maxLogoCount>
+         <logoSize>${gc-carousel-logo-size}</logoSize>
+         <scaledLogoSpacing>${gc-carousel-logo-spacing}</scaledLogoSpacing>
+         <maxLogoCount>${gc-carousel-logo-count}</maxLogoCount>
       </gamecarousel>
 
       <image name="carouselAxis">
@@ -171,22 +172,32 @@
       </text>
 
       <image name="selectedHeroPageOuterFar">
+         <path>firstfile(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory({game:path}) + "/media/revista/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename({game:image}), directory({game:path}) + "/media/revista/" + {game:stem} + ".png", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg")</path>
+         <visible>${gc-snes-revista-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg"))</visible>
          <size>0.138 0.382</size>
          <offset>0.010 -0.031</offset>
       </image>
       <image name="selectedHeroPageOuterNear">
+         <path>firstfile(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory({game:path}) + "/media/revista/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename({game:image}), directory({game:path}) + "/media/revista/" + {game:stem} + ".png", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg")</path>
+         <visible>${gc-snes-revista-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg"))</visible>
          <size>0.148 0.408</size>
          <offset>0.010 -0.031</offset>
       </image>
       <image name="selectedHeroPageFar">
+         <path>firstfile(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory({game:path}) + "/media/revista/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename({game:image}), directory({game:path}) + "/media/revista/" + {game:stem} + ".png", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg")</path>
+         <visible>${gc-snes-revista-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg"))</visible>
          <size>0.159 0.432</size>
          <offset>0.010 -0.031</offset>
       </image>
       <image name="selectedHeroPageNear">
+         <path>firstfile(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory({game:path}) + "/media/revista/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename({game:image}), directory({game:path}) + "/media/revista/" + {game:stem} + ".png", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg")</path>
+         <visible>${gc-snes-revista-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg"))</visible>
          <size>0.170 0.456</size>
          <offset>0.010 -0.030</offset>
       </image>
       <image name="selectedHeroCover">
+         <path>firstfile(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory({game:path}) + "/media/revista/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image}), directory(directory({game:path})) + "/media/revista/" + filename({game:image}), directory({game:path}) + "/media/revista/" + {game:stem} + ".png", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg", directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg")</path>
+         <visible>${gc-snes-revista-enabled} &amp;&amp; (exists(directory({game:path}) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename(directory({game:image})) + "/" + filename({game:image})) || exists(directory(directory({game:path})) + "/media/revista/" + filename({game:image})) || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".png") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpg") || exists(directory({game:path}) + "/media/revista/" + {game:stem} + ".jpeg"))</visible>
          <size>0.172 0.480</size>
          <offset>0.018 -0.030</offset>
       </image>

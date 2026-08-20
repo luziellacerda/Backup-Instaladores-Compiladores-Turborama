@@ -348,6 +348,8 @@ void Settings::setDefaults()
 	mStringMap["UIMode_passkey"] = "aaaba";
 	mStringMap["DeveloperMenuPasswordHash"] = "";
 	mBoolMap["DeveloperMenuPasswordEnabled"] = true;
+	mStringMap["ThemeChangePasswordHash"] = "";
+	mBoolMap["ThemeChangeEnabled"] = false;
 	mBoolMap["ForceKiosk"] = false;
 	mBoolMap["ForceKid"] = false;
 	mBoolMap["ForceDisableFilters"] = false;
@@ -592,8 +594,11 @@ std::string Settings::getString(const std::string& name)
 
 bool Settings::setString(const std::string& name, const std::string& value)
 {
-	// The commercial build always uses the protected embedded TurboRama theme.
-	const std::string resolvedValue = name == "ThemeSet" ? "__turborama__" : value;
+	// O tema interno permanece travado por padrao. A interface so ativa
+	// ThemeChangeEnabled depois da liberacao administrativa e a troca ainda
+	// exige a credencial exclusiva do tema.
+	const bool forceEmbeddedTheme = name == "ThemeSet" && !getBool("ThemeChangeEnabled");
+	const std::string resolvedValue = forceEmbeddedTheme ? "__turborama__" : value;
 
 	if (mStringMap.count(name) == 0 || mStringMap[name] != resolvedValue)
 	{

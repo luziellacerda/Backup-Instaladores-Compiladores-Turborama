@@ -13,6 +13,16 @@
       <gc-design-name>SUPER NINTENDO</gc-design-name>
       <gc-highlight-label>SUPER NINTENDO  /  CLASSICOS</gc-highlight-label>
       <gc-library-label>SNES  /  BIBLIOTECA</gc-library-label>
+      <!-- Celulas do carrossel na proporcao horizontal das capas SNES (aprox. 4:3). -->
+      <gc-snes-proportional-cover>true</gc-snes-proportional-cover>
+      <gc-snes-revista-enabled>1</gc-snes-revista-enabled>
+      <!-- Compensado por engine-scale: lateral continua 0.160 x 0.640. -->
+      <gc-carousel-logo-size>0.13675 0.54701</gc-carousel-logo-size>
+      <gc-carousel-logo-spacing>1.850</gc-carousel-logo-spacing>
+      <gc-carousel-logo-count>7</gc-carousel-logo-count>
+      <gc-carousel-active-scale>1.170</gc-carousel-active-scale>
+      <gc-carousel-engine-scale>1.170</gc-carousel-engine-scale>
+      <gc-ps5-hud-opacity>0</gc-ps5-hud-opacity>
       <gc-accent-a>FFFFFFFF</gc-accent-a>
       <gc-accent-b>E50914FF</gc-accent-b>
       <gc-accent-c>FFB300FF</gc-accent-c>

@@ -20,9 +20,15 @@
       <gc-carousel-inactive-saturation>0.48</gc-carousel-inactive-saturation>
       <gc-carousel-active-y>0.415</gc-carousel-active-y>
       <gc-carousel-active-scale>1.240</gc-carousel-active-scale>
+      <gc-carousel-engine-scale>1.000</gc-carousel-engine-scale>
       <gc-carousel-active-tilt>-3</gc-carousel-active-tilt>
       <gc-carousel-deactive-tilt>2</gc-carousel-deactive-tilt>
       <gc-carousel-page-turn-enabled>false</gc-carousel-page-turn-enabled>
+      <gc-carousel-logo-size>0.1172 0.760</gc-carousel-logo-size>
+      <gc-carousel-logo-spacing>0.940</gc-carousel-logo-spacing>
+      <gc-carousel-logo-count>9</gc-carousel-logo-count>
+      <gc-snes-proportional-cover>false</gc-snes-proportional-cover>
+      <gc-snes-revista-enabled>0</gc-snes-revista-enabled>
       <gc-ps5-hud-opacity>1</gc-ps5-hud-opacity>
       <gc-ps5-hud-y-shift>-0.085</gc-ps5-hud-y-shift>
       <gc-ps5-hud-a>30D5FFFF</gc-ps5-hud-a>
