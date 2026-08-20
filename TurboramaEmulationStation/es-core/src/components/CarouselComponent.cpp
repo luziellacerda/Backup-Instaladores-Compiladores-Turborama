@@ -742,8 +742,11 @@ void CarouselComponent::prepareCellVideo(IList<CarouselComponentData, IBindable*
 		video->setDefaultZIndex(12060);
 		video->setOrigin(0.5f, 0.5f);
 		video->setPosition(mLogoSize.x() * 0.5f, mLogoSize.y() * 0.5f, 0.0f);
-		video->setMaxSize(mLogoSize.x() * mLogoScale * mCellVideoSize.x(),
-			mLogoSize.y() * mLogoScale * mCellVideoSize.y());
+		// The entry transform already applies the active/inactive carousel scale.
+		// Multiplying the player bounds by mLogoScale here as well makes landscape
+		// videos wider than their cell and removes the gap to adjacent entries.
+		video->setMaxSize(mLogoSize.x() * mCellVideoSize.x(),
+			mLogoSize.y() * mCellVideoSize.y());
 		video->setStartDelay((int)(mCellVideoDelay * 1000.0f));
 		video->setPlayAudio(mCellVideoAudio);
 		video->setRoundCorners(mCellVideoRoundCorners);
