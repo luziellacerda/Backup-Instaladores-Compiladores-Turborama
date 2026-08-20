@@ -96,6 +96,7 @@ SystemView::SystemView(Window* window) : GuiComponent(window),
 	mLastCursor = 0;
 	mFrontCarouselMaxVisible = 3;
 	mFrontCarouselVideoModeDirty = false;
+	mFrontCarouselVideoModePreview = false;
 	mExtrasFadeOldCursor = -1;
 
 	mSystemInfoDelay = 2000;
@@ -1989,6 +1990,8 @@ void SystemView::topWindow(bool isTop)
 {
 	mDisable = !isTop;
 	if (isTop)
+		mFrontCarouselVideoModePreview = false;
+	if (isTop)
 		syncFrontCarouselVideos();
 	else
 		hideFrontCarouselVideos();
@@ -2074,7 +2077,8 @@ void SystemView::finishCarouselVideoActivation()
 
 void SystemView::syncFrontCarouselVideos()
 {
-	if (!isShowing() || mScreensaverActive || mDisable)
+	if (!isShowing() || mScreensaverActive ||
+		(mDisable && !mFrontCarouselVideoModePreview))
 	{
 		hideFrontCarouselVideos();
 		return;
@@ -2131,6 +2135,7 @@ void SystemView::syncFrontCarouselVideos()
 void SystemView::invalidateFrontCarouselVideoMode()
 {
 	mFrontCarouselVideoModeDirty = true;
+	mFrontCarouselVideoModePreview = true;
 }
 
 void SystemView::showFrontCarouselVideo(SystemViewData& data, int index)

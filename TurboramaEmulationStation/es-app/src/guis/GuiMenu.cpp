@@ -4404,11 +4404,12 @@ void GuiMenu::openThemeConfiguration(Window* mWindow, GuiComponent* s, std::shar
 		// This setting must survive both BACK and START. Some menu stacks are
 		// destroyed directly by START, bypassing GuiSettings::close(), so persist
 		// the selected mode as soon as the option changes.
-		frontCarouselVideoMode->setSelectedChangedCallback([](const std::string& mode)
+		frontCarouselVideoMode->setSelectedChangedCallback([themeconfig](const std::string& mode)
 		{
 			Settings::getInstance()->setString("FrontSystemCarouselVideoMode", mode);
 			Settings::getInstance()->saveFile();
 			ViewController::get()->getSystemListView()->invalidateFrontCarouselVideoMode();
+			themeconfig->setVariable("reloadAll", true);
 		});
 
 		themeconfig->addGroup(_("TOOLS"));

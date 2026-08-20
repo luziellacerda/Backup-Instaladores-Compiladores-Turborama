@@ -153,6 +153,7 @@ private:
 	std::vector<SystemViewData>			mEntries;
 	int									mFrontCarouselMaxVisible;
 	bool								mFrontCarouselVideoModeDirty;
+	bool								mFrontCarouselVideoModePreview;
 
 	float			mCamOffset;
 	float			mExtrasCamOffset;
