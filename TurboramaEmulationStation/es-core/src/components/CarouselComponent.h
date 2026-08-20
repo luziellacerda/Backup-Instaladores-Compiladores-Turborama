@@ -16,6 +16,8 @@ class VideoComponent;
 struct CarouselComponentData
 {
 	std::shared_ptr<GuiComponent> logo;
+	std::shared_ptr<VideoComponent> cellVideo;
+	std::string cellVideoPath;
 };
 
 enum class CarouselImageSource
@@ -123,7 +125,9 @@ private:
 
 	void getCarouselFromTheme(const ThemeData::ThemeElement* elem);
 	void configureCellVideo();
-	void refreshCellVideo(bool preserveExistingWhenUnavailable = false);
+	void refreshCellVideo();
+	void prepareCellVideo(IList<CarouselComponentData, IBindable*>::Entry& entry);
+	void releaseCellVideo(CarouselComponentData& data);
 	void stopCellVideo();
 
 	void renderCarousel(const Transform4x4f& parentTrans);	
@@ -172,19 +176,12 @@ private:
 
 	float			mScaledSpacing;
 
-	// A single native VLC player is rendered with the selected logo transform.
-	// This keeps video playback inside the carousel cell without creating a
-	// decoder for every item template.
-	VideoComponent*	mCellVideo;
 	bool			mCellVideoEnabled;
 	bool			mCellVideoFoldersOnly;
-	bool			mCellVideoAvailable;
-	int				mCellVideoIndex;
 	bool			mCellVideoAudio;
 	float			mCellVideoDelay;
 	float			mCellVideoRoundCorners;
 	Vector2f		mCellVideoSize;
-	std::string		mCellVideoPath;
 
 	// Mouse support
 	int				mPressedCursor;

@@ -62,11 +62,8 @@ CarouselComponent::CarouselComponent(Window* window) :
 	mAnyLogoHasScaleStoryboard = false;
 	mAnyLogoHasOpacityStoryboard = false;
 
-	mCellVideo = nullptr;
 	mCellVideoEnabled = false;
 	mCellVideoFoldersOnly = true;
-	mCellVideoAvailable = false;
-	mCellVideoIndex = -1;
 	mCellVideoAudio = false;
 	mCellVideoDelay = 0.0f;
 	mCellVideoRoundCorners = 0.0f;
@@ -75,13 +72,7 @@ CarouselComponent::CarouselComponent(Window* window) :
 
 CarouselComponent::~CarouselComponent()
 {
-	if (mCellVideo != nullptr)
-	{
-		removeChild(mCellVideo);
-		delete mCellVideo;
-		mCellVideo = nullptr;
-	}
-
+	stopCellVideo();
 	clearEntries();
 }
 
@@ -194,19 +185,15 @@ void CarouselComponent::update(int deltaTime)
 		const std::shared_ptr<GuiComponent> &comp = mEntries.at(i).data.logo;
 		if (comp != nullptr)
 			comp->update(deltaTime);
+
+		const std::shared_ptr<VideoComponent>& video = mEntries.at(i).data.cellVideo;
+		if (video != nullptr)
+			video->update(deltaTime);
 	}
 	
 	listUpdate(deltaTime);	
 
 	GuiComponent::update(deltaTime);
-
-	// A cell player can be interrupted externally by VLC resource management.
-	// Keep the selected folder alive without rebuilding or changing its path.
-	if (mCellVideoAvailable && mCellVideo != nullptr &&
-		mCellVideoIndex == mCursor && !isAnimationPlaying(0) &&
-		Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying") &&
-		!mCellVideo->isPlaying())
-		mCellVideo->resumePlayback();
 
 }
 
@@ -242,7 +229,7 @@ void CarouselComponent::onCursorChanged(const CursorState& state)
 		// A movement callback already owns the video hand-off. Do not interrupt it
 		// when releasing the key before the carousel animation has completed.
 		if (state == CURSOR_STOPPED && !isAnimationPlaying(0))
-			refreshCellVideo(false);
+			refreshCellVideo();
 
 		mLastCursorState = state;
 		return;
@@ -259,8 +246,8 @@ void CarouselComponent::onCursorChanged(const CursorState& state)
 			transition_style = "slide";
 	}
 	
-	// Video mode keeps the player attached to the previous cell until the
-	// movement ends. Image mode has no player: its bound cover moves normally.
+	// Every visible folder owns its player. Image mode releases all of them and
+	// leaves the bound static covers moving with their cells.
 	if (!Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying"))
 		stopCellVideo();
 
@@ -363,10 +350,9 @@ void CarouselComponent::onCursorChanged(const CursorState& state)
 	mLastCursor = mCursor;
 	mLastCursorState = state;
 
-	// Repeated moves keep the original player attached during the animation. At
-	// the end, settle it on the current center cell; a non-folder target reveals
-	// the static cover left in the item template instead of retaining an orphan.
-	setAnimation(anim, 0, [this] { refreshCellVideo(false); });
+	// Players are never transferred between entries. The completion callback only
+	// refreshes their state; each video remains owned by its original folder cell.
+	setAnimation(anim, 0, [this] { refreshCellVideo(); });
 }
 
 void CarouselComponent::render(const Transform4x4f& parentTrans)
@@ -517,11 +503,14 @@ void CarouselComponent::renderCarousel(const Transform4x4f& trans)
 		bufferRight = 0;
 	}
 
-	auto renderLogo = [this, carouselTrans, logoSpacing, xOff, yOff](int i)
+	std::vector<bool> renderedEntries(mEntries.size(), false);
+
+	auto renderLogo = [this, carouselTrans, logoSpacing, xOff, yOff, &renderedEntries](int i)
 	{
 		int index = i % (int)mEntries.size();
 		if (index < 0)
 			index += (int)mEntries.size();
+		renderedEntries[index] = true;
 
 		Transform4x4f logoTrans = carouselTrans;
 
@@ -550,9 +539,11 @@ void CarouselComponent::renderCarousel(const Transform4x4f& trans)
 		int opacity = (int)Math::round(opref + ((0xFF - opref) * (1.0f - fabs(distance))));
 		opacity = Math::max((int)opref, opacity);
 
-		ensureLogo(mEntries.at(index));
+		auto& entry = mEntries.at(index);
+		ensureLogo(entry);
+		prepareCellVideo(entry);
 
-		const std::shared_ptr<GuiComponent> &comp = mEntries.at(index).data.logo;
+		const std::shared_ptr<GuiComponent> &comp = entry.data.logo;
 		if (mType == CarouselType::VERTICAL_WHEEL || mType == CarouselType::HORIZONTAL_WHEEL)
 		{
 			comp->setRotationDegrees(mLogoRotation * distance);
@@ -567,15 +558,16 @@ void CarouselComponent::renderCarousel(const Transform4x4f& trans)
 		
 		comp->render(logoTrans);
 
-		// The video uses the exact same transform as the selected logo. Rendering
-		// it here (instead of as a screen overlay) makes it a real part of the
-		// center carousel cell, including clipping and carousel movement.
-		if (index == mCellVideoIndex && mCellVideo != nullptr && mCellVideoAvailable)
+		// Each folder owns a distinct player. It therefore keeps the same transform
+		// and content while moving instead of jumping to the next carousel entry.
+		const std::shared_ptr<VideoComponent>& video = entry.data.cellVideo;
+		if (video != nullptr)
 		{
-			mCellVideo->setOrigin(comp->getOrigin());
-			mCellVideo->setPosition(comp->getPosition());
-			mCellVideo->setScale(comp->getScale());
-			mCellVideo->render(logoTrans);
+			video->setOrigin(comp->getOrigin());
+			video->setPosition(comp->getPosition());
+			video->setScale(comp->getScale());
+			video->setOpacity(comp->getOpacity());
+			video->render(logoTrans);
 		}
 	};
 
@@ -595,6 +587,12 @@ void CarouselComponent::renderCarousel(const Transform4x4f& trans)
 	
 	for (auto activePos : activePositions)
 		renderLogo(activePos);
+
+	// Release decoders as soon as their cells leave the rendered carousel range.
+	// The entry retains its static cover and recreates only its own player later.
+	for (int index = 0; index < (int)mEntries.size(); index++)
+		if (!renderedEntries[index] && mEntries[index].data.cellVideo != nullptr)
+			releaseCellVideo(mEntries[index].data);
 }
 
 void CarouselComponent::getCarouselFromTheme(const ThemeData::ThemeElement* elem)
@@ -705,45 +703,85 @@ void CarouselComponent::getCarouselFromTheme(const ThemeData::ThemeElement* elem
 
 void CarouselComponent::configureCellVideo()
 {
-	if (!mCellVideoEnabled)
-	{
-		if (mCellVideo != nullptr)
-		{
-			stopCellVideo();
-			removeChild(mCellVideo);
-			delete mCellVideo;
-			mCellVideo = nullptr;
-		}
+	if (!mCellVideoEnabled ||
+		!Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying"))
+		stopCellVideo();
+}
 
+void CarouselComponent::prepareCellVideo(IList<CarouselComponentData, IBindable*>::Entry& entry)
+{
+	if (!mCellVideoEnabled || entry.object == nullptr ||
+		!Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying") ||
+		!isShowing() || mScreensaverActive || mDisable)
+	{
+		releaseCellVideo(entry.data);
 		return;
 	}
 
-	if (mCellVideo == nullptr)
+	const bool isFolder = entry.object->getProperty("isFolder").toBoolean();
+	if (mCellVideoFoldersOnly && !isFolder)
 	{
-		auto video = new VideoVlcComponent(mWindow);
+		releaseCellVideo(entry.data);
+		return;
+	}
+
+	const std::string videoPath = entry.object->getProperty("carouselVideo").toString();
+	const bool available = !videoPath.empty() && Utils::FileSystem::exists(videoPath);
+
+	if (!available)
+	{
+		releaseCellVideo(entry.data);
+		return;
+	}
+
+	if (entry.data.cellVideo == nullptr)
+	{
+		auto video = std::make_shared<VideoVlcComponent>(mWindow);
 		video->setEffect(VideoVlcFlags::SIZE);
 		video->setTag("carouselCellVideo");
 		video->setDefaultZIndex(12060);
-		video->setVisible(false);
-		addChild(video);
-		mCellVideo = video;
-
-		if (isShowing())
-			mCellVideo->onShow();
+		video->setOrigin(0.5f, 0.5f);
+		video->setPosition(mLogoSize.x() * 0.5f, mLogoSize.y() * 0.5f, 0.0f);
+		video->setMaxSize(mLogoSize.x() * mLogoScale * mCellVideoSize.x(),
+			mLogoSize.y() * mLogoScale * mCellVideoSize.y());
+		video->setStartDelay((int)(mCellVideoDelay * 1000.0f));
+		video->setPlayAudio(mCellVideoAudio);
+		video->setRoundCorners(mCellVideoRoundCorners);
+		video->setVisible(true);
+		video->onShow();
+		entry.data.cellVideo = video;
 	}
 
-	mCellVideo->setOrigin(0.5f, 0.5f);
-	mCellVideo->setPosition(mLogoSize.x() * 0.5f, mLogoSize.y() * 0.5f, 0.0f);
-	mCellVideo->setMaxSize(mLogoSize.x() * mLogoScale * mCellVideoSize.x(),
-		mLogoSize.y() * mLogoScale * mCellVideoSize.y());
-	mCellVideo->setStartDelay((int)(mCellVideoDelay * 1000.0f));
-	mCellVideo->setPlayAudio(mCellVideoAudio);
-	mCellVideo->setRoundCorners(mCellVideoRoundCorners);
+	if (entry.data.cellVideoPath != videoPath)
+	{
+		entry.data.cellVideo->stopPlayback();
+		entry.data.cellVideo->setVideo(videoPath);
+		entry.data.cellVideoPath = videoPath;
+		LOG(LogInfo) << "[CarouselCellVideo] playing cell " << entry.name << ": " << videoPath;
+	}
+
+	entry.data.cellVideo->setVisible(true);
+	if (!entry.data.cellVideo->isPlaying())
+		entry.data.cellVideo->resumePlayback();
+	entry.data.cellVideo->update(0);
 }
 
-void CarouselComponent::refreshCellVideo(bool preserveExistingWhenUnavailable)
+void CarouselComponent::releaseCellVideo(CarouselComponentData& data)
 {
-	if (!mCellVideoEnabled || mCellVideo == nullptr ||
+	if (data.cellVideo == nullptr)
+		return;
+
+	data.cellVideo->stopPlayback();
+	data.cellVideo->setVideo("");
+	data.cellVideo->setVisible(false);
+	data.cellVideo->onHide();
+	data.cellVideo.reset();
+	data.cellVideoPath.clear();
+}
+
+void CarouselComponent::refreshCellVideo()
+{
+	if (!mCellVideoEnabled ||
 		!Settings::getInstance()->getBool("CarouselCellVideoKeepPlaying") ||
 		!isShowing() || mScreensaverActive || mDisable)
 	{
@@ -751,57 +789,17 @@ void CarouselComponent::refreshCellVideo(bool preserveExistingWhenUnavailable)
 		return;
 	}
 
-	IBindable* object = getActiveObject();
-	if (object == nullptr)
-	{
-		stopCellVideo();
-		return;
-	}
-
-	const bool isFolder = object->getProperty("isFolder").toBoolean();
-	const std::string videoPath = object->getProperty("carouselVideo").toString();
-	const bool available = (!mCellVideoFoldersOnly || isFolder) &&
-		!videoPath.empty() && Utils::FileSystem::exists(videoPath);
-
-	if (!available)
-	{
-		// In video mode, keep the previous folder cell animated while neighboring
-		// cells are selected. Image mode is rendered by the item template instead.
-		if (preserveExistingWhenUnavailable && mCellVideoAvailable)
-			return;
-
-		stopCellVideo();
-		return;
-	}
-
-	if (mCellVideoPath != videoPath)
-	{
-		mCellVideo->stopPlayback();
-		mCellVideo->setVideo(videoPath);
-	}
-
-	mCellVideoPath = videoPath;
-	mCellVideoAvailable = true;
-	mCellVideoIndex = mCursor;
-	mCellVideo->setVisible(true);
-	mCellVideo->resumePlayback();
-	mCellVideo->update(0);
-	LOG(LogInfo) << "[CarouselCellVideo] playing selected cell: " << videoPath;
+	// Do not transfer a player here. Visible entries are refreshed independently
+	// by renderCarousel, preserving the ownership of every folder cell.
+	for (auto& entry : mEntries)
+		if (entry.data.cellVideo != nullptr && !entry.data.cellVideo->isPlaying())
+			entry.data.cellVideo->resumePlayback();
 }
 
 void CarouselComponent::stopCellVideo()
 {
-	mCellVideoAvailable = false;
-	mCellVideoIndex = -1;
-	mCellVideoPath.clear();
-
-	if (mCellVideo == nullptr)
-		return;
-
-	mCellVideo->stopPlayback();
-	mCellVideo->setVideo("");
-	mCellVideo->setVisible(false);
-	mCellVideo->update(0);
+	for (auto& entry : mEntries)
+		releaseCellVideo(entry.data);
 }
 
 void CarouselComponent::onShow()
@@ -821,6 +819,10 @@ void CarouselComponent::onShow()
 		auto logo = mEntries.at(i).data.logo;
 		if (logo)
 			logo->onShow();
+
+		auto video = mEntries.at(i).data.cellVideo;
+		if (video)
+			video->onShow();
 	}
 
 	if (mCursor >= 0 && mCursor < mEntries.size())
@@ -873,8 +875,6 @@ void CarouselComponent::onScreenSaverActivate()
 {
 	mScreensaverActive = true;
 	stopCellVideo();
-	if (mCellVideo)
-		mCellVideo->onScreenSaverActivate();
 	for (auto& entry : mEntries)
 		if (entry.data.logo)
 			entry.data.logo->onScreenSaverActivate();
@@ -883,8 +883,6 @@ void CarouselComponent::onScreenSaverActivate()
 void CarouselComponent::onScreenSaverDeactivate()
 {
 	mScreensaverActive = false;
-	if (mCellVideo)
-		mCellVideo->onScreenSaverDeactivate();
 	refreshCellVideo();
 	for (auto& entry : mEntries)
 		if (entry.data.logo)
@@ -894,8 +892,6 @@ void CarouselComponent::onScreenSaverDeactivate()
 void CarouselComponent::topWindow(bool isTop)
 {
 	mDisable = !isTop;
-	if (mCellVideo)
-		mCellVideo->topWindow(isTop);
 	if (isTop)
 		refreshCellVideo();
 	else
