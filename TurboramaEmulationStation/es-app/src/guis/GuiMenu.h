@@ -46,10 +46,20 @@ public:
         static void openCreditSettings_static(Window* window);
         #endif
 
+        #ifdef TURBORAMA_NO_COMMERCIAL_SERVICES
+        // F11 conserva somente as acoes gerais do sistema, sem o painel comercial.
+        static void requestTurboSystemMenuAccess_static(Window* window);
+        #endif
+
         // Menu Start protegido por senha admin
         static void requestMainMenuAccess_static(Window* window);
 
 private:
+        #ifdef TURBORAMA_NO_COMMERCIAL_SERVICES
+        // Somente o fluxo autenticado acima pode abrir as acoes privilegiadas.
+        static void openTurboSystemMenu_static(Window* window);
+        #endif
+
         void addEntry(const std::string& name, bool add_arrow, const std::function<void()>& func, const std::string iconName = "");
         void addVersionInfo();
         void openCollectionSystemSettings();

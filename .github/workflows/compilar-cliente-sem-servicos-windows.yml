@@ -107,6 +107,7 @@ jobs:
             -DRETROBAT=OFF `
             -DBATOCERA=OFF `
             -DTURBORAMA_ENABLE_COMMERCIAL_SERVICES=OFF `
+            -DTURBORAMA_RELEASE_HARDENING=ON `
             -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=FALSE `
             -DCMAKE_SYSTEM_VERSION=10.0.26100.0
           if ($LASTEXITCODE -ne 0) {
@@ -130,7 +131,7 @@ jobs:
             throw "Executavel nao foi gerado em $exe."
           }
 
-      - name: Confirmar que PIX, locadora e controle de tempo nao foram compilados
+      - name: Confirmar servicos removidos e otimizacoes preservadas
         working-directory: TurboramaEmulationStation
         run: |
           $ErrorActionPreference = 'Stop'
@@ -380,7 +381,7 @@ jobs:
             & gh release edit $env:RELEASE_TAG `
               --repo $env:GITHUB_REPOSITORY `
               --title "CLIENTE SEM SERVICOS - Windows x64" `
-              --notes-file $notes --prerelease
+              --notes-file $notes --prerelease=false --latest=false
           }
           else {
             & gh release create $env:RELEASE_TAG `
@@ -388,7 +389,7 @@ jobs:
               --repo $env:GITHUB_REPOSITORY `
               --target $env:GITHUB_SHA `
               --title "CLIENTE SEM SERVICOS - Windows x64" `
-              --notes-file $notes --prerelease
+              --notes-file $notes --latest=false
           }
           if ($LASTEXITCODE -ne 0) {
             throw 'Falha ao publicar o release.'

@@ -60,6 +60,7 @@
 #include "guis/GuiBluetoothPair.h"
 #include "guis/GuiBluetoothDevices.h"
 #include "DeveloperMenuAuth.h"
+#include "MainMenuAuth.h"
 #include "ThemeChangeAuth.h"
 #include "EmbeddedTheme.h"
 #include "scrapers/ThreadedScraper.h"
@@ -334,55 +335,90 @@ namespace
 		});
 	}
 
-	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
+	bool verifyStartMenuPassword(const std::string& password)
+	{
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
+		return CreditManager::getInstance().verifyAdminPassword(password);
+#else
+		return MainMenuAuth::verify(password);
+#endif
+	}
+
+	bool setStartMenuPassword(const std::string& password)
+	{
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
+		return CreditManager::getInstance().setAdminPassword(password);
+#else
+		return MainMenuAuth::setPassword(password);
+#endif
+	}
+
+	bool isUsingDefaultStartMenuPassword()
+	{
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
+		return CreditManager::getInstance().isUsingDefaultAdminPassword();
+#else
+		return MainMenuAuth::isUsingDefaultPassword();
+#endif
+	}
+
+	void requestStartMenuPasswordChange(Window* window, const std::function<void()>& onSaved)
+	{
+		pushSecretTextEdit(window, _("NOVA SENHA ADMIN"), [window, onSaved](const std::string& password)
+		{
+			const std::string normalizedPassword = Utils::String::trim(password);
+			if (normalizedPassword.size() < 8)
+			{
+				window->pushGui(new GuiMsgBox(window,
+					_("SENHA INVALIDA. USE NO MINIMO 8 CARACTERES."), _("OK"), nullptr));
+				return;
+			}
+
+			window->postToUiThread([window, onSaved, normalizedPassword]
+			{
+				pushSecretTextEdit(window, _("CONFIRME A NOVA SENHA ADMIN"),
+					[window, onSaved, normalizedPassword](const std::string& confirmation)
+					{
+						if (Utils::String::trim(confirmation) != normalizedPassword)
+						{
+							window->pushGui(new GuiMsgBox(window,
+								_("AS SENHAS NAO COINCIDEM. A SENHA NAO FOI ALTERADA."),
+								_("OK"), nullptr));
+							return;
+						}
+
+						if (!setStartMenuPassword(normalizedPassword))
+						{
+							window->pushGui(new GuiMsgBox(window,
+								_("NAO FOI POSSIVEL GRAVAR A NOVA SENHA."), _("OK"), nullptr));
+							return;
+						}
+
+						window->displayNotificationMessage(_("Senha admin protegida com sucesso"));
+						if (onSaved)
+							window->postToUiThread(onSaved);
+					});
+			});
+		});
+	}
+
 	void requireNonDefaultAdminPassword(Window* window, const std::function<void()>& onReady)
 	{
-		if (!CreditManager::getInstance().isUsingDefaultAdminPassword())
+		if (!isUsingDefaultStartMenuPassword())
 		{
 			onReady();
 			return;
 		}
 
-		auto requestNewPassword = [window, onReady] {
-			auto onNewPassword = [window, onReady](const std::string& password) {
-				if (password.size() < 8)
-				{
-					window->pushGui(new GuiMsgBox(window,
-						_("SENHA INVALIDA. USE NO MINIMO 8 CARACTERES."), _("OK"), nullptr));
-					return;
-				}
-				window->postToUiThread([window, onReady, password] {
-					pushSecretTextEdit(window, _("CONFIRME A NOVA SENHA ADMIN"),
-						[window, onReady, password](const std::string& confirmation) {
-							if (confirmation != password)
-							{
-								window->pushGui(new GuiMsgBox(window,
-									_("AS SENHAS NAO COINCIDEM. A SENHA NAO FOI ALTERADA."),
-									_("OK"), nullptr));
-								return;
-							}
-							if (!CreditManager::getInstance().setAdminPassword(password))
-							{
-								window->pushGui(new GuiMsgBox(window,
-									_("NAO FOI POSSIVEL GRAVAR A NOVA SENHA."), _("OK"), nullptr));
-								return;
-							}
-							window->displayNotificationMessage(_("Senha admin protegida com sucesso"));
-							window->postToUiThread(onReady);
-						});
-				});
-			};
-			pushSecretTextEdit(window, _("NOVA SENHA ADMIN"), onNewPassword);
-		};
-
 		window->pushGui(new GuiMsgBox(window,
 			_("A SENHA PADRAO 'admin' E INSEGURA. DEFINA AGORA UMA NOVA SENHA COM NO MINIMO 8 CARACTERES PARA CONTINUAR."),
-			_("TROCAR AGORA"), [window, requestNewPassword] {
-				window->postToUiThread(requestNewPassword);
+			_("TROCAR AGORA"), [window, onReady] {
+				window->postToUiThread([window, onReady] {
+					requestStartMenuPasswordChange(window, onReady);
+				});
 			},
 			_("CANCELAR"), nullptr));
 	}
-	#endif
 }
 
 void GuiMenu::requestMainMenuAccess_static(Window* window)
@@ -394,10 +430,9 @@ void GuiMenu::requestMainMenuAccess_static(Window* window)
 	if (dynamic_cast<GuiMenu*>(window->peekGui()) != nullptr)
 		return;
 
-#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	auto onPasswordEntered = [window](const std::string& password)
 	{
-		if (!CreditManager::getInstance().verifyAdminPassword(password))
+		if (!verifyStartMenuPassword(password))
 		{
 			window->pushGui(new GuiMsgBox(window, _("SENHA INCORRETA"), _("OK"), nullptr));
 			return;
@@ -417,13 +452,114 @@ void GuiMenu::requestMainMenuAccess_static(Window* window)
 		window->pushGui(new GuiTextEditPopupKeyboard(window, _("SENHA MENU START"), "", onPasswordEntered, false, "OK", true));
 	else
 		window->pushGui(new GuiTextEditPopup(window, _("SENHA MENU START"), "", onPasswordEntered, false, "OK", true));
-#else
-	// The former password lived in CreditManager. In the customer profile the
-	// complete rental/accounting service is absent, so START opens the normal
-	// EmulationStation menu directly.
-	window->pushGui(new GuiMenu(window));
-#endif
 }
+
+#ifdef TURBORAMA_NO_COMMERCIAL_SERVICES
+void GuiMenu::requestTurboSystemMenuAccess_static(Window* window)
+{
+	if (window == nullptr)
+		return;
+
+	auto onPasswordEntered = [window](const std::string& password)
+	{
+		if (!verifyStartMenuPassword(password))
+		{
+			window->pushGui(new GuiMsgBox(window, _("SENHA INCORRETA"), _("OK"), nullptr));
+			return;
+		}
+
+		// Abrir no proximo frame, depois de o teclado fechar, e conservar a
+		// mesma troca obrigatoria da senha padrao usada pelo menu START.
+		window->postToUiThread([window]
+		{
+			requireNonDefaultAdminPassword(window, [window]
+			{
+				window->postToUiThread([window]
+				{
+					openTurboSystemMenu_static(window);
+				});
+			});
+		});
+	};
+
+	if (Settings::getInstance()->getBool("UseOSK"))
+		window->pushGui(new GuiTextEditPopupKeyboard(window, _("SENHA PAINEL F11"), "", onPasswordEntered, false, "OK", true));
+	else
+		window->pushGui(new GuiTextEditPopup(window, _("SENHA PAINEL F11"), "", onPasswordEntered, false, "OK", true));
+}
+
+void GuiMenu::openTurboSystemMenu_static(Window* window)
+{
+	if (window == nullptr)
+		return;
+
+	auto menu = new GuiSettings(window, _("TURBO SISTEMA").c_str());
+#ifdef WIN32
+	menu->addEntry(_("ABRIR TURBO SISTEMA..."), false, [window]
+	{
+		window->pushGui(new GuiMsgBox(window,
+			_("Abrir o Turbo Sistema (ambiente do sistema)?\n\nPode voltar ao EmulationStation depois."),
+			_("SIM, ABRIR"), [window]
+			{
+				window->displayNotificationMessage(_("A abrir Turbo Sistema..."), 2);
+				Utils::Platform::ProcessStartInfo explorer("explorer.exe");
+				explorer.waitForExit = false;
+				explorer.showWindow = true;
+				if (explorer.run() != 0)
+				{
+					Utils::Platform::ProcessStartInfo shell("C:\\Windows\\explorer.exe");
+					shell.waitForExit = false;
+					shell.showWindow = true;
+					shell.run();
+				}
+			},
+			_("NAO"), nullptr));
+	}, "iconSystem");
+
+	menu->addEntry(_("TROCAR DE USUARIO..."), false, [window]
+	{
+		window->pushGui(new GuiMsgBox(window,
+			_("Trocar de usuario?\n\nA sessao atual sera desligada e aparecera a tela de contas."),
+			_("SIM, TROCAR"), [window]
+			{
+				window->displayNotificationMessage(_("A trocar de usuario..."), 2);
+				Utils::Platform::ProcessStartInfo switchUser("C:\\Windows\\System32\\tsdiscon.exe");
+				switchUser.waitForExit = false;
+				switchUser.showWindow = false;
+				if (switchUser.run() != 0)
+				{
+					Utils::Platform::ProcessStartInfo logoff("shutdown /l");
+					logoff.waitForExit = false;
+					logoff.showWindow = false;
+					logoff.run();
+				}
+			},
+			_("NAO"), nullptr));
+	}, "iconSystem");
+
+	menu->addEntry(_("ENCERRAR PROCESSO..."), false, [window]
+	{
+		window->pushGui(new GuiMsgBox(window,
+			_("Encerrar o processo do EmulationStation?\n\nO computador permanecera ligado."),
+			_("SIM, ENCERRAR"), [window]
+			{
+				if (Utils::Platform::quitES(Utils::Platform::QuitMode::EXIT_ONLY) != 0)
+				{
+					window->pushGui(new GuiMsgBox(window,
+						_("Nao foi possivel preparar a saida segura.\n\n"
+							"O EmulationStation continuara aberto e o computador nao sera desligado."),
+						_("OK"), nullptr));
+				}
+			},
+			_("NAO"), nullptr));
+	}, "iconQuit");
+#else
+	menu->addEntry(_("ACOES DISPONIVEIS SOMENTE NO WINDOWS"), false, nullptr, "iconSystem");
+#endif
+
+	window->pushGui(menu);
+}
+#endif
 
 #ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 void GuiMenu::requestCreditSettingsAccess_static(Window* window)
@@ -1227,6 +1363,13 @@ void GuiMenu::openDeveloperSettings()
 		DeveloperMenuAuth::setPassword(newVal);
 		Settings::getInstance()->saveFile();
 	});
+
+#ifdef TURBORAMA_NO_COMMERCIAL_SERVICES
+	s->addEntry(_("ALTERAR SENHA DO MENU START"), true, [window]
+	{
+		requestStartMenuPasswordChange(window, std::function<void()>());
+	});
+#endif
 	
 	s->addGroup(_("VIDEO OPTIONS"));
 

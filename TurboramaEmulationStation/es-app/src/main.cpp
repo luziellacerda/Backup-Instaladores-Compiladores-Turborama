@@ -49,6 +49,9 @@
 #include "utils/ThreadPool.h"
 #include "resources/ProtectedDecorations.h"
 #include "resources/ResourceManager.h"
+#ifdef TURBORAMA_NO_COMMERCIAL_SERVICES
+#include "MainMenuAuth.h"
+#endif
 #ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 #include "CreditManager.h"
 #include "CreditWarningOverlay.h"
@@ -529,6 +532,14 @@ int main(int argc, char* argv[])
 		return 33;
 #endif
 	}
+#ifdef TURBORAMA_NO_COMMERCIAL_SERVICES
+	if (argc == 2 && strcmp(argv[1], "--main-menu-auth-self-test") == 0)
+	{
+		const bool passed = MainMenuAuth::runSelfTest();
+		fprintf(passed ? stdout : stderr, "MAIN_MENU_AUTH_TEST=%s\n", passed ? "OK" : "FAILED");
+		return passed ? 0 : 35;
+	}
+#endif
 #ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	if (argc == 2 && strcmp(argv[1], "--credit-warning-overlay-self-test") == 0)
 	{
@@ -605,6 +616,31 @@ int main(int argc, char* argv[])
 		if (!created)
 			Utils::FileSystem::writeAllText(Utils::FileSystem::combine(argv[2], "pix-create-error.txt"), error);
 		return created ? 0 : 21;
+	}
+#else
+	// Do not let a stale PIX/credit shortcut silently fall through to the GUI in
+	// the customer build. These commands belong exclusively to the commercial
+	// profile and are rejected before the normal argument parser starts.
+	if (argc >= 2)
+	{
+		const char* disabledCommercialCommands[] = {
+			"--credit-warning-overlay-self-test",
+			"--pix-agent-manager-self-test",
+			"--pix-agent-trust-self-test",
+			"--pix-agent-start-once",
+			"--pix-verify-event",
+			"--pix-test-qr-cache",
+			"--pix-process-once",
+			"--pix-create-request"
+		};
+		for (const char* command : disabledCommercialCommands)
+		{
+			if (strcmp(argv[1], command) == 0)
+			{
+				fprintf(stderr, "TURBORAMA_COMMERCIAL_COMMAND_DISABLED=%s\n", command);
+				return 34;
+			}
+		}
 	}
 #endif
 
@@ -977,6 +1013,12 @@ int main(int argc, char* argv[])
 									? _("Nao foi possivel zerar o credito AVULSO.")
 									: _("Credito AVULSO ZERADO (F12)."), 4);
 						}
+						continue;
+					}
+#else
+					if (k == SDLK_F11)
+					{
+						GuiMenu::requestTurboSystemMenuAccess_static(&window);
 						continue;
 					}
 #endif

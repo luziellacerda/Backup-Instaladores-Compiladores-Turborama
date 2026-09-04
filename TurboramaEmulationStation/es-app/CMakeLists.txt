@@ -58,6 +58,7 @@ set(ES_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SaveStateConfigFile.h    
 	${CMAKE_CURRENT_SOURCE_DIR}/src/CustomFeatures.h
 	${CMAKE_CURRENT_SOURCE_DIR}/src/DeveloperMenuAuth.h
+	${CMAKE_CURRENT_SOURCE_DIR}/src/MainMenuAuth.h
 	${CMAKE_CURRENT_SOURCE_DIR}/src/ThemeChangeAuth.h
 
     # GuiComponents    
@@ -169,6 +170,7 @@ set(ES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SaveStateConfigFile.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/CustomFeatures.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/DeveloperMenuAuth.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/MainMenuAuth.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/ThemeChangeAuth.cpp
 
     # GuiComponents    
@@ -344,6 +346,9 @@ endif()
 # define target
 include_directories(${COMMON_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_executable(emulationstation ${ES_SOURCES} ${ES_HEADERS})
+if(NOT TURBORAMA_ENABLE_COMMERCIAL_SERVICES)
+	target_compile_definitions(emulationstation PRIVATE TURBORAMA_NO_COMMERCIAL_SERVICES=1)
+endif()
 target_link_libraries(emulationstation ${COMMON_LIBRARIES} es-core)
 if(MSVC)
 	add_dependencies(emulationstation turborama_embedded_theme)

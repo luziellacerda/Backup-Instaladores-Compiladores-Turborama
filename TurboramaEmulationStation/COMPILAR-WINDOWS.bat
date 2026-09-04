@@ -99,7 +99,7 @@ if exist build\CMakeCache.txt (
   mkdir build 2>nul
 )
 
-"%CMAKE_EXE%" -S . -B build -G "Visual Studio 17 2022" -A x64 -DTURBORAMA_ENABLE_COMMERCIAL_SERVICES=OFF
+"%CMAKE_EXE%" -S . -B build -G "Visual Studio 17 2022" -A x64 -DTURBORAMA_ENABLE_COMMERCIAL_SERVICES=OFF -DTURBORAMA_RELEASE_HARDENING=ON
 if errorlevel 1 (
   echo.
   echo [ERRO] cmake configure falhou.

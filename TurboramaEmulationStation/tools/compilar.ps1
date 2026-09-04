@@ -390,7 +390,8 @@ function Invoke-CMakeConfigure {
         '-S', $Root,
         '-B', $BuildDir,
         '-A', 'x64',
-        '-DTURBORAMA_ENABLE_COMMERCIAL_SERVICES=OFF'
+        '-DTURBORAMA_ENABLE_COMMERCIAL_SERVICES=OFF',
+        '-DTURBORAMA_RELEASE_HARDENING=ON'
     ) -StepId 3 -OnLine $onLine
 
     if ($exitCode -ne 0) {

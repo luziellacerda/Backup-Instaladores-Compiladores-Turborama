@@ -23,11 +23,15 @@ option(TURBORAMA_ENABLE_COMMERCIAL_SERVICES
 	"Enable TurboRama PIX, credit, accounting and rental-time services" OFF)
 
 if(NOT TURBORAMA_ENABLE_COMMERCIAL_SERVICES)
-	add_definitions(-DTURBORAMA_NO_COMMERCIAL_SERVICES=1)
 	message(STATUS "TurboRama profile: CLIENTE SEM SERVICOS COMERCIAIS")
 else()
 	message(STATUS "TurboRama profile: SERVICOS COMERCIAIS ATIVOS")
 endif()
+
+# General Release optimization and platform hardening. This option is
+# independent from PIX/signing so the customer profile keeps the same compiler
+# and linker protections without enabling any commercial service.
+option(TURBORAMA_RELEASE_HARDENING "Enable optimized and hardened TurboRama Release flags" OFF)
 
 # Opt-in profile used only by the commercial release orchestrator. Keeping the
 # defaults OFF preserves developer and legacy builds that do not own a signing
@@ -295,7 +299,7 @@ if(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP") #multi-processor compilation
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP") #multi-processor compilation
 
-    if(TURBORAMA_COMMERCIAL_HARDENING)
+    if(TURBORAMA_RELEASE_HARDENING OR TURBORAMA_COMMERCIAL_HARDENING)
         string(APPEND CMAKE_CXX_FLAGS_RELEASE " /O2 /GL /guard:cf /GS /Gy /Gw /Brepro")
         string(APPEND CMAKE_C_FLAGS_RELEASE " /O2 /GL /guard:cf /GS /Gy /Gw /Brepro")
         string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE
