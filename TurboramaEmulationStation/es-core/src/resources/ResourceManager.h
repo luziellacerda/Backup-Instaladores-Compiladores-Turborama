@@ -30,6 +30,7 @@ class ResourceManager
 {
 public:
 	static std::shared_ptr<ResourceManager>& getInstance();
+	static void invalidatePathCache();
 
 	void addReloadable(std::weak_ptr<IReloadable> reloadable);
 	void removeReloadable(std::weak_ptr<IReloadable> reloadable);
@@ -45,8 +46,6 @@ public:
 
 private:
 	ResourceManager();
-
-	static std::shared_ptr<ResourceManager> sInstance;
 
 	ResourceData loadFile(const std::string& path, size_t size) const;
 

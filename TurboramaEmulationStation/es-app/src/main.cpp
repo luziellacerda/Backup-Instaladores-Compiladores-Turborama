@@ -676,6 +676,10 @@ int main(int argc, char* argv[])
 	// Set locale
 	setLocale(argv[0]);	
 
+	// Materialize the singleton on the main thread before background startup
+	// work can request resources.
+	ResourceManager::getInstance();
+
 #if !WIN32
 	if(enable_startup_game) {
 	  // Run boot game, before Window Create for linux
@@ -691,7 +695,6 @@ int main(int argc, char* argv[])
 	threadPool->queueWorkItem([] { MameNames::init(); });
 	threadPool->queueWorkItem([] { Genres::init(); });
 	threadPool->queueWorkItem([] { HttpReq::resetCookies(); });
-	threadPool->start();
 
 	Window window;
 	ViewController::init(&window);
@@ -709,8 +712,30 @@ int main(int argc, char* argv[])
 	bool splashScreen = Settings::getInstance()->getBool("SplashScreen");
 	bool splashScreenProgress = Settings::getInstance()->getBool("SplashScreenProgress");
 
+	// The embedded theme can take a while to decrypt on its first run. Start it
+	// only after the window exists and keep rendering progress so Windows does
+	// not present the application as frozen.
+	window.renderSplashScreen(_("Loading theme"), 0.0f);
+	const bool embeddedThemeReady = EmbeddedTheme::initialize([&window](float progress) {
+		window.renderSplashScreen(_("Loading theme"), progress);
+	});
+	if (!embeddedThemeReady)
+		LOG(LogWarning) << "Embedded theme could not be initialized.";
+	else
+	{
+		ResourceManager::invalidatePathCache();
+		ResourceManager::getInstance()->unloadAll();
+		ResourceManager::getInstance()->reloadAll();
+	}
+
+	// Workers consult Settings and ResourceManager; start them only after the
+	// theme selection and resource cache are stable.
+	threadPool->start();
+
 	if (splashScreen)
 		window.renderSplashScreen(splashScreenProgress ? _("Loading system config...") : _("Loading..."));
+	else
+		window.closeSplashScreen();
 
 	Scripting::fireEvent("start");
 
@@ -775,12 +800,6 @@ int main(int argc, char* argv[])
 	
 	if (errorMsg == NULL)
 	{
-		if (splashScreen)
-			window.renderSplashScreen(_("Loading theme"));
-
-		if (!EmbeddedTheme::initialize())
-			LOG(LogWarning) << "Embedded theme could not be initialized.";
-
 		ViewController::get()->goToStart(true);
 	}
 

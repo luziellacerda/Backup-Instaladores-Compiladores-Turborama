@@ -14,24 +14,28 @@
 
 auto array_deleter = [](unsigned char* p) { delete[] p; };
 
-std::shared_ptr<ResourceManager> ResourceManager::sInstance = nullptr;
-
 ResourceManager::ResourceManager()
 {
 }
 
 std::shared_ptr<ResourceManager>& ResourceManager::getInstance()
 {
-	if (!sInstance)
-		sInstance = std::shared_ptr<ResourceManager>(new ResourceManager());
-
-	return sInstance;
+	static std::shared_ptr<ResourceManager> instance(new ResourceManager());
+	return instance;
 }
 
 static std::mutex                                 _cacheBuildLock;
 static std::vector<std::string>                   _cachedPaths;
 static std::string                                _cachedThemeSet;
 static ConcurrentMap<std::string, std::string>    _resourcePathCache;
+
+void ResourceManager::invalidatePathCache()
+{
+	std::unique_lock<std::mutex> lock(_cacheBuildLock);
+	_cachedPaths.clear();
+	_cachedThemeSet.clear();
+	_resourcePathCache.clear();
+}
 
 std::vector<std::string> ResourceManager::getResourcePaths() const
 {

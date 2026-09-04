@@ -17,6 +17,8 @@ $second = Join-Path $testRoot 'second.bin'
 $decoded = Join-Path $testRoot 'decoded.zip'
 $extracted = Join-Path $testRoot 'extracted'
 $runtimeSource = Join-Path $projectRoot 'es-core\src\EmbeddedTheme.cpp'
+$mainSource = Join-Path $projectRoot 'es-app\src\main.cpp'
+$resourceManagerSource = Join-Path $projectRoot 'es-core\src\resources\ResourceManager.cpp'
 
 try {
     [IO.Directory]::CreateDirectory((Join-Path $theme 'nested')) | Out-Null
@@ -61,16 +63,38 @@ try {
 	# resultado negativo memorizado pelo FileSystemCache.
 	$runtimeText = [IO.File]::ReadAllText($runtimeSource)
 	foreach ($requiredCheck in @(
-		'exists(tempZip, false)',
-		'exists(targetPath + "/theme.xml", false)',
-		'exists(cachedPath + "/theme.xml", false)',
-		'exists(markerPath, false)',
-		'exists(extractPath + "/theme.xml", false)'
+		'sInitializationAttempted',
+		'ScopedThemeCacheLock',
+		'pruneObsoleteThemeCaches(cacheRoot, payload.identity, progressCallback)',
+		'hasEnoughFreeSpace(cacheRoot, static_cast<std::uint64_t>(archiveSize), "theme archive creation")',
+		'hasEnoughFreeSpace(cacheRoot, uncompressedBytes, "theme extraction")',
+		'treeContainsReparsePoint',
+		'isValidCacheDirectory',
+		'FileSystemCache::reset()',
+		'exists(themePath, false)',
+		'getFileSize(markerPath) != sPayloadIdentityLength',
+		'Utils::FileSystem::readAllText(markerPath) != payload.identity',
+		'return sAvailable.load(std::memory_order_acquire)'
 	)) {
 		Assert ($runtimeText.Contains($requiredCheck)) "EmbeddedTheme voltou a usar cache obsoleto em: $requiredCheck"
 	}
+	Assert (-not $runtimeText.Contains('deleteDirectoryFiles(')) 'A limpeza do tema voltou a seguir diretorios recursivamente sem validar reparse points.'
+	$isAvailableBody = [regex]::Match($runtimeText, 'bool EmbeddedTheme::isAvailable\(\)\s*\{(?<body>.*?)\}', [Text.RegularExpressions.RegexOptions]::Singleline)
+	Assert ($isAvailableBody.Success -and -not $isAvailableBody.Groups['body'].Value.Contains('initialize(')) 'isAvailable voltou a iniciar a extracao de forma implicita.'
 
-	Write-Host "OK: payload deterministico, cabecalho/hash, extracao e guardas de cache validados ($firstHash)."
+	$mainText = [IO.File]::ReadAllText($mainSource)
+	$windowIndex = $mainText.IndexOf('window.init(true, false)')
+	$themeIndex = $mainText.IndexOf('EmbeddedTheme::initialize(')
+	$poolIndex = $mainText.IndexOf('threadPool->start()')
+	$configIndex = $mainText.IndexOf('loadSystemConfigFile(', $themeIndex)
+	$preloadIndex = $mainText.IndexOf('ViewController::get()->preload()', $themeIndex)
+	Assert ($windowIndex -ge 0 -and $windowIndex -lt $themeIndex) 'O tema precisa iniciar somente depois da janela.'
+	Assert ($themeIndex -lt $poolIndex -and $themeIndex -lt $configIndex -and $themeIndex -lt $preloadIndex) 'O tema precisa estar pronto antes dos workers, sistemas e preload.'
+
+	$resourceManagerText = [IO.File]::ReadAllText($resourceManagerSource)
+	Assert ($resourceManagerText.Contains('void ResourceManager::invalidatePathCache()')) 'A invalidacao do cache de recursos foi removida.'
+
+	Write-Host "OK: payload deterministico, cabecalho/hash, extracao, ordem de inicializacao e guardas de cache validados ($firstHash)."
 }
 finally {
     if (Test-Path -LiteralPath $testRoot -PathType Container) {
