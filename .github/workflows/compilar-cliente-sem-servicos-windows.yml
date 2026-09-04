@@ -1,11 +1,11 @@
-name: PIX-SERVIDOR-CONTADOR - EmulationStation Windows x64
+name: CLIENTE SEM SERVICOS - EmulationStation Windows x64
 
 "on":
   push:
     branches:
-      - PIX-SERVIDOR-CONTADOR-20260904-1605
+      - CLIENTE-SEM-SERVICOS-20260904-1818
     paths:
-      - .github/workflows/compilar-emulationstation-windows.yml
+      - .github/workflows/compilar-cliente-sem-servicos-windows.yml
       - TurboramaEmulationStation/**
   workflow_dispatch:
 
@@ -19,13 +19,13 @@ concurrency:
 env:
   PROJECT_DIR: TurboramaEmulationStation
   WIN32_LIBS_COMMIT: 468eaba48c028921a4bf2abdfa3f3a00ce8d4c0d
-  RELEASE_TAG: build-PIX-SERVIDOR-CONTADOR-20260904-1605
-  PACKAGE_BASENAME: TurboramaEmulationStation-Windows-x64
+  RELEASE_TAG: build-CLIENTE-SEM-SERVICOS-20260904-1818
+  PACKAGE_BASENAME: TurboramaEmulationStation-Cliente-Sem-Servicos-Windows-x64
   _CL_: /Zm300
 
 jobs:
   build:
-    if: github.ref_name == 'PIX-SERVIDOR-CONTADOR-20260904-1605'
+    if: github.ref_name == 'CLIENTE-SEM-SERVICOS-20260904-1818'
     runs-on: windows-2022
     timeout-minutes: 120
 
@@ -106,6 +106,7 @@ jobs:
             -T "v143,host=x64" `
             -DRETROBAT=OFF `
             -DBATOCERA=OFF `
+            -DTURBORAMA_ENABLE_COMMERCIAL_SERVICES=OFF `
             -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=FALSE `
             -DCMAKE_SYSTEM_VERSION=10.0.26100.0
           if ($LASTEXITCODE -ne 0) {
@@ -127,6 +128,19 @@ jobs:
           $exe = '.\bin\x64\Release\emulationstation.exe'
           if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
             throw "Executavel nao foi gerado em $exe."
+          }
+
+      - name: Confirmar que PIX, locadora e controle de tempo nao foram compilados
+        working-directory: TurboramaEmulationStation
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+            -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File .\tools\tests\Test-NoCommercialServicesBuild.ps1 `
+            -BuildDirectory .\build-github `
+            -Executable .\bin\x64\Release\emulationstation.exe
+          if ($LASTEXITCODE -ne 0) {
+            throw "Validacao do perfil sem servicos falhou com codigo $LASTEXITCODE."
           }
 
       - name: Montar e validar pacote portatil
@@ -248,7 +262,8 @@ jobs:
           }
 
           @(
-            'TurboRama EmulationStation - Windows x64 Release'
+            'TurboRama EmulationStation - Cliente sem servicos - Windows x64 Release'
+            'Perfil: sem PIX, pagamentos, creditos, contabilidade, locadora ou controle comercial de tempo'
             "Branch: $env:GITHUB_REF_NAME"
             "Commit da fonte: $env:GITHUB_SHA"
             "Commit de win32-libs: $env:WIN32_LIBS_COMMIT"
@@ -289,6 +304,7 @@ jobs:
 
           Invoke-SmokeTest '--help'
           Invoke-SmokeTest '--protected-decorations-self-test'
+          Invoke-SmokeTest '--no-commercial-services-self-test'
 
           $manifest = Join-Path $stage 'SHA256SUMS.txt'
           Get-ChildItem -LiteralPath $stage -Recurse -File |
@@ -328,13 +344,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
           @"
-          Compilacao automatica Release x64 da branch $env:GITHUB_REF_NAME.
+          Compilacao automatica Release x64 para cliente sem servicos comerciais.
 
           - Commit da fonte: $env:GITHUB_SHA
           - Commit de win32-libs: $env:WIN32_LIBS_COMMIT
           - Arquivos no pacote: $env:PACKAGE_FILE_COUNT
           - SHA-256 do ZIP: $env:ZIP_SHA256
           - Runner: Windows Server 2022 / Visual Studio 2022
+          - Removidos da compilacao: PIX, pagamentos, creditos, contabilidade,
+            locadora, cronometro e controle comercial de tempo
 
           O executavel nao possui assinatura digital. Use `TESTAR-ISOLADO.cmd`
           para testar sem alterar o perfil normal do EmulationStation.
@@ -361,7 +379,7 @@ jobs:
 
             & gh release edit $env:RELEASE_TAG `
               --repo $env:GITHUB_REPOSITORY `
-              --title "PIX-SERVIDOR-CONTADOR - Windows x64" `
+              --title "CLIENTE SEM SERVICOS - Windows x64" `
               --notes-file $notes --prerelease
           }
           else {
@@ -369,7 +387,7 @@ jobs:
               $env:ZIP_PATH $env:ZIP_HASH_PATH `
               --repo $env:GITHUB_REPOSITORY `
               --target $env:GITHUB_SHA `
-              --title "PIX-SERVIDOR-CONTADOR - Windows x64" `
+              --title "CLIENTE SEM SERVICOS - Windows x64" `
               --notes-file $notes --prerelease
           }
           if ($LASTEXITCODE -ne 0) {
