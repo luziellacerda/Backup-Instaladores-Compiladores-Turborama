@@ -47,13 +47,15 @@
 #include <vector>
 #include "ZaparooSupport.h"
 #include "utils/ThreadPool.h"
-#include "CreditManager.h"
-#include "CreditWarningOverlay.h"
 #include "resources/ProtectedDecorations.h"
 #include "resources/ResourceManager.h"
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
+#include "CreditManager.h"
+#include "CreditWarningOverlay.h"
 #include "PixBridge.h"
 #include "PixAgentManager.h"
 #include "PixBinaryTrust.h"
+#endif
 #include "guis/GuiMenu.h"
 
 #ifdef WIN32
@@ -485,6 +487,7 @@ int main(int argc, char* argv[])
 	// Inicialize esse caminho antes de qualquer retorno antecipado; antes ele
 	// dependia por engano do diretorio atual usado para iniciar o teste.
 	Paths::setExePath(argv[0]);
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 #ifdef WIN32
 	if (PixBinaryTrust::required())
 	{
@@ -501,6 +504,7 @@ int main(int argc, char* argv[])
 		}
 	}
 #endif
+#endif
 	if (argc == 2 && strcmp(argv[1], "--protected-decorations-self-test") == 0)
 	{
 		const char* systems[] = { "pc", "ps3", "ps4", "ps5", "switch", "windows", "xboxone" };
@@ -515,6 +519,17 @@ int main(int argc, char* argv[])
 		}
 		return 0;
 	}
+	if (argc == 2 && strcmp(argv[1], "--no-commercial-services-self-test") == 0)
+	{
+#ifdef TURBORAMA_NO_COMMERCIAL_SERVICES
+		fprintf(stdout, "TURBORAMA_BUILD_PROFILE=CLIENTE_SEM_SERVICOS\n");
+		return 0;
+#else
+		fprintf(stderr, "TURBORAMA_BUILD_PROFILE=SERVICOS_COMERCIAIS_ATIVOS\n");
+		return 33;
+#endif
+	}
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	if (argc == 2 && strcmp(argv[1], "--credit-warning-overlay-self-test") == 0)
 	{
 		CreditWarningOverlay::show(
@@ -591,6 +606,7 @@ int main(int argc, char* argv[])
 			Utils::FileSystem::writeAllText(Utils::FileSystem::combine(argv[2], "pix-create-error.txt"), error);
 		return created ? 0 : 21;
 	}
+#endif
 
 	// Utils::MathExpr::performUnitTests();
 
@@ -661,6 +677,7 @@ int main(int argc, char* argv[])
 
 	LOG(LogInfo) << "EmulationStation - v" << PROGRAM_VERSION_STRING << ", built " << PROGRAM_BUILT_STRING;
 
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// O servico PIX acompanha o EmulationStation. Dados e credenciais ficam na
 	// pasta persistente .emulationstation/pix e sobrevivem a reinicializacoes.
 	// Se o proprietario ainda nao configurou o PIX, nada externo e iniciado.
@@ -669,6 +686,9 @@ int main(int argc, char* argv[])
 		if (!PixAgentManager::startIfConfigured(&pixStartError) && !pixStartError.empty())
 			LOG(LogInfo) << "[PIX] " << pixStartError;
 	}
+#else
+	LOG(LogInfo) << "TurboRama profile: cliente sem servicos comerciais";
+#endif
 
 	//always close the log on exit
 	atexit(&onExit);
@@ -910,6 +930,7 @@ int main(int argc, char* argv[])
 					// Alt+End / Ctrl+End: nao abre menu (desativado no kiosk)
 					if (k == SDLK_END && (event.key.keysym.mod & (KMOD_ALT | KMOD_CTRL)))
 						continue;
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 					if (k == SDLK_F11)
 					{
 						GuiMenu::requestCreditSettingsAccess_static(&window);
@@ -958,6 +979,7 @@ int main(int argc, char* argv[])
 						}
 						continue;
 					}
+#endif
 				}
 
 				if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESIZED && Settings::getInstance()->getBool("Windowed"))
@@ -1041,8 +1063,10 @@ int main(int argc, char* argv[])
 	if (Utils::Platform::isFastShutdown())
 		Settings::getInstance()->setBool("IgnoreGamelist", true);
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// TurboRama: flush credit/players before exit (avoid lost last seconds)
 	CreditManager::getInstance().flushNow();
+	#endif
 
 	WatchersManager::stop();
 	ThreadedHasher::stop();

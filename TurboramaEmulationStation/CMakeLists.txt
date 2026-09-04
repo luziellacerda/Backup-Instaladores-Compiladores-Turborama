@@ -16,6 +16,19 @@ option(ENABLE_PULSE "Set to ON to enable pulse audio (versus alsa)" OFF)
 option(ENABLE_TTS "Set to ON to enable text to speech" OFF)
 option(USE_SYSTEM_PUGIXML "Set to ON to use system-wide pugixml library" OFF)
 
+# This branch targets ordinary customers, without the rental/payment stack.
+# Keep the switch explicit so the resulting binary can be audited: when OFF,
+# none of the PIX, credit, accounting or rental-time sources are linked.
+option(TURBORAMA_ENABLE_COMMERCIAL_SERVICES
+	"Enable TurboRama PIX, credit, accounting and rental-time services" OFF)
+
+if(NOT TURBORAMA_ENABLE_COMMERCIAL_SERVICES)
+	add_definitions(-DTURBORAMA_NO_COMMERCIAL_SERVICES=1)
+	message(STATUS "TurboRama profile: CLIENTE SEM SERVICOS COMERCIAIS")
+else()
+	message(STATUS "TurboRama profile: SERVICOS COMERCIAIS ATIVOS")
+endif()
+
 # Opt-in profile used only by the commercial release orchestrator. Keeping the
 # defaults OFF preserves developer and legacy builds that do not own a signing
 # certificate. The thumbprint is public metadata; no private key enters CMake.
@@ -23,6 +36,14 @@ option(TURBORAMA_COMMERCIAL_HARDENING "Enable hardened TurboRama commercial Rele
 option(TURBORAMA_REQUIRE_SIGNED_PIX "Require signed TurboRama PIX components at runtime" OFF)
 set(TURBORAMA_PIX_SIGNER_THUMBPRINT "" CACHE STRING "Pinned SHA-1 thumbprint for signed TurboRama PIX components")
 set(TURBORAMA_PIX_BUNDLE_SHA256 "" CACHE STRING "Pinned SHA-256 digest of the complete commercial PIX agent bundle")
+
+if(NOT TURBORAMA_ENABLE_COMMERCIAL_SERVICES AND
+	(TURBORAMA_COMMERCIAL_HARDENING OR TURBORAMA_REQUIRE_SIGNED_PIX OR
+	 NOT "${TURBORAMA_PIX_SIGNER_THUMBPRINT}" STREQUAL "" OR
+	 NOT "${TURBORAMA_PIX_BUNDLE_SHA256}" STREQUAL ""))
+	message(FATAL_ERROR
+		"PIX/commercial signing options cannot be used when commercial services are disabled")
+endif()
 
 # Win32 default platform & directory detection
 if(WIN32)

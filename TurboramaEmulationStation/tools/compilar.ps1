@@ -389,7 +389,8 @@ function Invoke-CMakeConfigure {
     $exitCode = Invoke-BuildCommand -Command $CMakePath -Arguments @(
         '-S', $Root,
         '-B', $BuildDir,
-        '-A', 'x64'
+        '-A', 'x64',
+        '-DTURBORAMA_ENABLE_COMMERCIAL_SERVICES=OFF'
     ) -StepId 3 -OnLine $onLine
 
     if ($exitCode -ne 0) {

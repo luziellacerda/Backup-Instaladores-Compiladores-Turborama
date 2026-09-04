@@ -48,11 +48,13 @@
 #include "guis/GuiTextEditPopupKeyboard.h"
 #include "guis/GuiBackupStart.h"
 #include "guis/GuiTextEditPopup.h"
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 #include "CreditManager.h"
 #include "guis/GuiCreditPlayerSelect.h"
 #include "guis/GuiCreditOperatorPanel.h"
 #include "guis/GuiPixPurchase.h"
 #include "guis/GuiPixOwnerSettings.h"
+#endif
 // forward usavel via include acima para dynamic_cast no callback da senha
 #include "guis/GuiWifi.h"
 #include "guis/GuiBluetoothPair.h"
@@ -230,12 +232,14 @@ GuiMenu::GuiMenu(Window *window, bool animate) : GuiComponent(window), mMenu(win
 		addEntry(_("UNLOCK USER INTERFACE MODE").c_str(), true, [this] { exitKidMode(); }, "iconAdvanced");
 	}
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// Locadora: menu de credito (F11/painel) escondido — so contabilidade no Start se necessario
 	// addEntry(_("LOCADORA / CREDITO"), true, [this] { requestCreditSettingsAccess(); }, "iconGames");
 	// Este menu inteiro ja foi liberado pela senha do START. A compra do cliente
 	// fica fora daqui e e aberta diretamente pelo SELECT, sem senha.
 	addEntry(_("CONFIGURACAO PIX DO PROPRIETARIO"), true, [this] { mWindow->pushGui(new GuiPixOwnerSettings(mWindow)); }, "iconSystem");
 	addEntry(_("CONTABILIDADE LOCADORA"), true, [this] { requestCreditAccountingAccess(); }, "iconSystem");
+	#endif
 
 #ifdef WIN32
 	addEntry(_("DESLIGAR TURBORAMA"), !Settings::getInstance()->getBool("ShowOnlyExit") || !Settings::getInstance()->getBool("ShowExit"), [this] { openQuitMenu(); }, "iconQuit");
@@ -276,6 +280,7 @@ void GuiMenu::openConfigInput()
 	);
 }
 
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 void GuiMenu::requestCreditSettingsAccess()
 {
 	requestCreditSettingsAccess_static(mWindow);
@@ -285,6 +290,7 @@ void GuiMenu::requestCreditAccountingAccess()
 {
 	requestCreditAccountingAccess_static(mWindow);
 }
+#endif
 
 namespace
 {
@@ -328,6 +334,7 @@ namespace
 		});
 	}
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	void requireNonDefaultAdminPassword(Window* window, const std::function<void()>& onReady)
 	{
 		if (!CreditManager::getInstance().isUsingDefaultAdminPassword())
@@ -375,6 +382,7 @@ namespace
 			},
 			_("CANCELAR"), nullptr));
 	}
+	#endif
 }
 
 void GuiMenu::requestMainMenuAccess_static(Window* window)
@@ -386,6 +394,7 @@ void GuiMenu::requestMainMenuAccess_static(Window* window)
 	if (dynamic_cast<GuiMenu*>(window->peekGui()) != nullptr)
 		return;
 
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	auto onPasswordEntered = [window](const std::string& password)
 	{
 		if (!CreditManager::getInstance().verifyAdminPassword(password))
@@ -408,8 +417,15 @@ void GuiMenu::requestMainMenuAccess_static(Window* window)
 		window->pushGui(new GuiTextEditPopupKeyboard(window, _("SENHA MENU START"), "", onPasswordEntered, false, "OK", true));
 	else
 		window->pushGui(new GuiTextEditPopup(window, _("SENHA MENU START"), "", onPasswordEntered, false, "OK", true));
+#else
+	// The former password lived in CreditManager. In the customer profile the
+	// complete rental/accounting service is absent, so START opens the normal
+	// EmulationStation menu directly.
+	window->pushGui(new GuiMenu(window));
+#endif
 }
 
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 void GuiMenu::requestCreditSettingsAccess_static(Window* window)
 {
 	if (window == nullptr)
@@ -732,6 +748,7 @@ void GuiMenu::openCreditAccounting_static(Window* window)
 
 	window->pushGui(s);
 }
+#endif
 
 void GuiMenu::addVersionInfo()
 {
@@ -5153,12 +5170,14 @@ void GuiMenu::openQuitMenu_static(Window *window, bool quickAccessMenu, bool ani
 	{
     		s->addGroup(_("QUICK ACCESS"));
 
+		#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 		// Menu LOCADORA/CREDITO (painel tipo F11) escondido
 		// s->addEntry(_("LOCADORA / CREDITO"), ...);
 		s->addEntry(_("CONTABILIDADE LOCADORA"), true, [s, window] {
 			delete s;
 			GuiMenu::requestCreditAccountingAccess_static(window);
 		}, "iconSystem");
+		#endif
 
             if (AudioManager::getInstance()->isSongPlaying())
             {

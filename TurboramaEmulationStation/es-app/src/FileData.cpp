@@ -34,8 +34,10 @@
 #include "Paths.h"
 #include "resources/TextureData.h"
 #include "views/gamelist/GameNameFormatter.h"
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 #include "CreditManager.h"
 #include "CreditWarningOverlay.h"
+#endif
 #include <chrono>
 #include <atomic>
 
@@ -59,7 +61,8 @@ namespace
 			std::chrono::steady_clock::now().time_since_epoch()).count();
 	}
 
-#ifdef WIN32
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
+	#ifdef WIN32
 	// Native, non-activating warning used while an external emulator owns the
 	// screen. The regular EmulationStation notification cannot be rendered while
 	// ProcessStartInfo::run() is supervising a running game.
@@ -327,9 +330,11 @@ namespace
 		void tick() {}
 		bool isVisible() const { return false; }
 	};
-#endif
+	#endif
+	#endif
 }
 
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 namespace CreditWarningOverlay
 {
 	static GameCreditWarningOverlay& instance()
@@ -353,6 +358,7 @@ namespace CreditWarningOverlay
 		return instance().isVisible();
 	}
 }
+#endif
 
 static std::map<std::string, std::function<BindableProperty(FileData*)>> properties =
 {
@@ -1210,6 +1216,7 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 	if (system == nullptr)
 		return false;
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// TurboRama arcade credit: block launch without credit (before audio/window teardown)
 	CreditManager& credits = CreditManager::getInstance();
 	const bool creditEnabled = credits.isEnabled();
@@ -1221,6 +1228,7 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 			_("OK"), nullptr));
 		return false;
 	}
+	#endif
 
 	std::string command = getlaunchCommand(options);
 	if (command.empty())
@@ -1238,6 +1246,7 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 	Scripting::fireEvent("game-start", rom, basename, getName());
 	const auto launchT0 = std::chrono::steady_clock::now();
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// RAII: end only a session that actually started. The first supervised poll
 	// happens after CreateProcess/Job assignment/ResumeThread succeed, so a launch
 	// failure never opens or charges a credit session.
@@ -1261,6 +1270,7 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 				supervisedElapsedSeconds == nullptr ? 0 : std::max(0L, *supervisedElapsedSeconds));
 		}
 	};
+	#endif
 
 	LOG(LogInfo) << "	" << command;
 
@@ -1270,6 +1280,7 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 
 	ProcessStartInfo process(command);
 	process.window = hideWindow ? NULL : window;
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	bool creditExpired = false;
 	bool creditSessionStarted = false;
 	bool warned60 = false;
@@ -1310,13 +1321,16 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 			return mayContinue;
 		};
 	}
+	#endif
 
 	int exitCode = process.run();
 	if (exitCode != 0)
 		LOG(LogWarning) << "...launch terminated with nonzero exit code " << exitCode << "!";
 
 	mRunningGame = nullptr;
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	creditGuard.complete();
+	#endif
 
 	Utils::FileSystem::FileSystemCache::reset();
 
@@ -1372,12 +1386,14 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 	}
 
 	window->reactivateGui();
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	if (creditExpired)
 	{
 		window->pushGui(new GuiMsgBox(window,
 			_("TEMPO ESGOTADO. O JOGO FOI ENCERRADO PARA PROTEGER O SALDO DA LOCADORA."),
 			_("OK"), nullptr));
 	}
+	#endif
 
 	if (system != nullptr && system->getTheme() != nullptr)
 		AudioManager::getInstance()->changePlaylist(system->getTheme(), true);

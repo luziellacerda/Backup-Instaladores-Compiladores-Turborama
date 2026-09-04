@@ -13,7 +13,9 @@
 #include "components/ImageGridComponent.h"
 #include "components/ImageComponent.h"
 #include "resources/TextureDataManager.h"
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 #include "PixBridge.h"
+#endif
 
 #include <memory>
 #include <functional>
@@ -117,6 +119,7 @@ private:
 	void	 renderCarousel(const Transform4x4f& parentTrans);
 	void	 renderExtras(const Transform4x4f& parentTrans, float lower, float upper);
 	void	 renderInfoBar(const Transform4x4f& trans);
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	void	 updateHomePix(int deltaTime);
 	void	 startHomePixRequest();
 	void	 pollHomePixRequest();
@@ -126,10 +129,12 @@ private:
 	void	 renderHomePix(const Transform4x4f& trans);
 	void	 renderHomePixQrMatrix(const Transform4x4f& trans);
 	std::string formatHomePixOffer(const PixPackage& package) const;
+	#endif
 	
 	ControlWrapper						mCarousel;
 
 	TextComponent						mSystemInfo;
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	ImageComponent						mHomePixQrImage;
 	TextComponent						mHomePixOffer;
 	TextComponent						mHomePixInstruction;
@@ -150,6 +155,7 @@ private:
 	int								mHomePixEffectElapsedMs;
 	bool							mHomePixRequestActive;
 	bool							mHomePixQrReady;
+	#endif
 
 	std::vector<GuiComponent*>			mStaticBackgrounds;
 	std::vector<SystemViewData>			mEntries;

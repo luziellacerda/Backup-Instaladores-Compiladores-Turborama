@@ -91,9 +91,11 @@ namespace
 SystemView::SystemView(Window* window) : GuiComponent(window),
 	mViewNeedsReload(true),
 	mSystemInfo(window, _("SYSTEM INFO"), Font::get(FONT_SIZE_SMALL), 0x33333300, ALIGN_CENTER),
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	mHomePixQrImage(window, true),
 	mHomePixOffer(window, "15 MINUTOS\n5 REAIS", Font::get(FONT_SIZE_LARGE), 0x62FF55FF, ALIGN_CENTER),
 	mHomePixInstruction(window, _("GERANDO QR PIX..."), Font::get(FONT_SIZE_SMALL), 0xEAF5FFFF, ALIGN_CENTER),
+#endif
 	mYButton("y")
 {
 	mExtraTransitionSpeed = 500.0f;
@@ -123,6 +125,7 @@ SystemView::SystemView(Window* window) : GuiComponent(window),
 	mExtrasTransitionActive = false;
 	mPressedCursor = -1;
 	mPressedPoint = Vector2i(-1, -1);
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	mHomePixQrSize = 0.f;
 	mHomePixQrModuleCount = 0;
 	mHomePixPollElapsedMs = 0;
@@ -144,9 +147,12 @@ SystemView::SystemView(Window* window) : GuiComponent(window),
 	mHomePixOffer.setGlowSize(2);
 	mHomePixInstruction.setGlowColor(0x000000F0);
 	mHomePixInstruction.setGlowSize(2);
+#endif
 
 	setSize((float)Renderer::getScreenWidth(), (float)Renderer::getScreenHeight());
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	layoutHomePix();
+#endif
 	populate();
 }
 
@@ -808,8 +814,10 @@ void SystemView::update(int deltaTime)
 
 	GuiComponent::update(deltaTime);
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	if (!mDisable && !mScreensaverActive)
 		updateHomePix(deltaTime);
+	#endif
 
 	if (mYButton.isLongPressed(deltaTime))
 	{
@@ -821,6 +829,7 @@ void SystemView::update(int deltaTime)
 	}
 }
 
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 std::string SystemView::formatHomePixOffer(const PixPackage& package) const
 {
 	std::ostringstream output;
@@ -1122,6 +1131,7 @@ void SystemView::renderHomePix(const Transform4x4f& trans)
 	if (!mHomePixQrModules.empty()) renderHomePixQrMatrix(trans);
 	else mHomePixQrImage.render(trans);
 }
+#endif
 
 void SystemView::updateExtraTextBinding()
 {
@@ -1445,9 +1455,11 @@ void SystemView::render(const Transform4x4f& parentTrans)
 
 	renderExtras(trans, minMax.second, INT16_MAX);
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// O QR comercial pertence somente a tela principal de sistemas. Ele e
 	// desenhado por ultimo para permanecer legivel sem alterar o tema ativo.
 	renderHomePix(trans);
+	#endif
 }
 
 std::vector<HelpPrompt> SystemView::getHelpPrompts()
@@ -2016,6 +2028,7 @@ void SystemView::onShow()
 	if (getSelected() != nullptr)
 		TextToSpeech::getInstance()->say(getSelected()->getFullName());
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// A primeira tentativa ocorre logo apos a tela principal aparecer. Se o
 	// agente ainda estiver iniciando, updateHomePix repete sem bloquear a UI.
 	if (!mHomePixRequestActive)
@@ -2023,6 +2036,7 @@ void SystemView::onShow()
 		mHomePixRetryElapsedMs = 0;
 		mHomePixRetryDelayMs = 350;
 	}
+	#endif
 }
 
 void SystemView::onHide()

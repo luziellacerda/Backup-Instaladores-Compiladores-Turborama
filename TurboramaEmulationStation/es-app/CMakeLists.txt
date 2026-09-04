@@ -138,15 +138,6 @@ set(ES_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ZaparooSupport.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LibretroRatio.h # batocera
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Win32ApiSystem.h # batocera
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/CreditManager.h # turborama arcade credit
-	${CMAKE_CURRENT_SOURCE_DIR}/src/CreditWarningOverlay.h # aviso de credito sempre no topo
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/PixBridge.h # turborama pix bridge
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/PixAgentManager.h # configuracao e ciclo de vida do agente pix
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/PixBinaryTrust.h # assinatura e publisher pin dos binarios pix
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditPlayerSelect.h # locadora player picker
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditOperatorPanel.h # locadora painel profissional
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixPurchase.h # compra publica de tempo PIX
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixOwnerSettings.h # cadastro protegido do proprietario
 )
 
 set(ES_SOURCES
@@ -250,14 +241,32 @@ set(ES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ZaparooSupport.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LibretroRatio.cpp # batocera
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Win32ApiSystem.cpp # batocera
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/CreditManager.cpp # turborama arcade credit
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/PixBridge.cpp # turborama pix bridge
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/PixAgentManager.cpp # configuracao e ciclo de vida do agente pix
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditPlayerSelect.cpp # locadora player picker
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditOperatorPanel.cpp # locadora painel profissional
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixPurchase.cpp # compra publica de tempo PIX
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixOwnerSettings.cpp # cadastro protegido do proprietario
 )
+
+# The no-services customer profile must not merely hide menu entries: omit the
+# complete commercial implementation from the link so it cannot start, persist
+# state or be reached through a shortcut. The source remains available to the
+# separate commercial branches and builds that opt in explicitly.
+if(TURBORAMA_ENABLE_COMMERCIAL_SERVICES)
+	list(APPEND ES_HEADERS
+		${CMAKE_CURRENT_SOURCE_DIR}/src/CreditManager.h
+		${CMAKE_CURRENT_SOURCE_DIR}/src/CreditWarningOverlay.h
+		${CMAKE_CURRENT_SOURCE_DIR}/src/PixBridge.h
+		${CMAKE_CURRENT_SOURCE_DIR}/src/PixAgentManager.h
+		${CMAKE_CURRENT_SOURCE_DIR}/src/PixBinaryTrust.h
+		${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditPlayerSelect.h
+		${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditOperatorPanel.h
+		${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixPurchase.h
+		${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixOwnerSettings.h)
+	list(APPEND ES_SOURCES
+		${CMAKE_CURRENT_SOURCE_DIR}/src/CreditManager.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/src/PixBridge.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/src/PixAgentManager.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditPlayerSelect.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiCreditOperatorPanel.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixPurchase.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/src/guis/GuiPixOwnerSettings.cpp)
+endif()
 
 #-------------------------------------------------------------------------------
 # define OS specific sources and headers
@@ -338,7 +347,7 @@ add_executable(emulationstation ${ES_SOURCES} ${ES_HEADERS})
 target_link_libraries(emulationstation ${COMMON_LIBRARIES} es-core)
 if(MSVC)
 	add_dependencies(emulationstation turborama_embedded_theme)
-	if(TURBORAMA_COMMERCIAL_HARDENING)
+	if(TURBORAMA_ENABLE_COMMERCIAL_SERVICES AND TURBORAMA_COMMERCIAL_HARDENING)
 		# Keep SDL's stricter diagnostics on the new PIX trust boundary without
 		# turning unrelated legacy renderer deprecations into release errors.
 		set_source_files_properties(

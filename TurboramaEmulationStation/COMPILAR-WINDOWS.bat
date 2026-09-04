@@ -99,7 +99,7 @@ if exist build\CMakeCache.txt (
   mkdir build 2>nul
 )
 
-"%CMAKE_EXE%" -S . -B build -G "Visual Studio 17 2022" -A x64
+"%CMAKE_EXE%" -S . -B build -G "Visual Studio 17 2022" -A x64 -DTURBORAMA_ENABLE_COMMERCIAL_SERVICES=OFF
 if errorlevel 1 (
   echo.
   echo [ERRO] cmake configure falhou.
@@ -132,8 +132,8 @@ if exist "bin\x64\emulationstation.exe" (
 )
 echo.
 echo  Teste: emulationstation.exe --windowed --debug --resolution 1280 720
-echo  Credito: F10 = ficha  ^| sem credito = nao lanca jogo
-echo  Config:  %%USERPROFILE%%\.emulationstation\arcade_credit.cfg
+echo  Perfil: cliente sem PIX, pagamentos, locadora ou controle de tempo
+echo  Jogos e demais recursos do EmulationStation permanecem ativos
 echo ============================================================
 pause
 exit /b 0

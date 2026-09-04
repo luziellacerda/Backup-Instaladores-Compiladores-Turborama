@@ -138,10 +138,12 @@ private:
 	std::shared_ptr<GuiComponent>	mDeferPlayViewTransitionTo;
 	State mState;
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// TurboRama arcade credit HUD (always visible when credit system is enabled)
 	int mCreditHudElapsedMs;
 	std::string mCreditHudText;
 	std::unique_ptr<TextCache> mCreditHudCache;
+	#endif
 };
 
 #endif // ES_APP_VIEWS_VIEW_CONTROLLER_H

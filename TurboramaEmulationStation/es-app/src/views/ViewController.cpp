@@ -32,11 +32,13 @@
 #include "VolumeControl.h"
 #include "guis/GuiNetPlay.h"
 #include "Gamelist.h"
+#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 #include "CreditManager.h"
 #include "CreditWarningOverlay.h"
 #include "PixBridge.h"
 #include "PixAgentManager.h"
 #include "guis/GuiPixPurchase.h"
+#endif
 #include "resources/Font.h"
 
 ViewController* ViewController::sInstance = nullptr;
@@ -86,16 +88,20 @@ void ViewController::saveState()
 
 ViewController::ViewController(Window* window)
 	: GuiComponent(window), mCurrentView(nullptr), mCamera(Transform4x4f::Identity()), mFadeOpacity(0), mLockInput(false)
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	, mCreditHudElapsedMs(0)
+	#endif
 {
 	mSystemListView = nullptr;
 	mState.viewing = NOTHING;	
 	mState.system = nullptr;
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// Force first HUD paint immediately (do not wait 500ms / F10)
 	if (CreditManager::getInstance().isEnabled() && CreditManager::getInstance().isShowHud())
 		mCreditHudText = CreditManager::getInstance().formatHudLine();
 	else
 		mCreditHudText.clear();
+	#endif
 }
 
 ViewController::~ViewController()
@@ -912,6 +918,7 @@ bool ViewController::input(InputConfig* config, Input input)
 		return true;
 	}
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// TurboRama comercial: SELECT pertence ao cliente e abre somente a compra PIX.
 	// Nenhuma senha ou configuracao administrativa fica acessivel por este atalho.
 	if(config->isMappedTo("select", input) && input.value != 0)
@@ -920,6 +927,7 @@ bool ViewController::input(InputConfig* config, Input input)
 			mWindow->pushGui(new GuiPixPurchase(mWindow));
 		return true;
 	}
+	#endif
 
 	// Next song
 	if (((mState.viewing != GAME_LIST && config->isMappedTo("l3", input)) || config->isMappedTo("r3", input)) && input.value != 0)
@@ -958,6 +966,7 @@ void ViewController::update(int deltaTime)
 
 	updateSelf(deltaTime);
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// Count credit while browsing menus (capped inside tick against lag spikes)
 	// Skip absurd frames (paused debugger / post-game) — tick also caps
 	if (deltaTime > 0 && deltaTime < 60000)
@@ -1005,6 +1014,7 @@ void ViewController::update(int deltaTime)
 			mCreditHudCache.reset();
 		}
 	}
+	#endif
 
 	if (mDeferPlayViewTransitionTo != nullptr)
 	{
@@ -1053,6 +1063,7 @@ void ViewController::render(const Transform4x4f& parentTrans)
 	if(mWindow->peekGui() == this)
 		mWindow->renderHelpPromptsEarly(parentTrans);
 
+	#ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 	// TurboRama credit HUD: SO na tela inicial (sistemas) + fonte menor
 	// Nao mostra na lista de jogos nem com menus abertos por cima
 	const bool onHomeScreen =
@@ -1124,6 +1135,7 @@ void ViewController::render(const Transform4x4f& parentTrans)
 				font->renderTextCache(drawTime.get());
 		}
 	}
+	#endif
 
 	// fade out
 	if (mFadeOpacity)

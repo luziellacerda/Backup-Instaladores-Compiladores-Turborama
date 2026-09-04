@@ -40,9 +40,11 @@ public:
         static void updateGameLists(Window* window, bool confirm = true);
         static void editKeyboardMappings(Window *window, IKeyboardMapContainer* mapping, bool editable);
 
+        #ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
         // Locadora — acesso ao painel (F11 / senha)
         static void requestCreditSettingsAccess_static(Window* window);
         static void openCreditSettings_static(Window* window);
+        #endif
 
         // Menu Start protegido por senha admin
         static void requestMainMenuAccess_static(Window* window);
@@ -64,12 +66,14 @@ private:
         void openNetworkSettings(bool selectWifiEnable = false);        
         void openQuitMenu();
         void openSystemInformations();
+        #ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
         void openCreditSettings();
         void requestCreditSettingsAccess();
         void requestCreditAccountingAccess();
         static void requestCreditAccountingAccess_static(Window* window);
         static void openCreditAccounting_static(Window* window);
         static void openCreditManageCredits_static(Window* window);
+        #endif
         void openServicesSettings();
         void openMultiScreensSettings();
         void openDmdSettings();
