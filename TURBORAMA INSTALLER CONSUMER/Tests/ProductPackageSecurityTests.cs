@@ -472,18 +472,14 @@ namespace InstallerHost
 				Arguments = "/d /c mklink /J \"" + junctionPath + "\" \"" + targetPath + "\"",
 				UseShellExecute = false,
 				CreateNoWindow = true,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true,
 				WorkingDirectory = Path.GetDirectoryName(junctionPath)
 			};
 			using (Process process = Process.Start(startInfo))
 			{
-				string standardOutput = process.StandardOutput.ReadToEnd();
-				string standardError = process.StandardError.ReadToEnd();
 				process.WaitForExit();
 				if (process.ExitCode != 0)
 				{
-					throw new IOException("Unable to create isolated junction fixture: " + standardOutput + standardError);
+					throw new IOException("Unable to create isolated junction fixture; mklink exit code " + process.ExitCode + ".");
 				}
 			}
 		}
