@@ -15,6 +15,11 @@ try {
     $consumerSources = @($consumerProject.SelectNodes('//*[local-name()="Compile"]') | ForEach-Object { $_.GetAttribute('Include') })
     $interfaceResources = @($consumerProject.SelectNodes('//*[local-name()="EmbeddedResource"]') | Where-Object { $_.GetAttribute('Include') -notlike 'resources\prerequisites\*' } | ForEach-Object { '/resource:' + $_.GetAttribute('Include') + ',' + $_.SelectSingleNode('*[local-name()="LogicalName"]').InnerText })
     $consumerCompiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+	$tokenProbeExecutable = 'TestResults\executables\ConsumerInstallationSmokeTokenTests.exe'
+	& $consumerCompiler /nologo /target:exe /platform:x64 /warnaserror+ /main:ConsumerInstallationSmokeTokenTests ('/out:' + $tokenProbeExecutable) Tests\ConsumerInstallationSmoke.cs Tests\ConsumerInstallationSmokeTokenTests.cs
+	if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar a validação nativa de elevação do token.' }
+	& (Join-Path $PSScriptRoot $tokenProbeExecutable)
+	if ($LASTEXITCODE -ne 0) { throw 'Falha na validação nativa de elevação do token.' }
     foreach ($runtimeProbeArch in @('x86', 'x64')) {
         if ($runtimeProbeArch -eq 'x64' -and -not [Environment]::Is64BitOperatingSystem) { continue }
         $runtimeProbeBits = if ($runtimeProbeArch -eq 'x64') { 64 } else { 32 }

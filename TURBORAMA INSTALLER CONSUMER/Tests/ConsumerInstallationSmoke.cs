@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Security.Principal;
 
 /// <summary>
 /// Destructive, GitHub-hosted Windows smoke test for the real offline runtime
@@ -490,25 +489,57 @@ internal static class ConsumerInstallationSmoke
 
 	private static void DemandElevatedAdministratorToken()
 	{
-		using (WindowsIdentity identity = WindowsIdentity.GetCurrent(TokenAccessLevels.Query))
+		bool elevated;
+		int nativeError;
+		bool querySucceeded = TryGetCurrentProcessElevation(out elevated, out nativeError);
+		DemandElevationProbeResult(querySucceeded, elevated, nativeError);
+	}
+
+	internal static bool TryGetCurrentProcessElevation(out bool elevated, out int nativeError)
+	{
+		elevated = false;
+		nativeError = 0;
+		IntPtr tokenHandle;
+		if (!OpenProcessToken(GetCurrentProcess(), TokenQuery, out tokenHandle))
 		{
-			if (identity == null ||
-				!new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
-			{
-				throw new UnauthorizedAccessException("The GitHub runner token is not an administrator token.");
-			}
+			nativeError = Marshal.GetLastWin32Error();
+			return false;
+		}
+
+		try
+		{
 			TokenElevation elevation;
 			int returnedLength;
-			if (!GetTokenInformation(identity.Token, TokenInformationClass.TokenElevation,
+			if (!GetTokenInformation(tokenHandle, TokenInformationClass.TokenElevation,
 				out elevation, Marshal.SizeOf(typeof(TokenElevation)), out returnedLength))
 			{
-				throw new InvalidOperationException(
-					"Could not query runner token elevation (Win32 " + Marshal.GetLastWin32Error() + ").");
+				nativeError = Marshal.GetLastWin32Error();
+				return false;
 			}
-			if (returnedLength < Marshal.SizeOf(typeof(TokenElevation)) || elevation.TokenIsElevated == 0)
+			if (returnedLength < Marshal.SizeOf(typeof(TokenElevation)))
 			{
-				throw new UnauthorizedAccessException("The GitHub runner process is not elevated.");
+				nativeError = ErrorInvalidData;
+				return false;
 			}
+			elevated = elevation.TokenIsElevated != 0;
+			return true;
+		}
+		finally
+		{
+			CloseHandle(tokenHandle);
+		}
+	}
+
+	internal static void DemandElevationProbeResult(bool querySucceeded, bool elevated, int nativeError)
+	{
+		if (!querySucceeded)
+		{
+			throw new InvalidOperationException(
+				"Could not query runner process-token elevation (Win32 " + nativeError + ").");
+		}
+		if (!elevated)
+		{
+			throw new UnauthorizedAccessException("The GitHub runner process token is not elevated.");
 		}
 	}
 
@@ -538,6 +569,19 @@ internal static class ConsumerInstallationSmoke
 		public int TokenIsElevated;
 	}
 
+	private const uint TokenQuery = 0x0008;
+	private const int ErrorInvalidData = 13;
+
+	[DllImport("kernel32.dll")]
+	private static extern IntPtr GetCurrentProcess();
+
+	[DllImport("advapi32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	private static extern bool OpenProcessToken(
+		IntPtr processHandle,
+		uint desiredAccess,
+		out IntPtr tokenHandle);
+
 	[DllImport("advapi32.dll", SetLastError = true)]
 	[return: MarshalAs(UnmanagedType.Bool)]
 	private static extern bool GetTokenInformation(
@@ -546,4 +590,8 @@ internal static class ConsumerInstallationSmoke
 		out TokenElevation tokenInformation,
 		int tokenInformationLength,
 		out int returnLength);
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	private static extern bool CloseHandle(IntPtr handle);
 }
