@@ -87,31 +87,8 @@ namespace InstallerHost
 			verify(Evaluate("dokany", "2.3.1", dokanyRequired) == RuntimeVersionComparison.Unknown,
 				"Dokany without a fourth comparable field is unknown");
 
-			const string winFspRequired = "2.2.26215";
-			verify(Evaluate("winfsp", "2.2.26215", winFspRequired) == RuntimeVersionComparison.Current,
-				"WinFsp accepts the exact approved three-part version");
-			verify(Evaluate("winfsp", "2.3.1.0", winFspRequired) == RuntimeVersionComparison.Current,
-				"WinFsp accepts a newer version and ignores a packaging revision");
-			verify(Evaluate("winfsp", "2.1.25156", winFspRequired) == RuntimeVersionComparison.Outdated,
-				"WinFsp rejects the vulnerable 2025 stable line");
-			string comparableWinFspVersion;
-			verify(PrerequisiteDetector.TryGetComparableFileVersion(
-				"2.1.25156.ddca7bd", 2, 1, 25156, 0, out comparableWinFspVersion) &&
-				string.Equals(comparableWinFspVersion, "2.1.25156.0", StringComparison.Ordinal) &&
-				Evaluate("winfsp", comparableWinFspVersion, winFspRequired) == RuntimeVersionComparison.Outdated,
-				"WinFsp compares signed numeric VERSIONINFO fields when display text has a source suffix");
-			verify(!PrerequisiteDetector.TryGetComparableFileVersion(
-				string.Empty, 2, 1, 25156, 0, out comparableWinFspVersion),
-				"Missing file-version evidence is never reconstructed from numeric fields alone");
-			verify(!PrerequisiteDetector.TryGetComparableFileVersion(
-				"unavailable", 0, 0, 0, 0, out comparableWinFspVersion),
-				"Invalid empty VERSIONINFO fields remain unknown");
-			verify(Evaluate("winfsp", string.Empty, winFspRequired) == RuntimeVersionComparison.Unknown,
-				"WinFsp partial evidence is never treated as current");
-			verify(RuntimeVersionPolicy.HaveSameVersionFields("2.2.26215", "2.2.26215.0", 3),
-				"WinFsp MSI and DLL versions agree on the three product fields");
-			verify(!RuntimeVersionPolicy.HaveSameVersionFields("2.2.26215", "2.2.26194.0", 3),
-				"WinFsp stale registry and binary evidence cannot agree");
+			verify(Evaluate("winfsp", "2.2.26215", "2.2.26215") == RuntimeVersionComparison.NotManaged,
+				"The excluded prerelease driver has no active version policy");
 			verify(RuntimeVersionPolicy.HaveSameVersionFields("2.3.1.1000", "2.3.1.1000", 4),
 				"Dokany driver and user library must agree on all four fields");
 			verify(!RuntimeVersionPolicy.HaveSameVersionFields("2.3.1.1000", "2.3.1.999", 4),
@@ -134,7 +111,6 @@ namespace InstallerHost
 			GamingRuntimeComponent dotNet8 = GamingRuntimeManifest.FindById("dotnet-desktop-8-x64");
 			GamingRuntimeComponent webView2 = GamingRuntimeManifest.FindById("webview2-x64");
 			GamingRuntimeComponent dokany = GamingRuntimeManifest.FindById("dokany");
-			GamingRuntimeComponent winFsp = GamingRuntimeManifest.FindById("winfsp");
 			string required;
 			verify(RuntimeVersionPolicy.Evaluate(vc, "v14.51.36247.00", out required) == RuntimeVersionComparison.Current &&
 				string.Equals(required, vcRequired, StringComparison.Ordinal),
@@ -147,12 +123,8 @@ namespace InstallerHost
 			verify(RuntimeVersionPolicy.Evaluate(dokany, "2.3.1.1000", out required) == RuntimeVersionComparison.Current &&
 				string.Equals(required, dokanyRequired, StringComparison.Ordinal) && !dokany.IncludedByDefault,
 				"Dokany requirement comes from the lock and remains opt-in");
-			verify(RuntimeVersionPolicy.Evaluate(winFsp, "2.2.26215", out required) == RuntimeVersionComparison.Current &&
-				string.Equals(required, winFspRequired, StringComparison.Ordinal) && !winFsp.IncludedByDefault &&
-				winFsp.DisplayName.IndexOf("Beta", StringComparison.OrdinalIgnoreCase) >= 0,
-				"WinFsp lock remains opt-in and visibly identifies the beta");
-			verify(GamingRuntimeManifest.GetComponents().Where(RuntimeVersionPolicy.RequiresMinimumVersion).Count() == 12,
-				"VC, .NET Desktop, four Java LTS families, Dokany and WinFsp offline payloads are freshness-managed");
+			verify(GamingRuntimeManifest.GetComponents().Where(RuntimeVersionPolicy.RequiresMinimumVersion).Count() == 11,
+				"VC, .NET Desktop, four Java LTS families and Dokany offline payloads are freshness-managed");
 
 			return passed;
 		}

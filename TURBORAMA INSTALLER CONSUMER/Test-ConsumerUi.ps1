@@ -78,7 +78,7 @@ try {
 	if ($tokenRegressionExit -ne 0) { throw 'Regressão no caminho Executar como administrador/token 1346.' }
 	Write-Output 'ELEVATED TOKEN REGRESSION PASS: identification-only thread token replaced by validated limited context.'
 
-    & $consumerCompiler /nologo /target:exe /warnaserror+ /out:TestResults\executables\SecureInstallerStagingTests.exe /r:System.dll /r:System.Core.dll SecureInstallerStaging.cs Logger.cs Tests\SecureInstallerStagingTests.cs
+    & $consumerCompiler /nologo /target:exe /warnaserror+ /main:InstallerHost.SecureInstallerStagingTests /out:TestResults\executables\SecureInstallerStagingTests.exe /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:Accessibility.dll $interfaceResources $consumerSources Tests\SecureInstallerStagingTests.cs
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar teste do staging.' }
     if ($elevated) {
         & .\TestResults\executables\SecureInstallerStagingTests.exe

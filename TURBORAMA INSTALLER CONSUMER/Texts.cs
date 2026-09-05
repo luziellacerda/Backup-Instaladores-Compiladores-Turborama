@@ -113,18 +113,7 @@ namespace InstallerHost
 								goto IL_06D2;
 							}
 						}
-						else if (c != 'd')
-						{
-							if (c == 'w')
-							{
-								if (key == "winFSPtext")
-								{
-									text = "WinFsp (used to mount Squashfs files)";
-									goto IL_06D2;
-								}
-							}
-						}
-						else if (key == "dokanyText")
+						else if (c == 'd' && key == "dokanyText")
 						{
 							text = "Dokan (used to mount XBOX images with CXBX)";
 							goto IL_06D2;
@@ -387,7 +376,6 @@ namespace InstallerHost
 			{ "vcText", "Microsoft Visual C++ Runtimes Complete (2005-2022, x86 + x64) - selected" },
 			{ "dx9text", "DirectX 9 (Наследена версия)" },
 			{ "dokanyText", "Dokan (използва се за монтиране на XBOX образи с CXBX)" },
-			{ "winFSPtext", "WinFsp" },
 			{ "DownloadAndInstall", "Изтегляне и инсталиране на предварителни компоненти...\r\nМоля, изчакайте..." },
 			{ "Downloading", "Изтегляне" },
 			{ "Extracting", "Извличане" },
@@ -436,7 +424,6 @@ namespace InstallerHost
 			{ "vcText", "Microsoft Visual C++ Runtimes Complete (2005-2022, x86 + x64) - selected" },
 			{ "dx9text", "DirectX Complete: Legacy June 2010 + DirectX 11/12 via Windows Update - selected" },
 			{ "dokanyText", "Dokan (permet de monter les images Xbox avec CXBX)" },
-			{ "winFSPtext", "WinFsp (permet de monter les images SquashFS)" },
 			{ "DownloadAndInstall", "Téléchargement et installation des prérequis...\r\nVeuillez patienter..." },
 			{ "Downloading", "Téléchargement de" },
 			{ "Extracting", "Extraction de" },
@@ -484,7 +471,6 @@ namespace InstallerHost
 			{ "vcText", "Microsoft Visual C++ Runtimes Complete (2005-2022, x86 + x64) - selected" },
 			{ "dx9text", "DirectX 9 (Altversion)" },
 			{ "dokanyText", "Dokan (zum Einbinden von XBOX-Images mit CXBX)" },
-			{ "winFSPtext", "WinFsp" },
 			{ "DownloadAndInstall", "Komponenten werden heruntergeladen und installiert…\r\nBitte warten…" },
 			{ "Downloading", "Wird heruntergeladen" },
 			{ "Extracting", "Wird entpackt" },
@@ -532,7 +518,6 @@ namespace InstallerHost
 			{ "vcText", "Microsoft Visual C++ Redistributable (2005–2022, x86 + x64)" },
 			{ "dx9text", "DirectX 9 (Eredità)" },
 			{ "dokanyText", "Dokan (usato per montare immagini XBOX con CXBX)" },
-			{ "winFSPtext", "WinFsp (usato per montare file SquashFS)" },
 			{ "DownloadAndInstall", "Download e installazione dei prerequisiti...\r\nAttendere prego..." },
 			{ "Downloading", "Download in corso" },
 			{ "Extracting", "Estrazione in corso" },
@@ -580,7 +565,6 @@ namespace InstallerHost
 			{ "vcText", "Microsoft Visual C++ Runtimes Complete (2005-2022, x86 + x64) - selected" },
 			{ "dx9text", "DirectX Complete: Legacy June 2010 + DirectX 11/12 via Windows Update - selected" },
 			{ "dokanyText", "Dokan (używany do montowania obrazów XBOX za pomocą CXBX)" },
-			{ "winFSPtext", "WinFsp" },
 			{ "DownloadAndInstall", "Pobieranie i instalowanie wymaganych komponentów...\r\nProszę czekać..." },
 			{ "Downloading", "Pobieranie" },
 			{ "Extracting", "Rozpakowywanie" },
@@ -628,7 +612,6 @@ namespace InstallerHost
 			{ "vcText", "Microsoft Visual C++ Runtimes Complete (2005-2022, x86 + x64) - selected" },
 			{ "dx9text", "DirectX Complete: Legacy June 2010 + DirectX 11/12 via Windows Update - selected" },
 			{ "dokanyText", "Dokan (usado para montar imágenes de XBOX con CXBX)" },
-			{ "winFSPtext", "WinFsp" },
 			{ "DownloadAndInstall", "Descargando e instalando los requisitos previos...\r\nPor favor espere..." },
 			{ "Downloading", "Descargando" },
 			{ "Extracting", "Extrayendo" },

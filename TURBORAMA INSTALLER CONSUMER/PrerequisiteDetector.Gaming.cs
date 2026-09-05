@@ -180,9 +180,6 @@ namespace InstallerHost
 					case "dokany":
 						installed = IsDokanyInstalled(out version);
 						break;
-					case "winfsp":
-						installed = IsWinFspInstalled(out version);
-						break;
 					default:
 						if (component.DetectionKey.StartsWith("vc-legacy-", StringComparison.OrdinalIgnoreCase))
 						{

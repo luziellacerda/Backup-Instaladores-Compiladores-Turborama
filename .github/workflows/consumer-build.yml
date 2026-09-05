@@ -16,9 +16,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validar-windows-suportados:
+    name: Validar em ${{ matrix.windows }}
+    strategy:
+      fail-fast: false
+      matrix:
+        windows: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.windows }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: TURBORAMA INSTALLER CONSUMER
+    steps:
+      - name: Obter fontes do commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            TURBORAMA INSTALLER CONSUMER
+            .github
+
+      - name: Compilar e validar sem executar pacotes
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $msbuild = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+          if (-not $msbuild) { throw 'MSBuild nao encontrado.' }
+          New-Item -ItemType Directory -Path TestResults -Force | Out-Null
+          & ./Test-ConsumerUi.ps1 -MSBuildPath $msbuild 2>&1 | Tee-Object -FilePath ('TestResults/' + '${{ matrix.windows }}' + '.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Compilacao ou validacao falhou.' }
+
+      - name: Guardar comprovante da plataforma
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: TurboRama-validacao-${{ matrix.windows }}-${{ github.sha }}
+          path: TURBORAMA INSTALLER CONSUMER/TestResults/${{ matrix.windows }}.log
+          if-no-files-found: warn
+          retention-days: 14
+
   build:
+    needs: validar-windows-suportados
     runs-on: windows-2022
-    timeout-minutes: 45
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
@@ -48,6 +89,40 @@ jobs:
           & ./Build-Consumer.ps1 -MSBuildPath $msbuild 2>&1 | Tee-Object -FilePath TestResults/github-build.log
           if ($LASTEXITCODE -ne 0) { throw 'Compilacao ou testes falharam.' }
 
+      - name: Executar gate real dos runtimes no runner descartavel
+        env:
+          TURBORAMA_GITHUB_INSTALLATION_SMOKE_NONCE: turborama-runtime-smoke:${{ github.run_id }}:${{ github.run_attempt }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $smokeCompiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          if (-not (Test-Path -LiteralPath $smokeCompiler -PathType Leaf)) {
+            throw 'Compilador x64 do .NET Framework nao encontrado.'
+          }
+
+          $smokeDirectory = Join-Path $PWD 'TestResults\executables'
+          $smokeExecutable = Join-Path $smokeDirectory 'ConsumerInstallationSmoke.exe'
+          $smokeLog = Join-Path $PWD 'TestResults\runtime-install-smoke.log'
+          $installer = Join-Path $PWD 'bin\Release\InstallerHost.exe'
+          New-Item -ItemType Directory -Path $smokeDirectory -Force | Out-Null
+          'Compilando o gate x64 de instalacao real.' | Set-Content -LiteralPath $smokeLog -Encoding utf8
+
+          & $smokeCompiler /nologo /target:exe /platform:x64 /warnaserror+ ('/out:' + $smokeExecutable) Tests\ConsumerInstallationSmoke.cs 2>&1 |
+            Tee-Object -FilePath $smokeLog -Append
+          $smokeCompileExitCode = $LASTEXITCODE
+          if ($smokeCompileExitCode -ne 0) {
+            throw "A compilacao do gate real falhou (codigo $smokeCompileExitCode)."
+          }
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            throw 'InstallerHost.exe nao foi produzido pelo build.'
+          }
+
+          & $smokeExecutable $installer $env:TURBORAMA_GITHUB_INSTALLATION_SMOKE_NONCE 2>&1 |
+            Tee-Object -FilePath $smokeLog -Append
+          $smokeExitCode = $LASTEXITCODE
+          if ($smokeExitCode -ne 0) {
+            throw "O gate real de instalacao falhou (codigo $smokeExitCode)."
+          }
+
       - name: Disponibilizar instalador e comprovantes
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -70,6 +145,7 @@ jobs:
           name: TurboRama-testes-${{ github.sha }}
           path: |
             TURBORAMA INSTALLER CONSUMER/TestResults/github-build.log
+            TURBORAMA INSTALLER CONSUMER/TestResults/runtime-install-smoke.log
             TURBORAMA INSTALLER CONSUMER/TestResults/consumer/*.png
             TURBORAMA INSTALLER CONSUMER/TestResults/diagnostic/*.png
           if-no-files-found: warn

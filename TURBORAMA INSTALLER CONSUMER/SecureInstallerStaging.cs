@@ -202,6 +202,11 @@ namespace InstallerHost
 			{
 				return;
 			}
+			if (InstallerProcessQuarantine.TryDeferStagingCleanup(this))
+			{
+				Logger.Log("Private installer staging retained while a process remains quarantined: " + Path);
+				return;
+			}
 			disposed = true;
 			try
 			{

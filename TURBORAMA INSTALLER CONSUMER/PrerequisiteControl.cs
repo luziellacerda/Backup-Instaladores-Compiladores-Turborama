@@ -138,8 +138,11 @@ namespace InstallerHost
 			}
 			int totalSteps = GetSelectedStepCount(selection);
 			int runtimeSteps = totalSteps - (selection.OpenNvidiaOfficialSource ? 1 : 0);
-			if (HasSelectedRuntimeGroup(selection.RuntimeSelection) &&
-				(prerequisiteRestartRequired || gamingReadinessProfile.RuntimeRestartRequired))
+			// A restart requested by an installed component remains a hard stop even
+			// if the user later clears every checkbox. This is intentionally separate
+			// from the advisory Windows Update pending-restart flag.
+			if (prerequisiteRestartRequired ||
+				(gamingReadinessProfile != null && gamingReadinessProfile.RuntimeRestartRequired))
 			{
 				SetProgressHeaderSafe("Reinicialização pendente",
 					"Salve seus arquivos e reinicie o Windows manualmente antes de preparar mais componentes. Nenhum reinício será solicitado por esta tela.");
@@ -326,7 +329,6 @@ namespace InstallerHost
 				chkVCpp.Checked = true;
 				chkDirectX.Checked = true;
 				chkDokany.Checked = false;
-				chkwinFSP.Checked = false;
 				chkOptionalCompatibility.Checked = false;
 				if (chkNvidiaApp != null)
 				{
@@ -338,7 +340,6 @@ namespace InstallerHost
 			chkVCpp.Enabled = true;
 			chkDirectX.Enabled = true;
 			chkDokany.Enabled = IsOfflineOptionApplicable("dokany");
-			chkwinFSP.Enabled = IsOfflineOptionApplicable("winfsp");
 			chkOptionalCompatibility.Enabled = GamingRuntimeManifest.GetComponents().Any(component =>
 				RuntimeInstallerHelper.IsOptionalCompatibilityComponent(component.Id) && component.CanInstallOffline &&
 				GamingRuntimeManifest.IsApplicableToCurrentOs(component));
@@ -356,7 +357,6 @@ namespace InstallerHost
 					InstallMicrosoftRuntimeStack = chkVCpp.Enabled && chkVCpp.Checked,
 					InstallDirectXLegacy = chkDirectX.Enabled && chkDirectX.Checked,
 					InstallDokany = chkDokany.Enabled && chkDokany.Checked,
-					InstallWinFsp = chkwinFSP.Enabled && chkwinFSP.Checked,
 					InstallOptionalCompatibility = chkOptionalCompatibility.Enabled && chkOptionalCompatibility.Checked,
 					OpenNvidiaOfficialSource = chkNvidiaApp != null && chkNvidiaApp.Enabled && chkNvidiaApp.Checked,
 					AllowedComponentIds = restrictedRepairComponentIds == null
@@ -400,8 +400,7 @@ namespace InstallerHost
 				(selection.RuntimeSelection.InstallDirectXLegacy ? 2 : 0) |
 				(selection.OpenNvidiaOfficialSource ? 4 : 0) |
 				(selection.RuntimeSelection.InstallDokany ? 8 : 0) |
-				(selection.RuntimeSelection.InstallWinFsp ? 16 : 0) |
-				(selection.RuntimeSelection.InstallOptionalCompatibility ? 32 : 0);
+				(selection.RuntimeSelection.InstallOptionalCompatibility ? 16 : 0);
 			if (observedSelectionMask.HasValue && observedSelectionMask.Value != selectionMask)
 			{
 				bool previouslyComplete = installationComplete;
@@ -463,7 +462,7 @@ namespace InstallerHost
 		private void SetSelectionLocked(bool locked)
 		{
 			if (selectionLocked == locked) return;
-			CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp, chkDokany, chkwinFSP, chkOptionalCompatibility };
+			CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp, chkDokany, chkOptionalCompatibility };
 			if (locked)
 			{
 				InvalidateGamingReadinessScan();
@@ -491,7 +490,7 @@ namespace InstallerHost
 			restoringLockedSelection = true;
 			try
 			{
-				CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp, chkDokany, chkwinFSP, chkOptionalCompatibility };
+				CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp, chkDokany, chkOptionalCompatibility };
 				for (int index = 0; index < options.Length; index++)
 					options[index].Checked = (lockedCheckedMask & (1 << index)) != 0;
 			}
@@ -508,7 +507,7 @@ namespace InstallerHost
 		private static bool HasSelectedRuntimeGroup(GamingRuntimeInstallSelection selection)
 		{
 			return selection != null && (selection.InstallMicrosoftRuntimeStack || selection.InstallDirectXLegacy ||
-				selection.InstallDokany || selection.InstallWinFsp || selection.InstallOptionalCompatibility);
+				selection.InstallDokany || selection.InstallOptionalCompatibility);
 		}
 
 		private static bool IsOfflineOptionApplicable(string componentId)
@@ -661,7 +660,6 @@ namespace InstallerHost
 				chkVCpp.Checked = repairSelection.InstallMicrosoftRuntimeStack;
 				chkDirectX.Checked = repairSelection.InstallDirectXLegacy;
 				chkDokany.Checked = false;
-				chkwinFSP.Checked = false;
 				chkOptionalCompatibility.Checked = false;
 				if (chkNvidiaApp != null) chkNvidiaApp.Checked = false;
 				restrictedRepairComponentIds = repairSelection.AllowedComponentIds == null

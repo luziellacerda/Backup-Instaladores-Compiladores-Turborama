@@ -49,6 +49,7 @@
 	<Compile Include="GamingReadinessRepairPlanner.cs" />
     <Compile Include="GamingRuntimeManifest.cs" />
     <Compile Include="InstallerPackageSecurity.cs" />
+	<Compile Include="InstallerProcessJob.cs" />
     <Compile Include="LimitedUserImpersonation.cs" />
     <Compile Include="ProductPackageSecurity.cs" />
     <Compile Include="PrerequisiteIntegrityCatalog.cs" />
@@ -101,7 +102,6 @@
     <EmbeddedResource Include="resources\prerequisites\vcredist2013_x86.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2013_x86.zip</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="resources\prerequisites\xnafx40_redist.msi"><LogicalName>InstallerHost.resources.prerequisites.xnafx40_redist.msi</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="resources\prerequisites\DokanSetup.exe"><LogicalName>InstallerHost.resources.prerequisites.DokanSetup.exe</LogicalName></EmbeddedResource>
-    <EmbeddedResource Include="resources\prerequisites\winfsp-2.2.26215.msi"><LogicalName>InstallerHost.resources.prerequisites.winfsp-2.2.26215.msi</LogicalName></EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

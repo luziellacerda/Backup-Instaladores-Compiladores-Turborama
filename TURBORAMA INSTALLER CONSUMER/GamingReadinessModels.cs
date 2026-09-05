@@ -317,7 +317,7 @@ namespace InstallerHost
 	/// <summary>
 	/// Opções que o usuário realmente vê na tela de pré-requisitos. O plano de
 	/// instalação não pode incluir silenciosamente um grupo que esteja desmarcado.
-	/// Drivers de sistema de arquivos exigem escolhas próprias e nunca pertencem
+	/// O driver de sistema de arquivos exige escolha própria e nunca pertence
 	/// implicitamente ao stack recomendado.
 	/// </summary>
 	public sealed class GamingRuntimeInstallSelection
@@ -325,7 +325,6 @@ namespace InstallerHost
 		public bool InstallMicrosoftRuntimeStack { get; set; }
 		public bool InstallDirectXLegacy { get; set; }
 		public bool InstallDokany { get; set; }
-		public bool InstallWinFsp { get; set; }
 		public bool InstallOptionalCompatibility { get; set; }
 		public bool OpenNvidiaOfficialSource { get; set; }
 		public string[] AllowedComponentIds { get; set; }
@@ -337,7 +336,6 @@ namespace InstallerHost
 				InstallMicrosoftRuntimeStack = true,
 				InstallDirectXLegacy = true,
 				InstallDokany = false,
-				InstallWinFsp = false,
 				InstallOptionalCompatibility = false,
 				OpenNvidiaOfficialSource = false
 			};

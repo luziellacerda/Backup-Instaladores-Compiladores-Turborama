@@ -2,8 +2,12 @@
 // This partial factory bypasses the production constructor and all diagnostics.
 // It never creates a worker, starts an installer, shows a form or accesses the PC.
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace InstallerHost
@@ -30,7 +34,6 @@ namespace InstallerHost
             chkNvidiaApp.Checked = false;
             chkNvidiaApp.Enabled = false;
             chkDokany.Checked = false;
-            chkwinFSP.Checked = false;
             chkOptionalCompatibility.Checked = false;
             UpdateProgressMaximumFromSelection();
             ApplyGamingReadinessProfileToUi();
@@ -88,14 +91,13 @@ namespace InstallerHost
 					InstallMicrosoftRuntimeStack = true,
 					InstallDirectXLegacy = true,
 					InstallDokany = true,
-					InstallWinFsp = true,
 					InstallOptionalCompatibility = true,
 					OpenNvidiaOfficialSource = true,
 					AllowedComponentIds = new[] { "vc-modern-x64", "directx-june-2010" }
 				});
 				GamingRuntimeInstallSelection repairSelection = page.GetPrerequisiteSelection().RuntimeSelection;
 				verify(repairSelection.InstallMicrosoftRuntimeStack && repairSelection.InstallDirectXLegacy &&
-					!repairSelection.InstallDokany && !repairSelection.InstallWinFsp && !repairSelection.InstallOptionalCompatibility &&
+					!repairSelection.InstallDokany && !repairSelection.InstallOptionalCompatibility &&
 					!repairSelection.OpenNvidiaOfficialSource &&
 					repairSelection.AllowedComponentIds.OrderBy(id => id).SequenceEqual(
 						new[] { "directx-june-2010", "vc-modern-x64" }),
@@ -273,9 +275,184 @@ namespace InstallerHost
             }
             RunProgressCountRegressionTests(verify);
             RunOptionalCompatibilityRegressionTests(verify);
+			RunInstallerTimeoutRegressionTests(verify);
+			RunInstallerJobIntegrationTests(verify);
             RunOptionalDriverRegressionTests(verify);
             return passed;
         }
+
+		private static void RunInstallerJobIntegrationTests(Action<bool, string> verify)
+		{
+			int[] layout = InstallerProcessJob.GetNativeLayoutForTest();
+			int[] expected = IntPtr.Size == 8
+				? new[] { 104, 24, 64, 144, 48 }
+				: new[] { 68, 16, 48, 112, 48 };
+			verify(layout.SequenceEqual(expected),
+				"Job Object process/accounting structures match the Windows SDK ABI");
+
+			string executable = Assembly.GetExecutingAssembly().Location;
+			string workingDirectory = Path.GetDirectoryName(executable);
+			using (InstallerProcessJob completed = InstallerProcessJob.Start(
+				executable,
+				"--installer-job-child",
+				workingDirectory,
+				new[] { executable }))
+			{
+				verify(completed.WaitForExit(5000) && completed.GetActiveProcessCount() == 0 &&
+					completed.GetExitCode() == 37,
+					"Suspended child is assigned before resume and normal job completion reports zero active processes");
+			}
+
+			using (InstallerProcessJob tree = InstallerProcessJob.Start(
+				executable,
+				"--installer-job-tree-parent",
+				workingDirectory,
+				new[] { executable }))
+			{
+				uint active = 0;
+				for (int attempt = 0; attempt < 20 && active < 2; attempt++)
+				{
+					Thread.Sleep(50);
+					active = tree.GetActiveProcessCount();
+				}
+				verify(active >= 2,
+					"A descendant created by the synthetic parent is contained in the same installer job");
+				TimedOutProcessDisposition stopped =
+					RuntimeInstallerHelper.StopTimedOutProcessAndConfirmExit(
+						tree, "árvore sintética", 5000);
+				verify(stopped == TimedOutProcessDisposition.ConfirmedExited &&
+					tree.GetActiveProcessCount() == 0,
+					"Timeout terminates the complete synthetic process tree and confirms ActiveProcesses zero");
+			}
+		}
+
+		private static void RunInstallerTimeoutRegressionTests(Action<bool, string> verify)
+		{
+			FieldInfo activeSession = typeof(RuntimeInstallerHelper).GetField(
+				"installationSessionActive", BindingFlags.Static | BindingFlags.NonPublic);
+			bool reentrantInstallRejected = false;
+			activeSession.SetValue(null, 1);
+			try
+			{
+				RuntimeInstallerHelper.InstallCompleteGamingRuntimeStack(
+					new GamingRuntimeInstallSelection(), null, null, null);
+			}
+			catch (InvalidOperationException error)
+			{
+				reentrantInstallRejected = error.Message.Contains("já está em andamento");
+			}
+			finally
+			{
+				activeSession.SetValue(null, 0);
+			}
+			verify(reentrantInstallRejected,
+				"Non-reentrant session gate rejects a second installation before scanning or process creation");
+
+			int immediateRetentionNotices = 0;
+			SyntheticInstallerProcessTermination immediate =
+				new SyntheticInstallerProcessTermination(false, 0, true);
+			TimedOutProcessDisposition immediateDisposition =
+				RuntimeInstallerHelper.StopTimedOutProcessAndConfirmExit(
+				immediate, "processo sintético imediato", 0,
+				delegate { immediateRetentionNotices++; });
+			verify(immediateDisposition == TimedOutProcessDisposition.ConfirmedExited &&
+				immediate.KillCalls == 1 && immediate.WaitCalls == 1 && immediateRetentionNotices == 0,
+				"Termination helper confirms tracked exit before the caller applies its quarantine policy");
+			verify(RuntimeInstallerHelper.MustRetainTimedOutExecutionForHost(
+				TimedOutProcessDisposition.ConfirmedExited) &&
+				RuntimeInstallerHelper.MustRetainTimedOutExecutionForHost(
+					TimedOutProcessDisposition.QuarantineRequired),
+				"Every installer timeout retains files for the host lifetime, including delegated EXE work");
+
+			SyntheticInstallerProcessTermination naturalExitDuringFailedKill =
+				new SyntheticInstallerProcessTermination(true, 0, true);
+			TimedOutProcessDisposition naturalExitDisposition =
+				RuntimeInstallerHelper.StopTimedOutProcessAndConfirmExit(
+					naturalExitDuringFailedKill, "processo sintético com saída natural", 0);
+			verify(naturalExitDisposition == TimedOutProcessDisposition.ConfirmedExited &&
+				naturalExitDuringFailedKill.KillCalls == 1 && naturalExitDuringFailedKill.WaitCalls == 1,
+				"A Kill/exit race accepts the first positive wait as evidence of natural process exit");
+
+			SyntheticInstallerProcessTermination failedKillThenExit =
+				new SyntheticInstallerProcessTermination(true, 0, false, false, true);
+			int retainedNotices = 0;
+			TimedOutProcessDisposition failedKillDisposition =
+				RuntimeInstallerHelper.StopTimedOutProcessAndConfirmExit(
+				failedKillThenExit, "processo sintético com Kill recusado", 0,
+				delegate { retainedNotices++; });
+			verify(failedKillDisposition == TimedOutProcessDisposition.QuarantineRequired &&
+				failedKillThenExit.KillCalls == 1 && failedKillThenExit.WaitCalls == 1 && retainedNotices == 1,
+				"A failed Kill cannot authorize cleanup; the UI is notified and ownership must transfer to quarantine");
+
+			SyntheticInstallerProcessTermination transientWaitFailure =
+				new SyntheticInstallerProcessTermination(false, 1, false, true);
+			TimedOutProcessDisposition waitFailureDisposition =
+				RuntimeInstallerHelper.StopTimedOutProcessAndConfirmExit(
+					transientWaitFailure, "processo sintético com espera transitória", 0);
+			verify(waitFailureDisposition == TimedOutProcessDisposition.QuarantineRequired &&
+				transientWaitFailure.KillCalls == 1 && transientWaitFailure.WaitCalls == 1,
+				"A wait error fails closed into quarantine instead of blocking the UI or releasing files");
+
+			SyntheticInstallerProcessTermination rejectedUiNotice =
+				new SyntheticInstallerProcessTermination(false, 0, false, true);
+			TimedOutProcessDisposition closedUiDisposition =
+				RuntimeInstallerHelper.StopTimedOutProcessAndConfirmExit(
+				rejectedUiNotice, "processo sintético com UI fechada", 0,
+				delegate { throw new ObjectDisposedException("interface sintética"); });
+			verify(closedUiDisposition == TimedOutProcessDisposition.QuarantineRequired &&
+				rejectedUiNotice.WaitCalls == 1,
+				"A closed UI cannot weaken the fail-closed quarantine decision");
+
+			bool invalidWaitRejected = false;
+			try
+			{
+				RuntimeInstallerHelper.StopTimedOutProcessAndConfirmExit(
+					new SyntheticInstallerProcessTermination(false, 0, true),
+					"processo sintético", -1);
+			}
+			catch (ArgumentOutOfRangeException)
+			{
+				invalidWaitRejected = true;
+			}
+			verify(invalidWaitRejected,
+				"Timeout policy rejects a negative confirmation window instead of inventing process evidence");
+		}
+
+		private sealed class SyntheticInstallerProcessTermination : IInstallerProcessTermination
+		{
+			private readonly bool killThrows;
+			private readonly int waitCallThatThrows;
+			private readonly Queue<bool> waitResults;
+
+			internal SyntheticInstallerProcessTermination(
+				bool killThrows,
+				int waitCallThatThrows,
+				params bool[] waitResults)
+			{
+				this.killThrows = killThrows;
+				this.waitCallThatThrows = waitCallThatThrows;
+				this.waitResults = new Queue<bool>(waitResults ?? new bool[0]);
+			}
+
+			internal int KillCalls { get; private set; }
+			internal int WaitCalls { get; private set; }
+
+			public void Kill()
+			{
+				KillCalls++;
+				if (killThrows) throw new InvalidOperationException("Falha sintética de Kill.");
+			}
+
+			public bool WaitForExit(int milliseconds)
+			{
+				WaitCalls++;
+				if (WaitCalls == waitCallThatThrows)
+					throw new InvalidOperationException("Falha sintética de espera.");
+				if (waitResults.Count == 0)
+					throw new InvalidOperationException("O teste não forneceu evidência sintética de saída.");
+				return waitResults.Dequeue();
+			}
+		}
 
         private static void RunProgressCountRegressionTests(Action<bool, string> verify)
         {
@@ -358,10 +535,10 @@ namespace InstallerHost
                 page.installationComplete = true;
                 page.chkOptionalCompatibility.Checked = true;
                 GamingRuntimeInstallSelection selected = page.GetPrerequisiteSelection().RuntimeSelection;
-                verify(!page.installationComplete && selected.InstallOptionalCompatibility && page.observedSelectionMask == 32,
+                verify(!page.installationComplete && selected.InstallOptionalCompatibility && page.observedSelectionMask == 16,
                     "Selecting additional compatibility changes the effective selection and invalidates previous completion");
                 verify(!selected.InstallMicrosoftRuntimeStack && !selected.InstallDirectXLegacy &&
-                    !selected.InstallDokany && !selected.InstallWinFsp && !selected.OpenNvidiaOfficialSource,
+                    !selected.InstallDokany && !selected.OpenNvidiaOfficialSource,
                     "Additional compatibility never silently selects another group or driver");
                 page.UpdatePrerequisiteOptions();
                 verify(page.chkOptionalCompatibility.Checked && page.chkOptionalCompatibility.Enabled,
@@ -409,60 +586,44 @@ namespace InstallerHost
         private static void RunOptionalDriverRegressionTests(Action<bool, string> verify)
         {
             GamingRuntimeInstallSelection defaults = GamingRuntimeInstallSelection.RecommendedDefaults();
-            verify(!defaults.InstallDokany && !defaults.InstallWinFsp,
-                "Recommended defaults never opt into either filesystem driver");
+            verify(!defaults.InstallDokany,
+                "Recommended defaults never opt into the filesystem driver");
             GamingRuntimeComponent dokany = GamingRuntimeManifest.GetComponents().Single(item => item.Id == "dokany");
-            GamingRuntimeComponent winfsp = GamingRuntimeManifest.GetComponents().Single(item => item.Id == "winfsp");
-            verify(dokany.CanInstallOffline && winfsp.CanInstallOffline &&
-                dokany.Tier == GamingRuntimeTier.Optional && winfsp.Tier == GamingRuntimeTier.Optional &&
-                !dokany.IncludedByDefault && !winfsp.IncludedByDefault,
-                "Both driver packages remain optional and excluded by default in the manifest");
+            verify(dokany.CanInstallOffline && dokany.Tier == GamingRuntimeTier.Optional && !dokany.IncludedByDefault,
+                "The production-eligible driver remains optional and excluded by default in the manifest");
+            verify(GamingRuntimeManifest.FindById("winfsp") == null &&
+                !GamingRuntimeManifest.GetComponents().Any(item =>
+                    item.BundleFileName.IndexOf("winfsp", StringComparison.OrdinalIgnoreCase) >= 0),
+                "Prerelease WinFsp is absent from the runtime manifest");
             GamingReadinessProfile missing = CreateSelectionTestProfile(GamingReadinessState.Unknown);
             foreach (RuntimeComponentStatus item in missing.MutableRuntimeStatuses) item.BundleAvailable = true;
-            for (int mask = 0; mask < 4; mask++)
+            for (int mask = 0; mask < 2; mask++)
             {
                 GamingRuntimeInstallSelection selection = new GamingRuntimeInstallSelection
                 {
-                    InstallDokany = (mask & 1) != 0,
-                    InstallWinFsp = (mask & 2) != 0
+                    InstallDokany = (mask & 1) != 0
                 };
                 RuntimeInstallPlanItem[] planned = RuntimeInstallerHelper.BuildInstallationPlan(missing, selection).ToArray();
-                verify((planned.Single(item => item.Component.Id == "dokany").Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle) == selection.InstallDokany &&
-                    (planned.Single(item => item.Component.Id == "winfsp").Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle) == selection.InstallWinFsp,
-                    "Driver choices are independent, explicit and honored for mask " + mask);
+                verify((planned.Single(item => item.Component.Id == "dokany").Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle) == selection.InstallDokany,
+                    "The driver choice is explicit and honored for mask " + mask);
                 verify(!planned.Any(item => item.Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle &&
-                    item.Component.Id != "dokany" && item.Component.Id != "winfsp"),
-                    "Selecting drivers never silently selects another runtime group (mask " + mask + ")");
+                    item.Component.Id != "dokany"),
+                    "Selecting the driver never silently selects another runtime group (mask " + mask + ")");
             }
             verify(!RuntimeInstallerHelper.BuildInstallationPlan(missing, defaults).Any(item =>
-                (item.Component.Id == "dokany" || item.Component.Id == "winfsp") &&
+                item.Component.Id == "dokany" &&
                 item.Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle),
-                "The recommended stack never schedules optional drivers");
-
-			GamingReadinessProfile outdatedWinFsp = CreateSelectionTestProfile(GamingReadinessState.Ready);
-			outdatedWinFsp.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
-			RuntimeComponentStatus outdatedWinFspStatus = outdatedWinFsp.MutableRuntimeStatuses.Single(item =>
-				item.Component.Id == "winfsp");
-			outdatedWinFspStatus.State = GamingReadinessState.Attention;
-			outdatedWinFspStatus.DetectedVersion = "2.1.25156";
-			outdatedWinFspStatus.BundleAvailable = true;
-			GamingRuntimeInstallSelection updateWinFsp = new GamingRuntimeInstallSelection { InstallWinFsp = true };
-			verify(RuntimeInstallerHelper.BuildInstallationPlan(outdatedWinFsp, updateWinFsp)
-				.Single(item => item.Component.Id == "winfsp").Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle &&
-				RuntimeInstallerHelper.GetInstallationPreflightBlockReason(outdatedWinFsp, updateWinFsp, true) == null,
-				"A confirmed outdated WinFsp remains eligible for its explicitly selected verified update");
+                "The recommended stack never schedules the optional driver");
             missing.MutableRuntimeStatuses.Single(item => item.Component.Id == "dokany").BundleAvailable = false;
             verify(RuntimeInstallerHelper.BuildInstallationPlan(missing, new GamingRuntimeInstallSelection { InstallDokany = true })
                 .Single(item => item.Component.Id == "dokany").Disposition == RuntimeInstallDisposition.MissingBundle,
                 "A selected driver with a missing payload is not silently skipped");
             verify(RuntimeInstallerHelper.GetOptionalDriverArguments("dokany") == "/quiet /norestart",
                 "Dokany uses the approved quiet and no-restart arguments");
-            verify(RuntimeInstallerHelper.GetOptionalDriverArguments("winfsp") == "/qn /norestart REBOOT=ReallySuppress INSTALLLEVEL=1",
-                "WinFsp suppresses reboot and installs Core only, not developer/kernel tools");
             bool rejectedDriver = false;
-            try { RuntimeInstallerHelper.GetOptionalDriverArguments("unapproved-driver"); }
+            try { RuntimeInstallerHelper.GetOptionalDriverArguments("winfsp"); }
             catch (InvalidOperationException) { rejectedDriver = true; }
-            verify(rejectedDriver, "No implicit executor strategy exists for an unknown driver");
+            verify(rejectedDriver, "No executor strategy remains for the excluded prerelease driver");
 
             GamingReadinessProfile space = CreateSelectionTestProfile(GamingReadinessState.Unknown);
             verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, true) != null,
@@ -526,31 +687,26 @@ namespace InstallerHost
 
             using (PrerequisiteControl page = CreateForUiTest(null))
             {
-                verify(!page.chkDokany.Checked && !page.chkwinFSP.Checked,
-                    "Both driver checkboxes are visibly unchecked on a new page");
+                verify(!page.chkDokany.Checked && page.Controls.Find("chkwinFSP", true).Length == 0,
+                    "Dokany starts unchecked and no prerelease WinFsp checkbox is exposed");
                 page.installationComplete = true;
                 page.chkDokany.Checked = true;
                 verify(!page.installationComplete && page.GetPrerequisiteSelection().RuntimeSelection.InstallDokany,
                     "Explicit Dokany selection invalidates an old completed result");
-                page.installationComplete = true;
-                page.chkwinFSP.Checked = true;
-                verify(!page.installationComplete && page.GetPrerequisiteSelection().RuntimeSelection.InstallWinFsp,
-                    "Explicit WinFsp selection invalidates an old completed result");
-                verify(page.GetSelectedStepCount(page.GetPrerequisiteSelection()) == 2,
-                    "Only the two selected missing driver payloads count as work");
+                verify(page.GetSelectedStepCount(page.GetPrerequisiteSelection()) == 1,
+                    "Only the selected missing production-eligible driver payload counts as work");
                 page.UpdatePrerequisiteOptions();
-                verify(page.chkDokany.Checked && page.chkwinFSP.Checked,
-                    "Returning to the page preserves both explicit driver choices");
+                verify(page.chkDokany.Checked,
+                    "Returning to the page preserves the explicit driver choice");
                 page.SetButtonsInstallingState(true);
-                verify(!page.chkDokany.Enabled && !page.chkwinFSP.Enabled,
-                    "Both driver choices are disabled before any worker starts");
+                verify(!page.chkDokany.Enabled,
+                    "The driver choice is disabled before any worker starts");
                 page.chkDokany.Checked = false;
-                page.chkwinFSP.Checked = false;
-                verify(page.chkDokany.Checked && page.chkwinFSP.Checked,
-                    "Programmatic changes to either driver are also rejected while busy");
+                verify(page.chkDokany.Checked,
+                    "Programmatic changes to the driver are rejected while busy");
                 page.SetButtonsInstallingState(false);
-                verify(page.chkDokany.Enabled && page.chkwinFSP.Enabled,
-                    "Unlock restores both explicit driver options");
+                verify(page.chkDokany.Enabled,
+                    "Unlock restores the explicit driver option");
                 page.gamingReadinessCapturedAtUtc = DateTime.UtcNow;
                 page.BtnNext_Click(page, EventArgs.Empty);
                 verify(page.installerWorker == null && page.progressTitleText == "Não foi possível preparar os componentes",
@@ -582,16 +738,16 @@ namespace InstallerHost
                 verify(page.installationComplete && !page.prerequisiteRestartRequired,
                     "Windows Update advisory cannot convert completed component work into a paused repair");
                 ready.PendingRestart = false;
-                RuntimeInstallerHelper.MarkRestartRequired(ready, winfsp, 3010);
-                verify(ready.PendingRestart && ready.RuntimeStatuses.Single(item => item.Component.Id == "winfsp").State == GamingReadinessState.Attention,
+                RuntimeInstallerHelper.MarkRestartRequired(ready, dokany, 3010);
+                verify(ready.PendingRestart && ready.RuntimeStatuses.Single(item => item.Component.Id == "dokany").State == GamingReadinessState.Attention,
                     "A 3010 result is pending verification, never falsely Ready");
-                verify(ready.Findings.Any(item => item.Code == "installer-restart-winfsp"),
+                verify(ready.Findings.Any(item => item.Code == "installer-restart-dokany"),
                     "Restart-pending result is included in the diagnostic report");
                 page.SetButtonsInstallingState(true);
                 page.InstallerWorker_RunWorkerCompleted(page, new RunWorkerCompletedEventArgs(
                     new PrerequisiteInstallationResult(new PrerequisiteSelection
                     {
-                        RuntimeSelection = new GamingRuntimeInstallSelection { InstallWinFsp = true }
+                        RuntimeSelection = new GamingRuntimeInstallSelection { InstallDokany = true }
                     }, ready), null, false));
                 verify(!page.installationComplete && page.prerequisiteRestartRequired && !page.IsInstallationRunning() && page.btnNext.Enabled,
                     "Restart outcome pauses on Prerequisites, unlocks the page and does not navigate");
@@ -603,7 +759,6 @@ namespace InstallerHost
                     page.progressTitleText == "Reinicialização pendente",
                     "A later scanner cannot erase a reboot requested by the installer in this session");
                 page.chkDokany.Checked = false;
-                page.chkwinFSP.Checked = false;
                 verify(page.GetSelectedStepCount(page.GetPrerequisiteSelection()) == 0,
                     "Deselect-all preserves zero-work semantics even after a restart warning");
                 RuntimeInstallerHelper.MarkRestartRequired(later, dokany, 1641);

@@ -11,6 +11,17 @@ $previousCompilerTemp = $env:TEMP
 $previousCompilerTmp = $env:TMP
 Push-Location $PSScriptRoot
 try {
+	$buildIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+	try {
+		$buildIsElevated = ([Security.Principal.WindowsPrincipal]::new($buildIdentity)).IsInRole(
+			[Security.Principal.WindowsBuiltInRole]::Administrator)
+	}
+	finally {
+		$buildIdentity.Dispose()
+	}
+	if (-not $buildIsElevated) {
+		throw 'A compilação integral exige um PowerShell executado como Administrador para validar o staging seguro antes de gerar o artefato.'
+	}
     $repository = (& git -c "safe.directory=$((Get-Item $PSScriptRoot).Parent.FullName)" rev-parse --show-toplevel)
     if ($LASTEXITCODE -ne 0) { throw 'Compile a cópia do projeto versionada no Git.' }
     $commitOutput = @(& git -c "safe.directory=$repository" rev-parse HEAD)
@@ -46,6 +57,15 @@ try {
             [System.IO.FileShare]::Read)) | Out-Null
     }
     $catalog = Get-Content -LiteralPath 'prerequisites.lock.json' -Raw | ConvertFrom-Json
+    $prereleasePayloads = @($catalog.payloads | Where-Object {
+        $productVersionProperty = $_.PSObject.Properties['productVersion']
+        $productVersion = if ($null -eq $productVersionProperty) { '' } else { [string]$productVersionProperty.Value }
+        (($_.name, $productVersion, $_.installTier) -join ' ') -match '(?i)(^|[-_.\s])(alpha|beta|preview|prerelease|rc)([-_.\s]*\d|[-_.\s]|$)'
+    })
+    if ($prereleasePayloads.Count -ne 0) {
+        throw ('Componente de pré-lançamento recusado pela esteira de produção: ' +
+            (($prereleasePayloads | ForEach-Object { $_.name }) -join ', '))
+    }
     $payloadPaths = @($catalog.payloads | ForEach-Object { Join-Path 'resources\prerequisites' $_.name })
     foreach ($payloadPath in $payloadPaths) {
         $fullPayloadPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $payloadPath))
@@ -115,7 +135,7 @@ try {
     }
     $exe = Get-Item -LiteralPath $builtExePath
     $manifest = [ordered]@{
-        schemaVersion = 1; sourceCommit = $commit; sourceClean = $true
+        schemaVersion = 1; sourceCommit = $commit; sourceClean = $true; releaseChannel = 'production-gated-candidate'
         createdUtc = [DateTime]::UtcNow.ToString('o'); version = $exe.VersionInfo.FileVersion
         file = $exe.Name; length = $exe.Length; sha256 = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash
         catalogSha256 = $sourceHashes['prerequisites.lock.json']; sourceHashes = $sourceHashes
@@ -123,13 +143,14 @@ try {
         executableArchitecture = 'x64'; requiredOperatingSystemArchitecture = 'x64'
         internalTestsPassed = $true; realWindowQaPassed = $false; cleanWindowsInstallPassed = $false
         productPackageIncluded = $false; supportsDependenciesOnlyCompletion = $true; productionApproved = $false
-        containsPrereleaseComponents = $true; prereleaseComponents = @('WinFsp 2026 Beta4 (2.2.26215), optional and unchecked')
+        containsPrereleaseComponents = $false; prereleaseComponents = @()
+        productionBlockers = @('host-not-code-signed','clean-client-e2e-not-recorded','native-window-dpi-qa-not-recorded')
         correspondingSourcesVerified = $true; correspondingSources = $sourceCatalog.sources
-        warning = 'Candidato interno para testes, com WinFsp Beta opcional. Dependências podem ser concluídas sem pacote do produto; instalar os arquivos do TurboRama requer partes .pkg e sidecar. Não aprovado para produção.'
+        warning = 'Candidato gerado pela esteira de produção, bloqueado para comercialização até cumprir todos os controles do manifesto. Nenhum componente de pré-lançamento faz parte do artefato. Dependências podem ser concluídas sem pacote do produto; instalar os arquivos do TurboRama requer partes .pkg e sidecar.'
     }
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath 'bin\Release\InstallerHost-build-manifest.json' -Encoding UTF8
     ($manifest.sha256 + ' *InstallerHost.exe') | Set-Content -LiteralPath 'bin\Release\InstallerHost.exe.sha256' -Encoding ASCII
-    Write-Output ('EXE de teste: ' + $exe.FullName)
+    Write-Output ('Artefato compilado; bloqueado para produção até cumprir o manifesto: ' + $exe.FullName)
 } finally {
     for ($streamIndex = $heldInputStreams.Count - 1; $streamIndex -ge 0; $streamIndex--) {
         $heldInputStreams[$streamIndex].Dispose()

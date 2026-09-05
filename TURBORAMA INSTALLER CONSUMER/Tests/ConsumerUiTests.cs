@@ -1,7 +1,9 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace InstallerHost
@@ -27,6 +29,25 @@ namespace InstallerHost
         [STAThread]
         private static int Main(string[] args)
         {
+			if (args.Length == 1 && args[0] == "--installer-job-child") return 37;
+			if (args.Length == 1 && args[0] == "--installer-job-wait")
+			{
+				Thread.Sleep(30000);
+				return 0;
+			}
+			if (args.Length == 1 && args[0] == "--installer-job-tree-parent")
+			{
+				using (Process child = new Process())
+				{
+					child.StartInfo.FileName = typeof(ConsumerUiTests).Assembly.Location;
+					child.StartInfo.Arguments = "--installer-job-wait";
+					child.StartInfo.UseShellExecute = false;
+					child.StartInfo.CreateNoWindow = true;
+					if (!child.Start()) return 38;
+					Thread.Sleep(30000);
+					return 39;
+				}
+			}
             try
             {
                 Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
@@ -178,13 +199,12 @@ namespace InstallerHost
                             {
                                 FlowLayoutPanel content = Find<FlowLayoutPanel>(form, "prerequisiteContent");
                                 CheckBox dokany = Find<CheckBox>(form, "chkDokany");
-                                CheckBox winfsp = Find<CheckBox>(form, "chkwinFSP");
                                 Point location = content.PointToClient(dokany.PointToScreen(Point.Empty));
                                 content.AutoScrollPosition = new Point(0, Math.Max(0, location.Y - content.AutoScrollPosition.Y - 16)); Pump();
-                                Check(dokany.Enabled && winfsp.Enabled && !dokany.Checked && !winfsp.Checked,
-                                    "New driver options remain available but unchecked in the original Prerequisites step");
-                                Check(winfsp.Text.IndexOf("Beta", StringComparison.OrdinalIgnoreCase) >= 0,
-                                    "WinFsp checkbox explicitly identifies the prerelease");
+                                Check(dokany.Enabled && !dokany.Checked,
+                                    "The production-eligible driver option remains available but unchecked in Prerequisites");
+                                Check(form.Controls.Find("chkwinFSP", true).Length == 0,
+                                    "No prerelease WinFsp option is exposed in the consumer interface");
                                 using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
                                 { form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(directory, "Drivers-" + size.Width + ".png")); }
                                 CheckBox compatibility = Find<CheckBox>(form, "chkOptionalCompatibility");

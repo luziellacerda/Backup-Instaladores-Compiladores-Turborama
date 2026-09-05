@@ -270,10 +270,6 @@ namespace InstallerHost
 			{
 				return "CN=LEOSAC, O=LEOSAC, STREET=39 rue Principale, PostalCode=67220, L=Breitenau, S=Bas-Rhin, C=FR, SERIALNUMBER=919 690 420 00014, OID.1.3.6.1.4.1.311.60.2.1.1=Colmar, OID.1.3.6.1.4.1.311.60.2.1.2=Haut-Rhin, OID.1.3.6.1.4.1.311.60.2.1.3=FR, OID.2.5.4.15=Private Organization";
 			}
-			if (string.Equals(payloadName, "winfsp-2.2.26215.msi", StringComparison.OrdinalIgnoreCase))
-			{
-				return "CN=NAVIMATICS LLC, O=NAVIMATICS LLC, L=KIRKLAND, S=Washington, C=US, SERIALNUMBER=604 419 559, OID.2.5.4.15=Private Organization, OID.1.3.6.1.4.1.311.60.2.1.2=Washington, OID.1.3.6.1.4.1.311.60.2.1.3=US";
-			}
 			return string.Empty;
 		}
 

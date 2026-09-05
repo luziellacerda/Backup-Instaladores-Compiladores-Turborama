@@ -77,7 +77,7 @@ namespace InstallerHost
 				verify(repair.Enabled && repair.Text == "REPARAR 2 PROBLEMAS",
 					"Repair action exposes the exact number of safely repairable bundled dependencies");
 				verify(dialog.RepairSelection.InstallMicrosoftRuntimeStack && dialog.RepairSelection.InstallDirectXLegacy &&
-					!dialog.RepairSelection.InstallDokany && !dialog.RepairSelection.InstallWinFsp &&
+					!dialog.RepairSelection.InstallDokany &&
 					!dialog.RepairSelection.OpenNvidiaOfficialSource &&
 					dialog.RepairSelection.AllowedComponentIds.OrderBy(id => id).SequenceEqual(
 						new[] { "directx-june-2010", "vc-modern-x64" }),

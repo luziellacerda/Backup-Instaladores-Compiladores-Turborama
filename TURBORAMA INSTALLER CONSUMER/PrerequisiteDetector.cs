@@ -516,95 +516,6 @@ namespace InstallerHost
 			}
 		}
 
-		public static bool IsWinFspInstalled()
-		{
-			string ignoredVersion;
-			return IsWinFspInstalled(out ignoredVersion);
-		}
-
-		internal static bool IsWinFspInstalled(out string version)
-		{
-			version = string.Empty;
-			string[] programFilesRoots = new[]
-			{
-				Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-				Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
-			}.Where(item => !string.IsNullOrWhiteSpace(item))
-				.Distinct(StringComparer.OrdinalIgnoreCase)
-				.ToArray();
-			string[] knownInstallDirectories = programFilesRoots
-				.Select(root => Path.Combine(root, "WinFsp"))
-				.ToArray();
-			string[] knownDllPaths = knownInstallDirectories
-				.SelectMany(directory => new[]
-				{
-					Path.Combine(directory, "bin", "winfsp-x64.dll"),
-					Path.Combine(directory, "bin", "winfsp-x86.dll")
-				})
-				.ToArray();
-
-			string registeredVersion = GetRegistryValueString(
-				@"SOFTWARE\Classes\Installer\Dependencies\WinFsp", "Version");
-			string registeredInstallDirectory = GetRegistryValueString(@"SOFTWARE\WinFsp", "InstallDir");
-			string approvedInstallDirectory;
-			bool installDirectoryApproved = TryMatchExactInstallDirectory(
-				registeredInstallDirectory, knownInstallDirectories, out approvedInstallDirectory);
-			if (installDirectoryApproved && !string.IsNullOrWhiteSpace(registeredVersion))
-			{
-				string runtimeDll = Path.Combine(approvedInstallDirectory, "bin",
-					Environment.Is64BitOperatingSystem ? "winfsp-x64.dll" : "winfsp-x86.dll");
-				string runtimeFileVersion;
-				if (TryGetRegularFileVersion(runtimeDll, out runtimeFileVersion) &&
-					RuntimeVersionPolicy.HaveSameVersionFields(registeredVersion, runtimeFileVersion, 3))
-				{
-					version = registeredVersion;
-				}
-			}
-
-			// Metadados MSI, caminho aprovado e binário devem concordar para Ready.
-			// Qualquer evidência isolada continua presente, mas com versão vazia/Unknown.
-			return !string.IsNullOrWhiteSpace(registeredVersion) ||
-				!string.IsNullOrWhiteSpace(registeredInstallDirectory) ||
-				knownDllPaths.Any(File.Exists);
-		}
-
-		private static bool TryMatchExactInstallDirectory(
-			string candidate,
-			IEnumerable<string> approvedDirectories,
-			out string matchedDirectory)
-		{
-			matchedDirectory = string.Empty;
-			if (string.IsNullOrWhiteSpace(candidate) || !Path.IsPathRooted(candidate))
-			{
-				return false;
-			}
-			try
-			{
-				string fullCandidate = Path.GetFullPath(candidate)
-					.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-				foreach (string approved in approvedDirectories)
-				{
-					string fullApproved = Path.GetFullPath(approved)
-						.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-					if (!string.Equals(fullCandidate, fullApproved, StringComparison.OrdinalIgnoreCase))
-					{
-						continue;
-					}
-					if (!Directory.Exists(fullCandidate) ||
-						(File.GetAttributes(fullCandidate) & FileAttributes.ReparsePoint) != 0)
-					{
-						return false;
-					}
-					matchedDirectory = fullCandidate;
-					return true;
-				}
-			}
-			catch
-			{
-			}
-			return false;
-		}
-
 		private static bool TryGetRegularFileVersion(string path, out string version)
 		{
 			version = string.Empty;
@@ -652,9 +563,8 @@ namespace InstallerHost
 				return true;
 			}
 
-			// Some signed runtimes append a source-control identifier to the display
-			// string (for example WinFsp 2.1.25156.ddca7bd). The fixed numeric
-			// VERSIONINFO fields remain authoritative and comparable.
+			// Some signed binaries append build metadata to the display string. The
+			// fixed numeric VERSIONINFO fields remain authoritative and comparable.
 			if (major < 0 || minor < 0 || build < 0 || revision < 0 ||
 				(major == 0 && minor == 0 && build == 0 && revision == 0))
 			{

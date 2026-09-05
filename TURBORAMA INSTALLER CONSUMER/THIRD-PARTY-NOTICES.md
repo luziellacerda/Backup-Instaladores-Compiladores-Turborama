@@ -26,11 +26,10 @@ Visual C++, .NET Framework, .NET Desktop Runtime, DirectX End-User Runtimes, Web
 
 Referencias oficiais: [Visual C++](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist), [.NET](https://dotnet.microsoft.com/download), [DirectX legado](https://www.microsoft.com/download/details.aspx?id=8109), [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/), [XNA 4.0 Refresh](https://www.microsoft.com/download/details.aspx?id=27598).
 
-## Dokany e WinFsp
+## Dokany
 
-Os pacotes opcionais de sistema de arquivos preservam seus proprios instaladores e termos. Eles nao sao dependencias universais de jogos, e nao devem ser instalados sem escolha explicita.
+O pacote opcional de sistema de arquivos preserva seu proprio instalador e termos. Ele nao e uma dependencia universal de jogos e nao deve ser instalado sem escolha explicita.
 
 - [Dokany 2.3.1.1000](https://github.com/dokan-dev/dokany/releases/tag/v2.3.1.1000): consulte os avisos e termos fornecidos pelo projeto [dokan-dev/dokany](https://github.com/dokan-dev/dokany).
-- [WinFsp 2.2 Beta 4](https://github.com/winfsp/winfsp/releases/tag/v2.2B4): pacote de pre-lancamento; consulte os termos e avisos fornecidos pelo projeto [winfsp/winfsp](https://github.com/winfsp/winfsp).
 
 Este pacote nao concede direitos sobre jogos, ROMs, BIOS, firmware ou outros conteudos de terceiros.

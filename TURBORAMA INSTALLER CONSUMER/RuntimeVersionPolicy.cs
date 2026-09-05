@@ -27,8 +27,7 @@ namespace InstallerHost
 			return IsVisualCppKey(component.DetectionKey) ||
 				IsDotNetDesktopKey(component.DetectionKey) ||
 				IsJavaKey(component.DetectionKey) ||
-				IsDokanyKey(component.DetectionKey) ||
-				IsWinFspKey(component.DetectionKey);
+				IsDokanyKey(component.DetectionKey);
 		}
 
 		public static RuntimeVersionComparison Evaluate(
@@ -79,11 +78,6 @@ namespace InstallerHost
 			{
 				return CompareFourPart(detectedVersion, requiredProductVersion);
 			}
-			if (IsWinFspKey(detectionKey))
-			{
-				return CompareThreePart(detectedVersion, requiredProductVersion);
-			}
-
 			return RuntimeVersionComparison.NotManaged;
 		}
 
@@ -162,31 +156,6 @@ namespace InstallerHost
 				: RuntimeVersionComparison.Outdated;
 		}
 
-		private static RuntimeVersionComparison CompareThreePart(string detectedVersion, string requiredProductVersion)
-		{
-			Version detected;
-			Version required;
-			if (!TryParseAtLeastThreePartVersion(detectedVersion, out detected) ||
-				!TryParseAtLeastThreePartVersion(requiredProductVersion, out required))
-			{
-				return RuntimeVersionComparison.Unknown;
-			}
-
-			int comparison = detected.Major.CompareTo(required.Major);
-			if (comparison == 0)
-			{
-				comparison = detected.Minor.CompareTo(required.Minor);
-			}
-			if (comparison == 0)
-			{
-				comparison = detected.Build.CompareTo(required.Build);
-			}
-
-			return comparison >= 0
-				? RuntimeVersionComparison.Current
-				: RuntimeVersionComparison.Outdated;
-		}
-
 		private static bool TryParseVisualCppVersion(string value, out Version version)
 		{
 			version = null;
@@ -253,9 +222,5 @@ namespace InstallerHost
 				string.Equals(detectionKey, "java-25-x64", StringComparison.OrdinalIgnoreCase);
 		}
 
-		private static bool IsWinFspKey(string detectionKey)
-		{
-			return string.Equals(detectionKey, "winfsp", StringComparison.OrdinalIgnoreCase);
-		}
 	}
 }

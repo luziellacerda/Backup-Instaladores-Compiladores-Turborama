@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Principal;
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace InstallerHost
 {
@@ -17,7 +17,9 @@ namespace InstallerHost
 	internal static class RuntimeInstallerHelper
 	{
 		private const int InstallerTimeoutMilliseconds = 30 * 60 * 1000;
+		private const int InstallerTerminationConfirmationMilliseconds = 10 * 1000;
 		internal const long MinimumSystemDriveFreeBytes = 2L * 1024L * 1024L * 1024L;
+		private static int installationSessionActive;
 
 		private static readonly string[] InstallOrder =
 		{
@@ -45,8 +47,7 @@ namespace InstallerHost
 			"java-17-x64",
 			"java-21-x64",
 			"java-25-x64",
-			"dokany",
-			"winfsp"
+			"dokany"
 		};
 
 		public static GamingReadinessProfile InstallCompleteGamingRuntimeStack(
@@ -59,6 +60,16 @@ namespace InstallerHost
 			{
 				throw new ArgumentNullException("selection");
 			}
+			bool installationSessionTaken = false;
+			try
+			{
+				if (Interlocked.CompareExchange(ref installationSessionActive, 1, 0) != 0)
+				{
+					throw new InvalidOperationException(
+						"Outra preparação de componentes já está em andamento nesta sessão.");
+				}
+				installationSessionTaken = true;
+				InstallerProcessQuarantine.ThrowIfInstallationBlocked();
 
 			GamingReadinessProfile before = PrerequisiteDetector.CaptureGamingReadinessProfile();
 			List<RuntimeInstallPlanItem> plan = BuildInstallationPlan(before, selection);
@@ -96,6 +107,9 @@ namespace InstallerHost
 
 			try
 			{
+				ReportProgress(progressCallback, "Validando plano completo",
+					"Conferindo todos os pacotes e comandos do Windows antes da primeira instalação.");
+				ValidateCompletePlanBeforeExecution(planned);
 				ReportProgress(progressCallback, "Preparando ambiente", before.BuildSummary());
 				List<RuntimeInstallPlanItem> completed = new List<RuntimeInstallPlanItem>();
 				GamingRuntimeComponent restartComponent = null;
@@ -154,10 +168,56 @@ namespace InstallerHost
 			}
 			finally
 			{
-				// Todos os processos já terminaram (ou foram interrompidos por timeout),
-				// portanto os payloads grandes podem ser removidos imediatamente.
+				// Every uncertain process state transfers ownership to quarantine before
+				// unwinding. Cleanup consults that quarantine and therefore cannot release
+				// a package lease or staging directory still in use.
 				PrerequisiteBundle.CleanupExtractedFiles();
 			}
+			}
+			finally
+			{
+				if (installationSessionTaken) Interlocked.Exchange(ref installationSessionActive, 0);
+			}
+		}
+
+		private static void ValidateCompletePlanBeforeExecution(
+			IEnumerable<RuntimeInstallPlanItem> planned)
+		{
+			RuntimeInstallPlanItem[] items = (planned ?? Enumerable.Empty<RuntimeInstallPlanItem>()).ToArray();
+			if (items.Any(item => item != null && UsesWindowsInstaller(item.Component)))
+			{
+				string msiexecPath = ResolveSystemExecutable("msiexec.exe");
+				using (InstallerPackageSecurity.OpenTrustedSystemBinary(msiexecPath, "Windows Installer"))
+				{
+				}
+			}
+
+			// Extraction performs the locked length, SHA-256 and signer checks. Do
+			// this for the complete selected plan before any vendor process starts,
+			// so a damaged later payload cannot leave the PC halfway through the list.
+			foreach (RuntimeInstallPlanItem item in items)
+			{
+				if (item == null || item.Component == null)
+				{
+					throw new InvalidDataException("Plano de instalação contém uma etapa inválida.");
+				}
+				PrerequisiteBundle.ExtractBundledFile(item.Component);
+			}
+
+			// Legacy Visual C++ packages are ZIP containers. Managed extraction,
+			// inner length/hash/pinned-signer verification and the retained read
+			// lease all happen here, still before the first vendor process starts.
+			foreach (RuntimeInstallPlanItem item in items.Where(item =>
+				item != null && item.Component != null && item.Component.IsLegacy))
+			{
+				PrerequisiteBundle.PrepareLegacyArchiveInstaller(item.Component);
+			}
+		}
+
+		internal static bool UsesWindowsInstaller(GamingRuntimeComponent component)
+		{
+			return component != null && component.CanInstallOffline &&
+				string.Equals(Path.GetExtension(component.BundleFileName), ".msi", StringComparison.OrdinalIgnoreCase);
 		}
 
 		public static List<RuntimeInstallPlanItem> BuildInstallationPlan(
@@ -332,8 +392,6 @@ namespace InstallerHost
 		{
 			if (string.Equals(componentId, "dokany", StringComparison.OrdinalIgnoreCase))
 				return "/quiet /norestart";
-			if (string.Equals(componentId, "winfsp", StringComparison.OrdinalIgnoreCase))
-				return "/qn /norestart REBOOT=ReallySuppress INSTALLLEVEL=1";
 			throw new InvalidOperationException("Driver sem estratégia de instalação aprovada: " + componentId + ".");
 		}
 
@@ -389,7 +447,11 @@ namespace InstallerHost
 			}
 
 			ReportProgress(progressCallback, "Ativando .NET Framework 3.5", "Recurso NetFx3 do próprio Windows");
-			RunSystemCommand("dism.exe", "/Online /Enable-Feature /FeatureName:NetFx3 /All /NoRestart", ".NET Framework 3.5");
+			RunSystemCommand(
+				"dism.exe",
+				"/Online /Enable-Feature /FeatureName:NetFx3 /All /NoRestart",
+				".NET Framework 3.5",
+				progressCallback);
 			if (!PrerequisiteDetector.IsDotNet35Installed())
 			{
 				throw new InvalidOperationException(
@@ -417,8 +479,6 @@ namespace InstallerHost
 			}
 			if (string.Equals(component.Id, "dokany", StringComparison.OrdinalIgnoreCase))
 				return selection.InstallDokany;
-			if (string.Equals(component.Id, "winfsp", StringComparison.OrdinalIgnoreCase))
-				return selection.InstallWinFsp;
 
 			if (component.Tier == GamingRuntimeTier.Optional)
 			{
@@ -447,37 +507,35 @@ namespace InstallerHost
 			ReportProgress(progressCallback, "Instalando componente verificado", component.DisplayName);
 			if (component.IsLegacy)
 			{
-				return InstallLegacyVisualCpp(component);
+				return InstallLegacyVisualCpp(component, progressCallback);
 			}
 
 			switch (component.Id.ToLowerInvariant())
 			{
 				case "dotnet-framework-48":
-					return RunBundledInstaller(component, "/q /norestart");
+					return RunBundledInstaller(component, "/q /norestart", progressCallback);
 				case "vc-modern-x64":
 				case "vc-modern-x86":
 				case "dotnet-desktop-8-x64":
 				case "dotnet-desktop-8-x86":
 				case "dotnet-desktop-10-x64":
 				case "dotnet-desktop-10-x86":
-					return RunBundledInstaller(component, "/install /quiet /norestart");
+					return RunBundledInstaller(component, "/install /quiet /norestart", progressCallback);
 				case "directx-june-2010":
-					return InstallDirectXJune2010(component);
+					return InstallDirectXJune2010(component, progressCallback);
 				case "webview2-x64":
-					return RunBundledInstaller(component, "/silent /install");
+					return RunBundledInstaller(component, "/silent /install", progressCallback);
 				case "xna-framework-40":
-					return RunBundledMsi(component, "/qn /norestart");
+					return RunBundledMsi(component, "/qn /norestart", progressCallback);
 				case "java-8-x64":
 				case "java-17-x64":
 				case "java-21-x64":
 				case "java-25-x64":
 					// MSI defaults are version-specific. FeatureMain excludes PATH,
 					// JAVA_HOME, .jar associations and Oracle compatibility keys.
-					return RunBundledMsi(component, GetJavaInstallerArguments(component));
+					return RunBundledMsi(component, GetJavaInstallerArguments(component), progressCallback);
 				case "dokany":
-					return RunBundledInstaller(component, GetOptionalDriverArguments(component.Id));
-				case "winfsp":
-					return RunBundledMsi(component, GetOptionalDriverArguments(component.Id));
+					return RunBundledInstaller(component, GetOptionalDriverArguments(component.Id), progressCallback);
 				default:
 					throw new InvalidOperationException("Não há estratégia de instalação aprovada para " + component.DisplayName + ".");
 			}
@@ -550,38 +608,51 @@ namespace InstallerHost
 			return "/qn /norestart ALLUSERS=1 ADDLOCAL=FeatureMain INSTALLDIR=\"" + Path.GetFullPath(destination).TrimEnd('\\') + "\"";
 		}
 
-		private static int RunBundledInstaller(GamingRuntimeComponent component, string arguments)
+		private static int RunBundledInstaller(
+			GamingRuntimeComponent component,
+			string arguments,
+			Action<string, string> progressCallback)
 		{
 			string installerPath = PrerequisiteBundle.ExtractBundledFile(component);
-			return RunInstaller(installerPath, arguments, component, component.DisplayName);
+			return RunInstaller(installerPath, arguments, component, component.DisplayName, progressCallback);
 		}
 
-		private static int RunBundledMsi(GamingRuntimeComponent component, string arguments)
+		private static int RunBundledMsi(
+			GamingRuntimeComponent component,
+			string arguments,
+			Action<string, string> progressCallback)
 		{
 			string msiPath = PrerequisiteBundle.ExtractBundledFile(component);
-			return RunMsi(msiPath, arguments, component, component.DisplayName);
+			return RunMsi(msiPath, arguments, component, component.DisplayName, progressCallback);
 		}
 
-		private static int InstallLegacyVisualCpp(GamingRuntimeComponent component)
+		private static int InstallLegacyVisualCpp(
+			GamingRuntimeComponent component,
+			Action<string, string> progressCallback)
 		{
-			string zipPath = PrerequisiteBundle.ExtractBundledFile(component);
-			using (SecureInstallerStaging staging = SecureInstallerStaging.Create("TurboramaLegacyVC"))
-			{
-				string installerPath = InstallerPackageSecurity.ExtractAndVerifyArchiveInstaller(
-					zipPath,
-					component,
-					staging);
-				return RunInstaller(installerPath, GetLegacyVisualCppArguments(component.Id), component, component.DisplayName);
-			}
+			string installerPath = PrerequisiteBundle.PrepareLegacyArchiveInstaller(component);
+			return RunInstaller(
+				installerPath,
+				GetLegacyVisualCppArguments(component.Id),
+				component,
+				component.DisplayName,
+				progressCallback);
 		}
 
-		private static int InstallDirectXJune2010(GamingRuntimeComponent component)
+		private static int InstallDirectXJune2010(
+			GamingRuntimeComponent component,
+			Action<string, string> progressCallback)
 		{
 			using (SecureInstallerStaging staging = SecureInstallerStaging.Create("TurboramaDirectX"))
 			{
 				string redistPath = PrerequisiteBundle.ExtractBundledFile(component);
 				string extractPath = staging.CreateSubdirectory("payload");
-				int extractionExitCode = RunInstaller(redistPath, "/Q /T:\"" + extractPath + "\"", component, component.DisplayName + " (extração)");
+				int extractionExitCode = RunInstaller(
+					redistPath,
+					"/Q /T:\"" + extractPath + "\"",
+					component,
+					component.DisplayName + " (extração)",
+					progressCallback);
 				if (IsRestartExitCode(extractionExitCode)) return extractionExitCode;
 				staging.HardenTreeContents();
 
@@ -590,7 +661,13 @@ namespace InstallerHost
 				{
 					throw new FileNotFoundException("DXSETUP.exe não foi produzido pelo payload oficial do DirectX.", dxSetupPath);
 				}
-				return RunInstaller(dxSetupPath, "/silent", component, component.DisplayName);
+				return RunInstaller(
+					dxSetupPath,
+					"/silent",
+					component,
+					component.DisplayName,
+					progressCallback,
+					Directory.GetFiles(extractPath, "*", SearchOption.AllDirectories));
 			}
 		}
 
@@ -599,6 +676,17 @@ namespace InstallerHost
 			string arguments,
 			GamingRuntimeComponent component,
 			string label)
+		{
+			return RunInstaller(installerPath, arguments, component, label, null);
+		}
+
+		private static int RunInstaller(
+			string installerPath,
+			string arguments,
+			GamingRuntimeComponent component,
+			string label,
+			Action<string, string> progressCallback,
+			IEnumerable<string> additionalProtectedFiles = null)
 		{
 			if (component == null)
 			{
@@ -614,7 +702,12 @@ namespace InstallerHost
 			using (TrustedInstallerFile lease = InstallerPackageSecurity.OpenTrustedInstaller(resolvedPath, component, label))
 			{
 				int exitCode = RunProcessAndWait(
-					resolvedPath, arguments, label, GetAbsoluteWorkingDirectory(resolvedPath));
+					resolvedPath,
+					arguments,
+					label,
+					GetAbsoluteWorkingDirectory(resolvedPath),
+					progressCallback,
+					new[] { resolvedPath }.Concat(additionalProtectedFiles ?? Enumerable.Empty<string>()));
 				EnsureSuccessfulInstallerExit(exitCode, label);
 				return exitCode;
 			}
@@ -625,6 +718,16 @@ namespace InstallerHost
 			string arguments,
 			GamingRuntimeComponent component,
 			string label)
+		{
+			return RunMsi(msiPath, arguments, component, label, null);
+		}
+
+		private static int RunMsi(
+			string msiPath,
+			string arguments,
+			GamingRuntimeComponent component,
+			string label,
+			Action<string, string> progressCallback)
 		{
 			if (component == null)
 			{
@@ -641,19 +744,33 @@ namespace InstallerHost
 			{
 				string commandArguments = "/i \"" + Path.GetFullPath(msiPath) + "\" " + (arguments ?? string.Empty);
 				int exitCode = RunProcessAndWait(
-					msiexecPath, commandArguments, label, GetAbsoluteWorkingDirectory(msiexecPath));
+					msiexecPath,
+					commandArguments,
+					label,
+					GetAbsoluteWorkingDirectory(msiexecPath),
+					progressCallback,
+					new[] { Path.GetFullPath(msiPath), msiexecPath });
 				EnsureSuccessfulInstallerExit(exitCode, label);
 				return exitCode;
 			}
 		}
 
-		private static void RunSystemCommand(string fileName, string arguments, string label)
+		private static void RunSystemCommand(
+			string fileName,
+			string arguments,
+			string label,
+			Action<string, string> progressCallback)
 		{
 			string resolvedPath = ResolveSystemExecutable(fileName);
 			using (TrustedInstallerFile lease = InstallerPackageSecurity.OpenTrustedSystemBinary(resolvedPath, label))
 			{
 				int exitCode = RunProcessAndWait(
-					resolvedPath, arguments, label, GetAbsoluteWorkingDirectory(resolvedPath));
+					resolvedPath,
+					arguments,
+					label,
+					GetAbsoluteWorkingDirectory(resolvedPath),
+					progressCallback,
+					new[] { resolvedPath });
 				if (exitCode != 0 && exitCode != 3010)
 				{
 					throw new InvalidOperationException(label + " falhou com código de saída " + exitCode + ".");
@@ -665,7 +782,9 @@ namespace InstallerHost
 			string executablePath,
 			string arguments,
 			string label,
-			string workingDirectory)
+			string workingDirectory,
+			Action<string, string> progressCallback,
+			IEnumerable<string> protectedFiles)
 		{
 			if (string.IsNullOrWhiteSpace(workingDirectory) || !Path.IsPathRooted(workingDirectory))
 			{
@@ -679,36 +798,168 @@ namespace InstallerHost
 					"Diretório de trabalho seguro indisponível para " + label + ": " + fullWorkingDirectory + ".");
 			}
 
-			using (Process process = new Process())
+			InstallerProcessQuarantine.ThrowIfInstallationBlocked();
+			InstallerProcessJob process = null;
+			try
 			{
-				process.StartInfo.FileName = executablePath;
-				process.StartInfo.Arguments = arguments ?? string.Empty;
-				process.StartInfo.WorkingDirectory = fullWorkingDirectory;
-				process.StartInfo.UseShellExecute = false;
-				process.StartInfo.CreateNoWindow = true;
 				Logger.Log("Running verified installer: " + executablePath + " " + (arguments ?? string.Empty));
-				if (!process.Start())
+				process = InstallerProcessJob.Start(
+					executablePath,
+					arguments,
+					fullWorkingDirectory,
+					protectedFiles);
+				bool completedWithinLimit;
+				try
 				{
-					throw new InvalidOperationException("O processo de " + label + " não pôde ser iniciado.");
+					completedWithinLimit = process.WaitForExit(InstallerTimeoutMilliseconds);
 				}
-				if (!process.WaitForExit(InstallerTimeoutMilliseconds))
+				catch (Exception waitError)
 				{
-					try
+					// A failed native wait/query is not proof of exit. Attempt bounded
+					// termination, transfer ownership, and retain every file for this host
+					// session before propagating the original observation failure.
+					TimedOutProcessDisposition uncertainDisposition =
+						StopTimedOutProcessAndConfirmExit(
+							process,
+							label,
+							InstallerTerminationConfirmationMilliseconds,
+							delegate
+							{
+								ReportProgress(
+									progressCallback,
+									"Instalação isolada por segurança",
+									"O Windows não confirmou o estado de " + label +
+									". Nenhuma nova etapa será iniciada nesta sessão.");
+							});
+					InstallerProcessQuarantine.Register(
+						process,
+						label,
+						MustRetainTimedOutExecutionForHost(uncertainDisposition));
+					process = null;
+					throw new InvalidOperationException(
+						"O Windows não conseguiu confirmar o encerramento seguro de " + label +
+						". Os arquivos foram isolados e nenhuma nova instalação será iniciada nesta sessão.",
+						waitError);
+				}
+				if (!completedWithinLimit)
+				{
+					TimedOutProcessDisposition disposition = StopTimedOutProcessAndConfirmExit(
+						process,
+						label,
+						InstallerTerminationConfirmationMilliseconds,
+						delegate
+						{
+							ReportProgress(
+								progressCallback,
+								"Aguardando encerramento seguro",
+								label + " excedeu o limite de tempo. Os arquivos verificados continuam bloqueados; " +
+								"nenhuma nova etapa será iniciada até o Windows confirmar que o processo terminou.");
+						});
+					// MSI clients and vendor EXEs can delegate work to a Windows service
+					// outside this Job Object. Therefore every timeout is quarantined for
+					// the host lifetime, even after the tracked tree reaches zero.
+					InstallerProcessQuarantine.Register(
+						process,
+						label,
+						MustRetainTimedOutExecutionForHost(disposition));
+					process = null;
+					if (disposition == TimedOutProcessDisposition.ConfirmedExited)
 					{
-						process.Kill();
-						process.WaitForExit(10000);
-					}
-					catch (Exception killError)
-					{
-						Logger.Log("Failed to stop timed-out installer '" + label + "': " + killError.Message);
+						try
+						{
+							ReportProgress(
+								progressCallback,
+								"Instalação isolada por segurança",
+								label + " excedeu o limite. A árvore controlada terminou, mas uma operação delegada ao Windows " +
+								"pode continuar fora dela; os arquivos permanecerão em quarentena nesta sessão.");
+						}
+						catch (Exception notificationError)
+						{
+							Logger.Log("Could not report installer quarantine to the UI: " + notificationError.Message);
+						}
 					}
 					throw new TimeoutException(
 						label + " excedeu o limite seguro de " +
-						(InstallerTimeoutMilliseconds / 60000) + " minutos e foi interrompido.");
+						(InstallerTimeoutMilliseconds / 60000) +
+						" minutos. Não foi possível provar o encerramento de toda a execução; " +
+						"os arquivos foram isolados e nenhuma nova instalação será iniciada nesta sessão.");
 				}
-				Logger.Log(label + " finished with exit code " + process.ExitCode + ".");
-				return process.ExitCode;
+				int exitCode = process.GetExitCode();
+				Logger.Log(label + " finished with exit code " + exitCode + ".");
+				return exitCode;
 			}
+			finally
+			{
+				if (process != null) process.Dispose();
+			}
+		}
+
+		internal static bool MustRetainTimedOutExecutionForHost(
+			TimedOutProcessDisposition disposition)
+		{
+			if (disposition != TimedOutProcessDisposition.ConfirmedExited &&
+				disposition != TimedOutProcessDisposition.QuarantineRequired)
+			{
+				throw new ArgumentOutOfRangeException("disposition");
+			}
+			// An EXE can delegate work to a service just as an MSI client can. The
+			// tracked tree alone can never prove that such external work has ended.
+			return true;
+		}
+
+		/// <summary>
+		/// Requests termination of the complete job after an installer timeout. It
+		/// authorizes ordinary cleanup only when the bounded wait positively observes
+		/// an empty job. Every uncertain result is transferred to quarantine by the
+		/// caller so this method never blocks the UI indefinitely.
+		/// </summary>
+		internal static TimedOutProcessDisposition StopTimedOutProcessAndConfirmExit(
+			IInstallerProcessTermination process,
+			string label,
+			int confirmationMilliseconds,
+			Action retentionStarted = null)
+		{
+			if (process == null) throw new ArgumentNullException("process");
+			if (string.IsNullOrWhiteSpace(label)) throw new ArgumentException("Rótulo do instalador ausente.", "label");
+			if (confirmationMilliseconds < 0) throw new ArgumentOutOfRangeException("confirmationMilliseconds");
+
+			try
+			{
+				process.Kill();
+			}
+			catch (Exception killError)
+			{
+				// Kill can race with natural exit. Only a subsequent successful wait is
+				// accepted as proof that cleanup is safe.
+				Logger.Log("Failed to request stop for timed-out installer '" + label + "': " + killError.Message);
+			}
+
+			try
+			{
+				if (process.WaitForExit(confirmationMilliseconds))
+				{
+					Logger.Log("Timed-out installer '" + label + "' is confirmed stopped; protected files may now be released.");
+					return TimedOutProcessDisposition.ConfirmedExited;
+				}
+			}
+			catch (Exception waitError)
+			{
+				Logger.Log("Could not confirm the first stop wait for timed-out installer '" + label + "': " + waitError.Message);
+			}
+
+			Logger.Log(
+				"Timed-out installer '" + label +
+				"' may still be running. Its job and protected files must be transferred to quarantine.");
+			try
+			{
+				if (retentionStarted != null) retentionStarted();
+			}
+			catch (Exception notificationError)
+			{
+				// A closed/disposed UI must never weaken the quarantine decision.
+				Logger.Log("Could not report quarantined timed-out installer '" + label + "' to the UI: " + notificationError.Message);
+			}
+			return TimedOutProcessDisposition.QuarantineRequired;
 		}
 
 		private static string GetAbsoluteWorkingDirectory(string executablePath)
