@@ -353,7 +353,7 @@ namespace InstallerHost
                     "Unlock restores both explicit driver options");
                 page.gamingReadinessCapturedAtUtc = DateTime.UtcNow;
                 page.BtnNext_Click(page, EventArgs.Empty);
-                verify(page.installerWorker == null && page.progressTitleText == "Espaço insuficiente para preparar componentes",
+                verify(page.installerWorker == null && page.progressTitleText == "Não foi possível preparar os componentes",
                     "Selecting only drivers cannot bypass the UI low-disk gate");
                 page.gamingReadinessProfile.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
                 page.gamingReadinessProfile.PendingRestart = true;
