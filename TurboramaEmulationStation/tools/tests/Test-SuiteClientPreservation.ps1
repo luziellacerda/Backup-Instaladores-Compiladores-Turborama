@@ -37,6 +37,15 @@ try {
     if ($main -notmatch 'SuiteAccess' -or $game -notmatch 'SuiteAccess') {
         throw 'Faltam os pontos de controle de inicializacao/lancamento.'
     }
+    # Authorization reuses the existing activation, never a running Suite app.
+    # Cover both initial login and loss-of-authorization messages in the frontend.
+    foreach ($relative in @('es-app/src/main.cpp', 'es-app/src/SuiteAccessGate.cpp',
+        'suite-licensing/AccessFailurePresentation.cs')) {
+        $messages = Get-Content -LiteralPath (Join-Path $nativeRoot $relative) -Raw
+        if ($messages -match '(?i)abra\s+(?:o\s+|a\s+)?(?:turborama\s+)?suite') {
+            throw "A interface ainda pede para abrir a Suite: $relative"
+        }
+    }
     'SUITE_CLIENT_PRESERVATION=OK'
     "Base=$BaseCommit"
     "ChangedExistingFiles=$($changes.Count)"

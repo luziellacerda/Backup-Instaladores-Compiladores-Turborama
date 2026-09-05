@@ -954,7 +954,7 @@ int main(int argc, char* argv[])
 		{
 			LOG(LogWarning) << "[Suite] A autorizacao terminou; encerrando o frontend com salvamento normal.";
 			MessageBoxA(nullptr,
-				"O acesso do TurboRama Suite terminou. Abra o Suite e verifique a ativacao e a conexao.",
+				"O acesso do EmulationStation terminou. Confira a conexao e a ativacao existente nesta conta do Windows. Reabra o EmulationStation para validar novamente.",
 				"TurboRama Suite - acesso", MB_OK | MB_ICONWARNING | MB_TOPMOST);
 			break;
 		}
