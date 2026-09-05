@@ -51,7 +51,14 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar testes de segurança.' }
     # O checkout do GitHub Actions pode ultrapassar o limite legado MAX_PATH do
     # .NET Framework quando cada caso acrescenta GUIDs e nomes de fixtures.
-    $securityTestRoot = Join-Path ([IO.Path]::GetTempPath()) 'TurboRamaSecurityTests'
+    $securityScratchBase = if ($env:GITHUB_ACTIONS -eq 'true' -and
+        -not [string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
+        $env:RUNNER_TEMP
+    } else {
+        [IO.Path]::GetTempPath()
+    }
+    $securityTestRoot = Join-Path $securityScratchBase 'TRSecurity'
+    Write-Output ('Pasta temporaria dos testes de seguranca: ' + $securityTestRoot)
     & .\TestResults\executables\ProductPackageSecurityTests.exe $securityTestRoot
     if ($LASTEXITCODE -ne 0) { throw 'Regressão de segurança do pacote.' }
 
