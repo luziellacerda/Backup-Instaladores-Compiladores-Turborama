@@ -42,6 +42,34 @@ namespace InstallerHost
 			verify(Evaluate("dotnet-desktop-10-x64", "10.0.12", "10.0.11.50000") == RuntimeVersionComparison.Current,
 				".NET 10 accepts a newer runtime patch");
 
+			const string dokanyRequired = "2.3.1.1000";
+			verify(Evaluate("dokany", "2.3.1.1000", dokanyRequired) == RuntimeVersionComparison.Current,
+				"Dokany accepts the exact approved four-part version");
+			verify(Evaluate("dokany", "2.3.2.1", dokanyRequired) == RuntimeVersionComparison.Current,
+				"Dokany accepts a newer four-part version");
+			verify(Evaluate("dokany", "2.3.0.9999", dokanyRequired) == RuntimeVersionComparison.Outdated,
+				"Dokany rejects an older version");
+			verify(Evaluate("dokany", "2.3.1", dokanyRequired) == RuntimeVersionComparison.Unknown,
+				"Dokany without a fourth comparable field is unknown");
+
+			const string winFspRequired = "2.2.26215";
+			verify(Evaluate("winfsp", "2.2.26215", winFspRequired) == RuntimeVersionComparison.Current,
+				"WinFsp accepts the exact approved three-part version");
+			verify(Evaluate("winfsp", "2.3.1.0", winFspRequired) == RuntimeVersionComparison.Current,
+				"WinFsp accepts a newer version and ignores a packaging revision");
+			verify(Evaluate("winfsp", "2.1.25156", winFspRequired) == RuntimeVersionComparison.Outdated,
+				"WinFsp rejects the vulnerable 2025 stable line");
+			verify(Evaluate("winfsp", string.Empty, winFspRequired) == RuntimeVersionComparison.Unknown,
+				"WinFsp partial evidence is never treated as current");
+			verify(RuntimeVersionPolicy.HaveSameVersionFields("2.2.26215", "2.2.26215.0", 3),
+				"WinFsp MSI and DLL versions agree on the three product fields");
+			verify(!RuntimeVersionPolicy.HaveSameVersionFields("2.2.26215", "2.2.26194.0", 3),
+				"WinFsp stale registry and binary evidence cannot agree");
+			verify(RuntimeVersionPolicy.HaveSameVersionFields("2.3.1.1000", "2.3.1.1000", 4),
+				"Dokany driver and user library must agree on all four fields");
+			verify(!RuntimeVersionPolicy.HaveSameVersionFields("2.3.1.1000", "2.3.1.999", 4),
+				"Dokany mixed binary versions cannot be treated as current");
+
 			verify(Evaluate("webview2", "124.0.2478.80", "1.3.265.7") == RuntimeVersionComparison.NotManaged,
 				"WebView2 runtime is not compared with its bootstrapper product version");
 			verify(Evaluate("dotnet-desktop-current", "11.0.0", "10.0.11.50000") == RuntimeVersionComparison.NotManaged,
@@ -50,6 +78,8 @@ namespace InstallerHost
 			GamingRuntimeComponent vc = GamingRuntimeManifest.FindById("vc-modern-x64");
 			GamingRuntimeComponent dotNet8 = GamingRuntimeManifest.FindById("dotnet-desktop-8-x64");
 			GamingRuntimeComponent webView2 = GamingRuntimeManifest.FindById("webview2-x64");
+			GamingRuntimeComponent dokany = GamingRuntimeManifest.FindById("dokany");
+			GamingRuntimeComponent winFsp = GamingRuntimeManifest.FindById("winfsp");
 			string required;
 			verify(RuntimeVersionPolicy.Evaluate(vc, "v14.51.36247.00", out required) == RuntimeVersionComparison.Current &&
 				string.Equals(required, vcRequired, StringComparison.Ordinal),
@@ -59,8 +89,15 @@ namespace InstallerHost
 				".NET requirement is loaded from prerequisites.lock.json");
 			verify(!RuntimeVersionPolicy.RequiresMinimumVersion(webView2),
 				"WebView2 is explicitly outside the minimum-version policy");
-			verify(GamingRuntimeManifest.GetComponents().Where(RuntimeVersionPolicy.RequiresMinimumVersion).Count() == 6,
-				"Only VC x64/x86 and .NET Desktop 8/10 x64/x86 are freshness-managed");
+			verify(RuntimeVersionPolicy.Evaluate(dokany, "2.3.1.1000", out required) == RuntimeVersionComparison.Current &&
+				string.Equals(required, dokanyRequired, StringComparison.Ordinal) && !dokany.IncludedByDefault,
+				"Dokany requirement comes from the lock and remains opt-in");
+			verify(RuntimeVersionPolicy.Evaluate(winFsp, "2.2.26215", out required) == RuntimeVersionComparison.Current &&
+				string.Equals(required, winFspRequired, StringComparison.Ordinal) && !winFsp.IncludedByDefault &&
+				winFsp.DisplayName.IndexOf("Beta", StringComparison.OrdinalIgnoreCase) >= 0,
+				"WinFsp lock remains opt-in and visibly identifies the beta");
+			verify(GamingRuntimeManifest.GetComponents().Where(RuntimeVersionPolicy.RequiresMinimumVersion).Count() == 8,
+				"Only VC, .NET Desktop, Dokany and WinFsp offline payloads are freshness-managed");
 
 			return passed;
 		}

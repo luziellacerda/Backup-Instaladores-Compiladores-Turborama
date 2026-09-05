@@ -15,6 +15,7 @@ namespace InstallerHost
 	internal static class RuntimeInstallerHelper
 	{
 		private const int InstallerTimeoutMilliseconds = 30 * 60 * 1000;
+		internal const long MinimumSystemDriveFreeBytes = 2L * 1024L * 1024L * 1024L;
 
 		private static readonly string[] InstallOrder =
 		{
@@ -35,7 +36,9 @@ namespace InstallerHost
 			"vc-legacy-2013-x86",
 			"vc-legacy-2013-x64",
 			"directx-june-2010",
-			"webview2-x64"
+			"webview2-x64",
+			"dokany",
+			"winfsp"
 		};
 
 		public static GamingReadinessProfile InstallCompleteGamingRuntimeStack(
@@ -72,28 +75,72 @@ namespace InstallerHost
 					"Recrie o instalador somente com os payloads oficiais registrados no catálogo de integridade.");
 			}
 
-			PrerequisiteBundle.EnsureBundleAvailable(planned.Select(item => item.Component));
+			string preflightBlock = GetInstallationPreflightBlockReason(before, selection, planned.Count > 0);
+			if (preflightBlock != null) throw new InvalidOperationException(preflightBlock);
 			if (planned.Count > 0 && !IsRunningAsAdministrator())
 			{
 				throw new InvalidOperationException(
-					"Execute o InstallerHost como Administrador para instalar os runtimes selecionados.");
+					"Execute o InstallerHost como Administrador para instalar os componentes selecionados.");
 			}
+			// Both checks precede extraction, staging creation and every installer process.
+			VerifyStorageBudget(planned);
+			PrerequisiteBundle.EnsureBundleAvailable(planned.Select(item => item.Component));
 
 			try
 			{
 				ReportProgress(progressCallback, "Preparando ambiente", before.BuildSummary());
+				List<RuntimeInstallPlanItem> completed = new List<RuntimeInstallPlanItem>();
+				GamingRuntimeComponent restartComponent = null;
+				int restartExitCode = 0;
+				bool restartObserved = false;
 				foreach (RuntimeInstallPlanItem item in planned)
 				{
-					InstallPlannedComponent(item.Component, progressCallback);
+					// A previous package or Windows Update may have requested a restart
+					// without returning 3010. Do not start another driver or runtime.
+					if (PrerequisiteDetector.IsRestartPending())
+					{
+						restartObserved = true;
+						ReportProgress(progressCallback, "Reinicialização pendente",
+							"O Windows passou a indicar reinicialização pendente. As próximas etapas foram suspensas.");
+						break;
+					}
+					// Free space can change while earlier payloads are running.
+					VerifyStorageBudget(new[] { item });
+					int exitCode = InstallPlannedComponent(item.Component, progressCallback);
+					completed.Add(item);
 					if (componentCompleted != null)
 					{
 						componentCompleted(item.Component);
+					}
+					if (IsRestartExitCode(exitCode))
+					{
+						restartComponent = item.Component;
+						restartExitCode = exitCode;
+						ReportProgress(progressCallback, "Reinicialização pendente",
+							item.Component.DisplayName + " solicitou reinicialização. Nenhuma etapa adicional será iniciada.");
+						break;
 					}
 				}
 
 				LogManualPlanItems(plan);
 				GamingReadinessProfile after = PrerequisiteDetector.CaptureGamingReadinessProfile();
-				VerifyPlannedComponents(planned, after);
+				if (restartComponent != null) MarkRestartRequired(after, restartComponent, restartExitCode);
+				after.PendingRestart = after.PendingRestart || restartObserved;
+				if (after.PendingRestart)
+				{
+					// Keep every detector status intact; this is a paused result, not a
+					// successful verification of all selected components. The UI blocks
+					// resubmission until a new session following a manual restart.
+					if (after.OverallState == GamingReadinessState.Ready) after.OverallState = GamingReadinessState.Attention;
+					after.MutableFindings.Add(new GamingReadinessFinding
+					{
+						Code = "prerequisites-paused-for-restart", State = GamingReadinessState.Attention,
+						Title = "Preparação pausada para reinicialização",
+						Detail = completed.Count + " de " + planned.Count + " instaladores selecionados foram processados. A confirmação final está pendente.",
+						Recommendation = "Salve seus arquivos, reinicie o Windows manualmente e execute uma nova análise antes de continuar os componentes restantes."
+					});
+				}
+				else VerifyPlannedComponents(completed, after);
 				return after;
 			}
 			finally
@@ -178,6 +225,139 @@ namespace InstallerHost
 			return BuildInstallationPlan(profile, GamingRuntimeInstallSelection.RecommendedDefaults());
 		}
 
+		internal static string GetInstallationPreflightBlockReason(GamingReadinessProfile profile, bool hasRuntimeWork)
+		{
+			if (!hasRuntimeWork) return null;
+			if (profile == null) return "Diagnóstico indisponível. Nenhum instalador foi iniciado; execute uma nova análise.";
+			if (profile.PendingRestart)
+				return "O Windows tem uma reinicialização pendente. Salve seus arquivos e reinicie manualmente antes de instalar componentes.";
+			if (profile.SystemDriveFreeBytes < MinimumSystemDriveFreeBytes)
+				return "Espaço livre insuficiente ou não confirmado. Libere pelo menos 2 GB no disco do Windows e analise novamente. " +
+					"Nenhum instalador foi iniciado. Esta reserva inicial não inclui o espaço necessário para o produto completo.";
+			return null;
+		}
+
+		internal static string GetInstallationPreflightBlockReason(
+			GamingReadinessProfile profile,
+			GamingRuntimeInstallSelection selection,
+			bool hasRuntimeWork)
+		{
+			string generalBlock = GetInstallationPreflightBlockReason(profile, hasRuntimeWork);
+			if (generalBlock != null || !hasRuntimeWork || selection == null || !selection.InstallDokany ||
+				selection.InstallMicrosoftRuntimeStack)
+			{
+				return generalBlock;
+			}
+
+			string[] requiredVcIds = profile != null && profile.Is64BitOperatingSystem
+				? new[] { "vc-modern-x64", "vc-modern-x86" }
+				: new[] { "vc-modern-x86" };
+			bool vcReady = profile != null && requiredVcIds.All(id =>
+			{
+				RuntimeComponentStatus status = profile.RuntimeStatuses.SingleOrDefault(item =>
+					item != null && item.Component != null &&
+					string.Equals(item.Component.Id, id, StringComparison.OrdinalIgnoreCase));
+				return status != null && (status.State == GamingReadinessState.Ready ||
+					status.State == GamingReadinessState.NotApplicable);
+			});
+			if (!vcReady)
+			{
+				return "DokanSetup não incorpora o Visual C++ Runtime exigido por seus binários. " +
+					"Marque também 'Runtimes Microsoft' ou instale e confirme o Visual C++ v14 x86/x64 antes de continuar. " +
+					"Nenhum componente foi selecionado automaticamente.";
+			}
+
+			return null;
+		}
+
+		internal static long GetRequiredWorkingSpaceBytes(IEnumerable<long> payloadLengths)
+		{
+			if (payloadLengths == null) throw new ArgumentNullException("payloadLengths");
+			long total = 0L;
+			checked
+			{
+				foreach (long length in payloadLengths)
+				{
+					if (length <= 0L) throw new InvalidDataException("Tamanho de payload inválido para reservar espaço.");
+					total += length;
+				}
+				// Reserve for embedded-file extraction and installer expansion/cache.
+				// This is a preflight budget, not a claim about the vendor's final disk usage.
+				return MinimumSystemDriveFreeBytes + total * 2L;
+			}
+		}
+
+		private static void VerifyStorageBudget(IEnumerable<RuntimeInstallPlanItem> planned)
+		{
+			GamingRuntimeComponent[] components = planned.Select(item => item.Component).ToArray();
+			if (components.Length == 0) return;
+			long required = GetRequiredWorkingSpaceBytes(components.Select(component =>
+				PrerequisiteIntegrityCatalog.GetRequiredPayload(component.BundleFileName).length));
+			string[] locations =
+			{
+				Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+				Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+				Path.GetTempPath()
+			};
+			foreach (string root in locations.Select(location =>
+			{
+				if (string.IsNullOrWhiteSpace(location) || !Path.IsPathRooted(location))
+					throw new InvalidOperationException("Unidade de instalação não confirmada para verificar espaço.");
+				return Path.GetPathRoot(Path.GetFullPath(location));
+			}).Distinct(StringComparer.OrdinalIgnoreCase))
+			{
+				DriveInfo drive = new DriveInfo(root);
+				if (!drive.IsReady || drive.AvailableFreeSpace < required)
+					throw new IOException(string.Format(
+						"Espaço insuficiente ou não confirmado em {0}. Reserve pelo menos {1:0.0} GB para preparar os componentes selecionados; nenhum novo instalador foi iniciado.",
+						root, required / 1073741824.0));
+			}
+		}
+
+		internal static string GetOptionalDriverArguments(string componentId)
+		{
+			if (string.Equals(componentId, "dokany", StringComparison.OrdinalIgnoreCase))
+				return "/quiet /norestart";
+			if (string.Equals(componentId, "winfsp", StringComparison.OrdinalIgnoreCase))
+				return "/qn /norestart REBOOT=ReallySuppress INSTALLLEVEL=1";
+			throw new InvalidOperationException("Driver sem estratégia de instalação aprovada: " + componentId + ".");
+		}
+
+		internal static bool IsRestartExitCode(int exitCode)
+		{
+			return exitCode == 3010 || exitCode == 1641;
+		}
+
+		internal static void MarkRestartRequired(GamingReadinessProfile profile, GamingRuntimeComponent component, int exitCode)
+		{
+			if (profile == null) throw new ArgumentNullException("profile");
+			if (component == null) throw new ArgumentNullException("component");
+			if (!IsRestartExitCode(exitCode)) throw new ArgumentException("Código não indica reinicialização.", "exitCode");
+			profile.PendingRestart = true;
+			if (profile.OverallState == GamingReadinessState.Ready) profile.OverallState = GamingReadinessState.Attention;
+			string detail = exitCode == 1641
+				? "O instalador informou reinicialização iniciada (1641), apesar da opção de supressão. As próximas etapas foram suspensas; confirme o driver após reiniciar."
+				: "O instalador concluiu solicitando reinicialização (3010). Confirmação final pendente após reiniciar o Windows; as próximas etapas foram suspensas.";
+			RuntimeComponentStatus status = profile.MutableRuntimeStatuses.FirstOrDefault(item => item.Component != null &&
+				string.Equals(item.Component.Id, component.Id, StringComparison.OrdinalIgnoreCase));
+			if (status == null)
+			{
+				status = new RuntimeComponentStatus { Component = component };
+				profile.MutableRuntimeStatuses.Add(status);
+			}
+			status.State = GamingReadinessState.Attention;
+			status.Detail = detail;
+			profile.MutableFindings.Add(new GamingReadinessFinding
+			{
+				Code = "installer-restart-" + component.Id,
+				Title = component.DisplayName + " — reinicialização pendente",
+				Detail = detail,
+				Recommendation = "Salve seus arquivos, reinicie o Windows manualmente e abra o instalador novamente para confirmar e concluir as etapas restantes.",
+				OfficialUrl = component.OfficialUrl,
+				State = GamingReadinessState.Attention
+			});
+		}
+
 		public static void InstallDotNet35(Action<string, string> progressCallback)
 		{
 			if (PrerequisiteDetector.IsDotNet35Installed())
@@ -202,7 +382,7 @@ namespace InstallerHost
 			}
 		}
 
-		private static bool IsSelectedOfflineComponent(
+		internal static bool IsSelectedOfflineComponent(
 			GamingRuntimeComponent component,
 			GamingRuntimeInstallSelection selection)
 		{
@@ -215,6 +395,10 @@ namespace InstallerHost
 			{
 				return selection.InstallDirectXLegacy;
 			}
+			if (string.Equals(component.Id, "dokany", StringComparison.OrdinalIgnoreCase))
+				return selection.InstallDokany;
+			if (string.Equals(component.Id, "winfsp", StringComparison.OrdinalIgnoreCase))
+				return selection.InstallWinFsp;
 
 			// XNA e futuros payloads opcionais exigem uma opção própria; não são
 			// incluídos implicitamente pelo checkbox do stack recomendado.
@@ -227,7 +411,7 @@ namespace InstallerHost
 				(component.Category == GamingRuntimeCategory.MicrosoftRuntime || component.IsLegacy);
 		}
 
-		private static void InstallPlannedComponent(
+		private static int InstallPlannedComponent(
 			GamingRuntimeComponent component,
 			Action<string, string> progressCallback)
 		{
@@ -239,50 +423,48 @@ namespace InstallerHost
 			ReportProgress(progressCallback, "Instalando componente verificado", component.DisplayName);
 			if (component.IsLegacy)
 			{
-				InstallLegacyVisualCpp(component);
-				return;
+				return InstallLegacyVisualCpp(component);
 			}
 
 			switch (component.Id.ToLowerInvariant())
 			{
 				case "dotnet-framework-48":
-					RunBundledInstaller(component, "/q /norestart");
-					break;
+					return RunBundledInstaller(component, "/q /norestart");
 				case "vc-modern-x64":
 				case "vc-modern-x86":
 				case "dotnet-desktop-8-x64":
 				case "dotnet-desktop-8-x86":
 				case "dotnet-desktop-10-x64":
 				case "dotnet-desktop-10-x86":
-					RunBundledInstaller(component, "/install /quiet /norestart");
-					break;
+					return RunBundledInstaller(component, "/install /quiet /norestart");
 				case "directx-june-2010":
-					InstallDirectXJune2010(component);
-					break;
+					return InstallDirectXJune2010(component);
 				case "webview2-x64":
-					RunBundledInstaller(component, "/silent /install");
-					break;
+					return RunBundledInstaller(component, "/silent /install");
 				case "xna-framework-40":
-					RunBundledMsi(component, "/qn /norestart");
-					break;
+					return RunBundledMsi(component, "/qn /norestart");
+				case "dokany":
+					return RunBundledInstaller(component, GetOptionalDriverArguments(component.Id));
+				case "winfsp":
+					return RunBundledMsi(component, GetOptionalDriverArguments(component.Id));
 				default:
 					throw new InvalidOperationException("Não há estratégia de instalação aprovada para " + component.DisplayName + ".");
 			}
 		}
 
-		private static void RunBundledInstaller(GamingRuntimeComponent component, string arguments)
+		private static int RunBundledInstaller(GamingRuntimeComponent component, string arguments)
 		{
 			string installerPath = PrerequisiteBundle.ExtractBundledFile(component);
-			RunInstaller(installerPath, arguments, component, component.DisplayName);
+			return RunInstaller(installerPath, arguments, component, component.DisplayName);
 		}
 
-		private static void RunBundledMsi(GamingRuntimeComponent component, string arguments)
+		private static int RunBundledMsi(GamingRuntimeComponent component, string arguments)
 		{
 			string msiPath = PrerequisiteBundle.ExtractBundledFile(component);
-			RunMsi(msiPath, arguments, component, component.DisplayName);
+			return RunMsi(msiPath, arguments, component, component.DisplayName);
 		}
 
-		private static void InstallLegacyVisualCpp(GamingRuntimeComponent component)
+		private static int InstallLegacyVisualCpp(GamingRuntimeComponent component)
 		{
 			string zipPath = PrerequisiteBundle.ExtractBundledFile(component);
 			using (SecureInstallerStaging staging = SecureInstallerStaging.Create("TurboramaLegacyVC"))
@@ -291,17 +473,18 @@ namespace InstallerHost
 					zipPath,
 					component,
 					staging);
-				RunInstaller(installerPath, GetLegacyVisualCppArguments(component.Id), component, component.DisplayName);
+				return RunInstaller(installerPath, GetLegacyVisualCppArguments(component.Id), component, component.DisplayName);
 			}
 		}
 
-		private static void InstallDirectXJune2010(GamingRuntimeComponent component)
+		private static int InstallDirectXJune2010(GamingRuntimeComponent component)
 		{
 			using (SecureInstallerStaging staging = SecureInstallerStaging.Create("TurboramaDirectX"))
 			{
 				string redistPath = PrerequisiteBundle.ExtractBundledFile(component);
 				string extractPath = staging.CreateSubdirectory("payload");
-				RunInstaller(redistPath, "/Q /T:\"" + extractPath + "\"", component, component.DisplayName + " (extração)");
+				int extractionExitCode = RunInstaller(redistPath, "/Q /T:\"" + extractPath + "\"", component, component.DisplayName + " (extração)");
+				if (IsRestartExitCode(extractionExitCode)) return extractionExitCode;
 				staging.HardenTreeContents();
 
 				string dxSetupPath = Path.Combine(extractPath, "DXSETUP.exe");
@@ -309,11 +492,11 @@ namespace InstallerHost
 				{
 					throw new FileNotFoundException("DXSETUP.exe não foi produzido pelo payload oficial do DirectX.", dxSetupPath);
 				}
-				RunInstaller(dxSetupPath, "/silent", component, component.DisplayName);
+				return RunInstaller(dxSetupPath, "/silent", component, component.DisplayName);
 			}
 		}
 
-		public static void RunInstaller(
+		public static int RunInstaller(
 			string installerPath,
 			string arguments,
 			GamingRuntimeComponent component,
@@ -335,10 +518,11 @@ namespace InstallerHost
 				int exitCode = RunProcessAndWait(
 					resolvedPath, arguments, label, GetAbsoluteWorkingDirectory(resolvedPath));
 				EnsureSuccessfulInstallerExit(exitCode, label);
+				return exitCode;
 			}
 		}
 
-		public static void RunMsi(
+		public static int RunMsi(
 			string msiPath,
 			string arguments,
 			GamingRuntimeComponent component,
@@ -361,6 +545,7 @@ namespace InstallerHost
 				int exitCode = RunProcessAndWait(
 					msiexecPath, commandArguments, label, GetAbsoluteWorkingDirectory(msiexecPath));
 				EnsureSuccessfulInstallerExit(exitCode, label);
+				return exitCode;
 			}
 		}
 

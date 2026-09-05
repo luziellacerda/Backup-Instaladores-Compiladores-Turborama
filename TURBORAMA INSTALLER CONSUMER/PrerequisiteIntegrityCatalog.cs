@@ -189,7 +189,7 @@ namespace InstallerHost
 			if (payload.fileType == "Exe" || payload.fileType == "Msi")
 			{
 				ValidateSignerAnchor(payload.signerSubject, payload.signerThumbprint,
-					payload.certificatePublicKeySha256, payload.name);
+					payload.certificatePublicKeySha256, payload.name, payload.name);
 			}
 
 			PrerequisiteArchiveEntryLock[] entries = payload.archiveEntries ?? new PrerequisiteArchiveEntryLock[0];
@@ -208,7 +208,7 @@ namespace InstallerHost
 				RequirePositiveLength(entry.length, payload.name + "/" + entry.name);
 				entry.sha256 = RequireHex(entry.sha256, 64, entry.name + " SHA-256");
 				ValidateSignerAnchor(entry.signerSubject, entry.signerThumbprint,
-					entry.certificatePublicKeySha256, payload.name + "/" + entry.name);
+					entry.certificatePublicKeySha256, payload.name, payload.name + "/" + entry.name);
 			}
 
 			if (payload.fileType == "Zip" && entries.Length != 1)
@@ -217,15 +217,52 @@ namespace InstallerHost
 			}
 		}
 
-		private static void ValidateSignerAnchor(string subject, string thumbprint, string publicKeyHash, string label)
+		private static void ValidateSignerAnchor(
+			string subject,
+			string thumbprint,
+			string publicKeyHash,
+			string payloadName,
+			string label)
 		{
-			if (string.IsNullOrWhiteSpace(subject) || !subject.StartsWith("CN=", StringComparison.Ordinal) ||
-				subject.IndexOf("O=Microsoft Corporation", StringComparison.Ordinal) < 0)
+			string approvedThirdPartySubject = GetApprovedThirdPartySubject(payloadName);
+			bool thirdPartyPayload = !string.IsNullOrEmpty(approvedThirdPartySubject);
+			bool approvedMicrosoft = !thirdPartyPayload && !string.IsNullOrWhiteSpace(subject) &&
+				subject.StartsWith("CN=", StringComparison.Ordinal) &&
+				subject.IndexOf("O=Microsoft Corporation", StringComparison.Ordinal) >= 0;
+			bool approvedThirdParty = thirdPartyPayload &&
+				string.Equals(payloadName, label, StringComparison.Ordinal) &&
+				string.Equals(subject, approvedThirdPartySubject, StringComparison.Ordinal);
+			if (!approvedMicrosoft && !approvedThirdParty)
 			{
 				throw new InvalidDataException("Editor exato ausente ou não aprovado para " + label + ".");
 			}
 			RequireHex(thumbprint, 40, label + " thumbprint");
 			RequireHex(publicKeyHash, 64, label + " chave pública");
+		}
+
+		internal static void ValidateSignerAnchorForTest(
+			string payloadName,
+			string label,
+			string subject,
+			string thumbprint,
+			string publicKeyHash)
+		{
+			ValidateSignerAnchor(subject, thumbprint, publicKeyHash, payloadName, label);
+		}
+
+		private static string GetApprovedThirdPartySubject(string payloadName)
+		{
+			// Exceções são ligadas ao nome do payload de nível superior. Elas não
+			// relaxam os payloads Microsoft nem permitem reutilizar o editor em ZIPs.
+			if (string.Equals(payloadName, "DokanSetup.exe", StringComparison.OrdinalIgnoreCase))
+			{
+				return "CN=LEOSAC, O=LEOSAC, STREET=39 rue Principale, PostalCode=67220, L=Breitenau, S=Bas-Rhin, C=FR, SERIALNUMBER=919 690 420 00014, OID.1.3.6.1.4.1.311.60.2.1.1=Colmar, OID.1.3.6.1.4.1.311.60.2.1.2=Haut-Rhin, OID.1.3.6.1.4.1.311.60.2.1.3=FR, OID.2.5.4.15=Private Organization";
+			}
+			if (string.Equals(payloadName, "winfsp-2.2.26215.msi", StringComparison.OrdinalIgnoreCase))
+			{
+				return "CN=NAVIMATICS LLC, O=NAVIMATICS LLC, L=KIRKLAND, S=Washington, C=US, SERIALNUMBER=604 419 559, OID.2.5.4.15=Private Organization, OID.1.3.6.1.4.1.311.60.2.1.2=Washington, OID.1.3.6.1.4.1.311.60.2.1.3=US";
+			}
+			return string.Empty;
 		}
 
 		private static string RequireSafeBaseName(string value, string label)

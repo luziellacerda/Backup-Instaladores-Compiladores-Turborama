@@ -1,19 +1,22 @@
 #Requires -Version 5.1
+[CmdletBinding()]
+param([string]$MSBuildPath = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe')
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
     New-Item -ItemType Directory -Path (Join-Path $PSScriptRoot 'TestResults\executables') -Force | Out-Null
-    $consumerBuild = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
+    $consumerBuild = $MSBuildPath
     & $consumerBuild InstallerHost.csproj /t:Rebuild /p:Configuration=Release /p:IncludePrerequisitePayloads=false /nologo /v:minimal
     if ($LASTEXITCODE -ne 0) { throw 'Falha na compilação da biblioteca de validação.' }
     [xml]$consumerProject = Get-Content InstallerHost.csproj -Raw
     $consumerSources = @($consumerProject.SelectNodes('//*[local-name()="Compile"]') | ForEach-Object { $_.GetAttribute('Include') })
+    $interfaceResources = @($consumerProject.SelectNodes('//*[local-name()="EmbeddedResource"]') | Where-Object { $_.GetAttribute('Include') -notlike 'resources\prerequisites\*' } | ForEach-Object { '/resource:' + $_.GetAttribute('Include') + ',' + $_.SelectSingleNode('*[local-name()="LogicalName"]').InnerText })
     $consumerCompiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-    & $consumerCompiler /nologo /target:exe /warnaserror+ /define:CONSUMER_UI_TESTS /main:InstallerHost.ConsumerUiTests /out:TestResults\executables\ConsumerUiTests.exe /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:Accessibility.dll /resource:prerequisites.lock.json,InstallerHost.prerequisites.lock.json $consumerSources Tests\RuntimeVersionPolicyTests.cs Tests\PrerequisiteSelectionTests.cs Tests\ConsumerUiTests.cs
+    & $consumerCompiler /nologo /target:exe /warnaserror+ /define:CONSUMER_UI_TESTS /main:InstallerHost.ConsumerUiTests /out:TestResults\executables\ConsumerUiTests.exe /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:Accessibility.dll $interfaceResources $consumerSources Tests\RuntimeVersionPolicyTests.cs Tests\PrerequisiteSelectionTests.cs Tests\ArtworkTests.cs Tests\PublisherPolicyTests.cs Tests\ConsumerUiTests.cs
     if ($LASTEXITCODE -ne 0) { throw 'Falha na compilação dos testes de interface.' }
     & .\TestResults\executables\ConsumerUiTests.exe (Join-Path $PSScriptRoot 'TestResults\consumer')
     if ($LASTEXITCODE -ne 0) { throw 'Falha nos testes de interface.' }
-    & $consumerCompiler /nologo /target:exe /warnaserror+ /main:InstallerHost.GamingReadinessDialogTests /out:TestResults\executables\GamingReadinessDialogTests.exe /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:Accessibility.dll /resource:prerequisites.lock.json,InstallerHost.prerequisites.lock.json $consumerSources Tests\GamingReadinessDialogTests.cs
+    & $consumerCompiler /nologo /target:exe /warnaserror+ /main:InstallerHost.GamingReadinessDialogTests /out:TestResults\executables\GamingReadinessDialogTests.exe /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:Accessibility.dll $interfaceResources $consumerSources Tests\GamingReadinessDialogTests.cs
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar teste do diagnóstico.' }
     & .\TestResults\executables\GamingReadinessDialogTests.exe (Join-Path $PSScriptRoot 'TestResults\diagnostic')
     if ($LASTEXITCODE -ne 0) { throw 'Falha no layout do diagnóstico.' }

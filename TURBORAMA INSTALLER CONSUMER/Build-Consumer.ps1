@@ -16,7 +16,8 @@ try {
     [xml]$project = Get-Content -LiteralPath 'InstallerHost.csproj' -Raw
     $compileInputs = @($project.SelectNodes('//*[local-name()="Compile"]') | ForEach-Object { $_.GetAttribute('Include') })
     $testInputs = @(Get-ChildItem -LiteralPath 'Tests' -Filter '*.cs' -File | ForEach-Object { 'Tests\' + $_.Name })
-    $inputs = @($compileInputs + $testInputs + @('InstallerHost.csproj','app.manifest','prerequisites.lock.json','resources\Builder.ico','Build-Consumer.ps1','Verify-ConsumerBuild.ps1','Test-ConsumerUi.ps1') | Sort-Object -Unique)
+    $artInputs = @($project.SelectNodes('//*[local-name()="EmbeddedResource"]') | ForEach-Object { $_.GetAttribute('Include') } | Where-Object { $_ -notlike 'resources\prerequisites\*' })
+    $inputs = @($compileInputs + $testInputs + $artInputs + @('InstallerHost.csproj','app.manifest','prerequisites.lock.json','resources\Builder.ico','Build-Consumer.ps1','Verify-ConsumerBuild.ps1','Test-ConsumerUi.ps1') | Sort-Object -Unique)
     $projectRoot = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\', '/')
     $projectPrefix = $projectRoot + [System.IO.Path]::DirectorySeparatorChar
     foreach ($inputPath in $inputs) {
@@ -55,7 +56,7 @@ try {
             if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Thumbprint -ne $payload.signerThumbprint) { throw ('Assinatura inválida: ' + $payload.name) }
         }
     }
-    & .\Test-ConsumerUi.ps1
+    & .\Test-ConsumerUi.ps1 -MSBuildPath $MSBuildPath
     if ($LASTEXITCODE -ne 0) { throw 'Testes internos falharam.' }
     & $MSBuildPath InstallerHost.csproj /t:Rebuild /p:Configuration=Release /p:IncludePrerequisitePayloads=true /nologo /v:minimal
     if ($LASTEXITCODE -ne 0) { throw 'Compilação do instalador falhou.' }
@@ -88,7 +89,8 @@ try {
         authenticodeStatus = [string](Get-AuthenticodeSignature -LiteralPath $exe.FullName).Status
         internalTestsPassed = $true; realWindowQaPassed = $false; cleanWindowsInstallPassed = $false
         productPackageIncluded = $false; productionApproved = $false
-        warning = 'Candidato para testes. Componentes reais incorporados; requer partes do produto e sidecar para instalar TurboRama. Não certificado para produção.'
+        containsPrereleaseComponents = $true; prereleaseComponents = @('WinFsp 2026 Beta4 (2.2.26215), optional and unchecked')
+        warning = 'Candidato interno para testes, com WinFsp Beta opcional; confirmar inclusão antes da entrega. Componentes reais incorporados; requer partes do produto e sidecar para instalar TurboRama. Não aprovado para produção.'
     }
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath 'bin\Release\InstallerHost-build-manifest.json' -Encoding UTF8
     ($manifest.sha256 + ' *InstallerHost.exe') | Set-Content -LiteralPath 'bin\Release\InstallerHost.exe.sha256' -Encoding ASCII

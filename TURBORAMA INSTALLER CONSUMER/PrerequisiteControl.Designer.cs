@@ -22,10 +22,8 @@ namespace InstallerHost
             chkVCpp = CreateOption("chkVCpp", "Stack Microsoft recomendado", true, 0);
             chkDirectX = CreateOption("chkDirectX", "DirectX legado June 2010", true, 1);
             chkNvidiaApp = CreateOption("chkNvidiaApp", "Copiar link oficial do driver NVIDIA", false, 2);
-            chkDokany = CreateOption("chkDokany", "Dokany — não incluído", false, 3);
-            chkwinFSP = CreateOption("chkwinFSP", "WinFsp — não incluído", false, 4);
-            chkDokany.Enabled = false;
-            chkwinFSP.Enabled = false;
+            chkDokany = CreateOption("chkDokany", "Instalar Dokany — driver opcional", false, 3);
+            chkwinFSP = CreateOption("chkwinFSP", "WinFsp 2026 Beta4 — opcional (teste)", false, 4);
 
             progressBar = new ProgressBar
             {
@@ -109,9 +107,9 @@ namespace InstallerHost
             AddOptionRow(selection, chkNvidiaApp,
                 "Copia a fonte oficial da NVIDIA. O navegador não será aberto pelo instalador.");
             AddOptionRow(selection, chkDokany,
-                "Dokany é opcional e não faz parte deste pacote. Obtenha-o manualmente na fonte oficial somente se algum aplicativo exigir.");
+                "Dokany 2.3.1: instala um driver de sistema de arquivos. Marque somente se um aplicativo exigir; pode precisar reiniciar o Windows.");
             AddOptionRow(selection, chkwinFSP,
-                "WinFsp é opcional e não faz parte deste pacote. Obtenha-o manualmente em winfsp.dev somente se necessário.");
+                "WinFsp 2.2 Beta 4: pré-lançamento oficial com correções de segurança; instala somente o núcleo do driver. Marque apenas se necessário. Pode exigir reinício.");
             contentStack.Controls.Add(selection);
 
             progressSection = CreateSection("prerequisiteProgress");
@@ -137,6 +135,8 @@ namespace InstallerHost
             chkVCpp.CheckedChanged += delegate { UpdateProgressMaximumFromSelection(); };
             chkDirectX.CheckedChanged += delegate { UpdateProgressMaximumFromSelection(); };
             chkNvidiaApp.CheckedChanged += delegate { UpdateProgressMaximumFromSelection(); };
+            chkDokany.CheckedChanged += delegate { UpdateProgressMaximumFromSelection(); };
+            chkwinFSP.CheckedChanged += delegate { UpdateProgressMaximumFromSelection(); };
             ResumeLayout(true);
         }
 

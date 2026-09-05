@@ -168,10 +168,10 @@ namespace InstallerHost
 						installed = IsDotNetDesktopRuntimeInstalledAtLeast(9, out version);
 						break;
 					case "dokany":
-						installed = IsDokanyInstalled();
+						installed = IsDokanyInstalled(out version);
 						break;
 					case "winfsp":
-						installed = IsWinFspInstalled();
+						installed = IsWinFspInstalled(out version);
 						break;
 					default:
 						if (component.DetectionKey.StartsWith("vc-legacy-", StringComparison.OrdinalIgnoreCase))
@@ -834,7 +834,7 @@ namespace InstallerHost
 			return text.EndsWith("N", StringComparison.Ordinal) || text.Contains(" N ") || text.Contains("KN");
 		}
 
-		private static bool IsRestartPending()
+		internal static bool IsRestartPending()
 		{
 			foreach (RegistryView view in GetRegistryViews())
 			{

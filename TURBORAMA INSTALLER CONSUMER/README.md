@@ -16,7 +16,7 @@ Boas-vindas → Licença → Pré-requisitos → Instalação → Conclusão.
 ## Verificação e compilação
 
 1. Windows 10/11, Visual Studio 2022 com MSBuild e targeting pack .NET Framework 4.7.2.
-2. Colocar os 20 payloads exatos de prerequisites.lock.json em resources/prerequisites. Os URLs são fontes, não autorização para aceitar hashes diferentes. URLs de atualização contínua podem mudar: nesse caso é necessária nova auditoria.
+2. Colocar os 22 payloads exatos de prerequisites.lock.json em resources/prerequisites. Os URLs são fontes, não autorização para aceitar hashes diferentes. URLs de atualização contínua podem mudar: nesse caso é necessária nova auditoria.
 3. Executar Test-ConsumerUi.ps1 para testar fontes, fluxo, gráficos e extração sintética, sem instalar componentes.
 4. Commitar os fontes numa branch própria e executar Build-Consumer.ps1. O build confere payloads, roda os testes, compila e verifica os recursos incorporados por hash. Seu manifesto liga EXE, catálogo e fontes ao commit.
 
@@ -29,6 +29,15 @@ O modo IncludePrerequisitePayloads=false produz somente DLL de validação, nunc
 - .NET Desktop 10 x64/x86: 10.0.11, preservado.
 - WebView2: download Evergreen x64 atualizado, SHA-256 fixado no lock. A versão 1.3.265.7 é do instalador, não do motor WebView2.
 - Bibliotecas legadas verificadas preservadas para compatibilidade. Pacotes opcionais não são instalados implicitamente.
+- Dokany 2.3.1.1000: driver de sistema de arquivos, opt-in desmarcado.
+- WinFsp 2026 Beta4 (2.2.26215): pré-lançamento oficial, opção de teste explicitamente identificada e desmarcada. Não é anunciado como versão estável. A versão estável 2025 não foi usada porque as notas oficiais posteriores publicam correções de segurança. Sua inclusão na entrega está sujeita à escolha do usuário.
+- Nenhum driver é instalado só por abrir o assistente. Se um instalador sinaliza 3010/1641, as etapas seguintes param e o assistente mantém a pendência de reinicialização; não solicita reboot automático.
+
+Fontes dos drivers: [Dokany](https://github.com/dokan-dev/dokany/releases/tag/v2.3.1.1000), [WinFsp 2026 Beta4, avisos e hashes](https://github.com/winfsp/winfsp/releases/tag/v2.2B4).
+
+## Identidade visual 10.1
+
+Arte original gerada de F-15 e fliperamas, incorporada ao EXE e verificada por SHA-256. Cabeçalho TURBORAMA em todas as cinco etapas, fundo ilustrado na entrada e brilho neon suave. O efeito para quando a página fica oculta, respeita a configuração de animação do Windows e não roda em alto contraste ou sessão remota. Não há efeitos sobre botões, instruções ou caixas de seleção. Detalhes e prompt em `resources/art/ARTWORK.md`.
 
 Fontes oficiais: [Visual C++](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist), [.NET 8](https://dotnet.microsoft.com/en-us/download/dotnet/8.0), [.NET 10](https://dotnet.microsoft.com/en-us/download/dotnet/10.0), [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2).
 
@@ -38,4 +47,4 @@ Fontes oficiais: [Visual C++](https://learn.microsoft.com/en-us/cpp/windows/late
 
 O host sozinho não contém o produto TurboRama, jogos, ROMs ou BIOS. A instalação do produto exige as partes com os nomes esperados pelo backend e o sidecar SHA-256 correspondente a este novo EXE; sidecars de versões antigas serão rejeitados. Não reutilize nem renomeie um sidecar antigo.
 
-O host não tem assinatura digital de editor. Pode haver alerta do SmartScreen; nenhuma proteção do Windows é desativada e não há garantia de ausência de alertas. Assinaturas dos instaladores Microsoft continuam sendo verificadas antes de executá-los.
+O host não tem assinatura digital de editor. Pode haver alerta do SmartScreen; nenhuma proteção do Windows é desativada e não há garantia de ausência de alertas. Assinaturas dos instaladores incorporados continuam sendo verificadas antes de executá-los; os editores de Dokany/WinFsp são aceitos apenas para seus arquivos exatos, com hash e certificado fixados.

@@ -311,13 +311,15 @@ namespace InstallerHost
 	/// <summary>
 	/// Opções que o usuário realmente vê na tela de pré-requisitos. O plano de
 	/// instalação não pode incluir silenciosamente um grupo que esteja desmarcado.
-	/// Dokany e WinFsp não fazem parte deste modelo porque não são distribuídos no
-	/// pacote offline; a tela apresenta apenas orientação para esses componentes.
+	/// Drivers de sistema de arquivos exigem escolhas próprias e nunca pertencem
+	/// implicitamente ao stack recomendado.
 	/// </summary>
 	public sealed class GamingRuntimeInstallSelection
 	{
 		public bool InstallMicrosoftRuntimeStack { get; set; }
 		public bool InstallDirectXLegacy { get; set; }
+		public bool InstallDokany { get; set; }
+		public bool InstallWinFsp { get; set; }
 		public bool OpenNvidiaOfficialSource { get; set; }
 
 		public static GamingRuntimeInstallSelection RecommendedDefaults()
@@ -326,6 +328,8 @@ namespace InstallerHost
 			{
 				InstallMicrosoftRuntimeStack = true,
 				InstallDirectXLegacy = true,
+				InstallDokany = false,
+				InstallWinFsp = false,
 				OpenNvidiaOfficialSource = false
 			};
 		}

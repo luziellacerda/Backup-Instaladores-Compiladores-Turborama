@@ -12,6 +12,16 @@ namespace InstallerHost
 			"Microsoft Windows"
 		};
 
+		private static readonly string[] DokanyPublisherTokens =
+		{
+			"LEOSAC"
+		};
+
+		private static readonly string[] WinFspPublisherTokens =
+		{
+			"NAVIMATICS LLC"
+		};
+
 		private static readonly List<GamingRuntimeComponent> Components = BuildComponents();
 
 		// Mantidos para compatibilidade com o empacotador existente. A lista obrigatória
@@ -193,15 +203,17 @@ namespace InstallerHost
 				"dotnet-desktop-current", "Microsoft", "https://dotnet.microsoft.com/download",
 				"Versões futuras devem ser adicionadas sob demanda; instalar todos os runtimes sem necessidade aumenta manutenção e superfície de ataque."));
 
-			items.Add(CreateGuidance(
-				"dokany", "Dokany (orientação manual)", GamingRuntimeCategory.FileSystemSupport, GamingRuntimeTier.Optional,
-				"dokany", "Dokany Project", "https://github.com/dokan-dev/dokany/releases",
-				"Não faz parte do pacote offline. Instale manualmente somente se uma ferramenta legítima exigir."));
+			items.Add(CreatePackage(
+				"dokany", "Dokany 2.3.1 (opcional)", GamingRuntimeCategory.FileSystemSupport, GamingRuntimeTier.Optional,
+				"any", "dokany", "LEOSAC", "https://github.com/dokan-dev/dokany/releases/tag/v2.3.1.1000",
+				"Driver de sistema de arquivos usado somente por ferramentas compatíveis com Dokany. Instalação sempre opt-in e sem reinício automático.",
+				"DokanSetup.exe", "DokanSetup.exe", true, false, new string[0], DokanyPublisherTokens));
 
-			items.Add(CreateGuidance(
-				"winfsp", "WinFsp (orientação manual)", GamingRuntimeCategory.FileSystemSupport, GamingRuntimeTier.Optional,
-				"winfsp", "WinFsp Project", "https://winfsp.dev/rel/",
-				"Não faz parte do pacote offline. Instale manualmente somente se uma ferramenta legítima exigir."));
+			items.Add(CreatePackage(
+				"winfsp", "WinFsp 2026 Beta 4 (opcional / pré-lançamento)", GamingRuntimeCategory.FileSystemSupport, GamingRuntimeTier.Optional,
+				"any", "winfsp", "Navimatics LLC", "https://github.com/winfsp/winfsp/releases/tag/v2.2B4",
+				"Pré-lançamento que corrige falhas de segurança publicadas após a versão estável 2025. Instale somente por escolha explícita; nunca reinicia o PC automaticamente.",
+				"winfsp-2.2.26215.msi", "winfsp-2.2.26215.msi", true, false, new string[0], WinFspPublisherTokens));
 
 			return items;
 		}

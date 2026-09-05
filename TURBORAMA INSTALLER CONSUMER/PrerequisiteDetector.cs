@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Microsoft.Win32;
@@ -439,46 +440,172 @@ namespace InstallerHost
 
 		public static bool IsDokanyInstalled()
 		{
-			string[] serviceKeys = new string[]
-			{
-				@"SYSTEM\CurrentControlSet\Services\dokan1",
-				@"SYSTEM\CurrentControlSet\Services\dokan2"
-			};
+			string ignoredVersion;
+			return IsDokanyInstalled(out ignoredVersion);
+		}
 
+		internal static bool IsDokanyInstalled(out string version)
+		{
+			version = string.Empty;
+			bool dokan1ServicePresent = false;
+			bool dokan2ServicePresent = false;
 			foreach (RegistryView view in GetRegistryViews())
 			{
-				foreach (string serviceKey in serviceKeys)
-				{
-					try
-					{
-						using (RegistryKey registryKey = OpenLocalMachineSubKey(view, serviceKey))
-						{
-							if (registryKey != null)
-							{
-								return true;
-							}
-						}
-					}
-					catch
-					{
-					}
-				}
+				dokan1ServicePresent = dokan1ServicePresent ||
+					RegistryKeyExists(view, @"SYSTEM\CurrentControlSet\Services\dokan1");
+				dokan2ServicePresent = dokan2ServicePresent ||
+					RegistryKeyExists(view, @"SYSTEM\CurrentControlSet\Services\dokan2");
 			}
 
-			return false;
+			string systemDirectory = GetNativeSystemDirectoryForRead();
+			string driverPath = Path.Combine(systemDirectory, "drivers", "dokan2.sys");
+			string libraryPath = Path.Combine(systemDirectory, "dokan2.dll");
+			string driverVersion;
+			string libraryVersion;
+			bool driverVersionKnown = TryGetRegularFileVersion(driverPath, out driverVersion);
+			bool libraryVersionKnown = TryGetRegularFileVersion(libraryPath, out libraryVersion);
+			if (dokan2ServicePresent && driverVersionKnown && libraryVersionKnown &&
+				RuntimeVersionPolicy.HaveSameVersionFields(driverVersion, libraryVersion, 4))
+			{
+				version = driverVersion;
+			}
+
+			// Serviço v1, serviço v2 sem os dois binários correspondentes ou arquivos
+			// órfãos indicam presença parcial/legada. O chamador os classifica Unknown.
+			return dokan1ServicePresent || dokan2ServicePresent ||
+				File.Exists(driverPath) || File.Exists(libraryPath);
 		}
 
 		public static bool IsWinFspInstalled()
 		{
-			string[] candidates =
-			{
-				@"C:\Program Files (x86)\WinFsp\bin\winfsp-x64.dll",
-				@"C:\Program Files (x86)\WinFsp\bin\winfsp-x86.dll",
-				@"C:\Program Files\WinFsp\bin\winfsp-x64.dll",
-				@"C:\Program Files\WinFsp\bin\winfsp-x86.dll"
-			};
+			string ignoredVersion;
+			return IsWinFspInstalled(out ignoredVersion);
+		}
 
-			return candidates.Any(File.Exists);
+		internal static bool IsWinFspInstalled(out string version)
+		{
+			version = string.Empty;
+			string[] programFilesRoots = new[]
+			{
+				Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+				Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+			}.Where(item => !string.IsNullOrWhiteSpace(item))
+				.Distinct(StringComparer.OrdinalIgnoreCase)
+				.ToArray();
+			string[] knownInstallDirectories = programFilesRoots
+				.Select(root => Path.Combine(root, "WinFsp"))
+				.ToArray();
+			string[] knownDllPaths = knownInstallDirectories
+				.SelectMany(directory => new[]
+				{
+					Path.Combine(directory, "bin", "winfsp-x64.dll"),
+					Path.Combine(directory, "bin", "winfsp-x86.dll")
+				})
+				.ToArray();
+
+			string registeredVersion = GetRegistryValueString(
+				@"SOFTWARE\Classes\Installer\Dependencies\WinFsp", "Version");
+			string registeredInstallDirectory = GetRegistryValueString(@"SOFTWARE\WinFsp", "InstallDir");
+			string approvedInstallDirectory;
+			bool installDirectoryApproved = TryMatchExactInstallDirectory(
+				registeredInstallDirectory, knownInstallDirectories, out approvedInstallDirectory);
+			if (installDirectoryApproved && !string.IsNullOrWhiteSpace(registeredVersion))
+			{
+				string runtimeDll = Path.Combine(approvedInstallDirectory, "bin",
+					Environment.Is64BitOperatingSystem ? "winfsp-x64.dll" : "winfsp-x86.dll");
+				string runtimeFileVersion;
+				if (TryGetRegularFileVersion(runtimeDll, out runtimeFileVersion) &&
+					RuntimeVersionPolicy.HaveSameVersionFields(registeredVersion, runtimeFileVersion, 3))
+				{
+					version = registeredVersion;
+				}
+			}
+
+			// Metadados MSI, caminho aprovado e binário devem concordar para Ready.
+			// Qualquer evidência isolada continua presente, mas com versão vazia/Unknown.
+			return !string.IsNullOrWhiteSpace(registeredVersion) ||
+				!string.IsNullOrWhiteSpace(registeredInstallDirectory) ||
+				knownDllPaths.Any(File.Exists);
+		}
+
+		private static bool TryMatchExactInstallDirectory(
+			string candidate,
+			IEnumerable<string> approvedDirectories,
+			out string matchedDirectory)
+		{
+			matchedDirectory = string.Empty;
+			if (string.IsNullOrWhiteSpace(candidate) || !Path.IsPathRooted(candidate))
+			{
+				return false;
+			}
+			try
+			{
+				string fullCandidate = Path.GetFullPath(candidate)
+					.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+				foreach (string approved in approvedDirectories)
+				{
+					string fullApproved = Path.GetFullPath(approved)
+						.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+					if (!string.Equals(fullCandidate, fullApproved, StringComparison.OrdinalIgnoreCase))
+					{
+						continue;
+					}
+					if (!Directory.Exists(fullCandidate) ||
+						(File.GetAttributes(fullCandidate) & FileAttributes.ReparsePoint) != 0)
+					{
+						return false;
+					}
+					matchedDirectory = fullCandidate;
+					return true;
+				}
+			}
+			catch
+			{
+			}
+			return false;
+		}
+
+		private static bool TryGetRegularFileVersion(string path, out string version)
+		{
+			version = string.Empty;
+			try
+			{
+				if (string.IsNullOrWhiteSpace(path) || !Path.IsPathRooted(path) || !File.Exists(path) ||
+					(File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+				{
+					return false;
+				}
+				string detected = (FileVersionInfo.GetVersionInfo(path).FileVersion ?? string.Empty).Trim();
+				Version parsed;
+				if (!Version.TryParse(detected, out parsed) || parsed.Build < 0)
+				{
+					return false;
+				}
+				version = detected;
+				return true;
+			}
+			catch
+			{
+				return false;
+			}
+		}
+
+		private static string GetNativeSystemDirectoryForRead()
+		{
+			string windowsDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+			if (Environment.Is64BitOperatingSystem && !Environment.Is64BitProcess &&
+				!string.IsNullOrWhiteSpace(windowsDirectory))
+			{
+				// Sysnative bypasses WOW64 redirection so the driver and native DLL are
+				// inspected in the same System32 tree used by the x64 Dokany service.
+				string sysnative = Path.Combine(windowsDirectory, "Sysnative");
+				if (Directory.Exists(sysnative))
+				{
+					return sysnative;
+				}
+			}
+
+			return Environment.GetFolderPath(Environment.SpecialFolder.System);
 		}
 
 		private static RegistryView[] GetRegistryViews()

@@ -29,6 +29,8 @@ namespace InstallerHost
             chkDirectX.Checked = false;
             chkNvidiaApp.Checked = false;
             chkNvidiaApp.Enabled = false;
+            chkDokany.Checked = false;
+            chkwinFSP.Checked = false;
             UpdateProgressMaximumFromSelection();
             ApplyGamingReadinessProfileToUi();
             readinessLabel.Text = "Diagnóstico sintético — somente teste de interface";
@@ -146,7 +148,7 @@ namespace InstallerHost
                 page.chkVCpp.Checked = true;
                 page.BtnNext_Click(page, EventArgs.Empty);
                 verify(page.installerWorker == null && !page.IsInstallationRunning() &&
-                    page.progressTitleText == "Espaço insuficiente para preparar componentes",
+					page.progressTitleText == "Não foi possível preparar os componentes",
                     "Low system-disk space blocks runtime execution before creating a worker");
                 page.chkVCpp.Checked = false;
                 GamingReadinessProfile ready = CreateSelectionTestProfile(GamingReadinessState.Ready);
@@ -226,7 +228,183 @@ namespace InstallerHost
                 verify(page.gamingReadinessWorker == null && page.installerWorker == null,
                     "Flow and stale-result tests never execute diagnostics or installers");
             }
+            RunOptionalDriverRegressionTests(verify);
             return passed;
+        }
+
+        private static void RunOptionalDriverRegressionTests(Action<bool, string> verify)
+        {
+            GamingRuntimeInstallSelection defaults = GamingRuntimeInstallSelection.RecommendedDefaults();
+            verify(!defaults.InstallDokany && !defaults.InstallWinFsp,
+                "Recommended defaults never opt into either filesystem driver");
+            GamingRuntimeComponent dokany = GamingRuntimeManifest.GetComponents().Single(item => item.Id == "dokany");
+            GamingRuntimeComponent winfsp = GamingRuntimeManifest.GetComponents().Single(item => item.Id == "winfsp");
+            verify(dokany.CanInstallOffline && winfsp.CanInstallOffline &&
+                dokany.Tier == GamingRuntimeTier.Optional && winfsp.Tier == GamingRuntimeTier.Optional &&
+                !dokany.IncludedByDefault && !winfsp.IncludedByDefault,
+                "Both driver packages remain optional and excluded by default in the manifest");
+            GamingReadinessProfile missing = CreateSelectionTestProfile(GamingReadinessState.Unknown);
+            foreach (RuntimeComponentStatus item in missing.MutableRuntimeStatuses) item.BundleAvailable = true;
+            for (int mask = 0; mask < 4; mask++)
+            {
+                GamingRuntimeInstallSelection selection = new GamingRuntimeInstallSelection
+                {
+                    InstallDokany = (mask & 1) != 0,
+                    InstallWinFsp = (mask & 2) != 0
+                };
+                RuntimeInstallPlanItem[] planned = RuntimeInstallerHelper.BuildInstallationPlan(missing, selection).ToArray();
+                verify((planned.Single(item => item.Component.Id == "dokany").Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle) == selection.InstallDokany &&
+                    (planned.Single(item => item.Component.Id == "winfsp").Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle) == selection.InstallWinFsp,
+                    "Driver choices are independent, explicit and honored for mask " + mask);
+                verify(!planned.Any(item => item.Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle &&
+                    item.Component.Id != "dokany" && item.Component.Id != "winfsp"),
+                    "Selecting drivers never silently selects another runtime group (mask " + mask + ")");
+            }
+            verify(!RuntimeInstallerHelper.BuildInstallationPlan(missing, defaults).Any(item =>
+                (item.Component.Id == "dokany" || item.Component.Id == "winfsp") &&
+                item.Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle),
+                "The recommended stack never schedules optional drivers");
+            missing.MutableRuntimeStatuses.Single(item => item.Component.Id == "dokany").BundleAvailable = false;
+            verify(RuntimeInstallerHelper.BuildInstallationPlan(missing, new GamingRuntimeInstallSelection { InstallDokany = true })
+                .Single(item => item.Component.Id == "dokany").Disposition == RuntimeInstallDisposition.MissingBundle,
+                "A selected driver with a missing payload is not silently skipped");
+            verify(RuntimeInstallerHelper.GetOptionalDriverArguments("dokany") == "/quiet /norestart",
+                "Dokany uses the approved quiet and no-restart arguments");
+            verify(RuntimeInstallerHelper.GetOptionalDriverArguments("winfsp") == "/qn /norestart REBOOT=ReallySuppress INSTALLLEVEL=1",
+                "WinFsp suppresses reboot and installs Core only, not developer/kernel tools");
+            bool rejectedDriver = false;
+            try { RuntimeInstallerHelper.GetOptionalDriverArguments("unapproved-driver"); }
+            catch (InvalidOperationException) { rejectedDriver = true; }
+            verify(rejectedDriver, "No implicit executor strategy exists for an unknown driver");
+
+            GamingReadinessProfile space = CreateSelectionTestProfile(GamingReadinessState.Unknown);
+            verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, true) != null,
+                "Worker preflight rejects a synthetic 400 MiB system drive");
+            space.SystemDriveFreeBytes = 0;
+            verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, true) != null,
+                "Unknown or zero available disk space fails closed");
+            space.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
+            verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, true) == null,
+                "Initial reserve passes only when the complete threshold is available");
+            space.PendingRestart = true;
+            verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, true) != null,
+                "Worker preflight rejects existing restart-pending state");
+			verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(null, true) != null &&
+				RuntimeInstallerHelper.GetInstallationPreflightBlockReason(null, false) == null,
+				"Missing evidence blocks real installation but preserves a zero-work path");
+			space.PendingRestart = false;
+			space.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
+			GamingRuntimeInstallSelection dokanyOnly = new GamingRuntimeInstallSelection { InstallDokany = true };
+			verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, dokanyOnly, true) != null,
+				"Dokany-only selection fails closed when its Visual C++ dependency is not ready");
+			dokanyOnly.InstallMicrosoftRuntimeStack = true;
+			verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, dokanyOnly, true) == null,
+				"Explicit Microsoft runtime selection satisfies the Dokany dependency preflight without implicit selection");
+			dokanyOnly.InstallMicrosoftRuntimeStack = false;
+			foreach (RuntimeComponentStatus vcStatus in space.MutableRuntimeStatuses.Where(item =>
+				item.Component.Id == "vc-modern-x64" || item.Component.Id == "vc-modern-x86"))
+			{
+				vcStatus.State = GamingReadinessState.Ready;
+			}
+			verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, dokanyOnly, true) == null,
+				"Already-current Visual C++ evidence permits explicit Dokany installation by itself");
+			verify(RuntimeInstallerHelper.GetRequiredWorkingSpaceBytes(new long[] { 100, 200 }) ==
+                RuntimeInstallerHelper.MinimumSystemDriveFreeBytes + 600,
+                "Working-space reserve accounts for both staging and installer expansion");
+            bool rejectedLength = false;
+            try { RuntimeInstallerHelper.GetRequiredWorkingSpaceBytes(new long[] { 0 }); }
+            catch (System.IO.InvalidDataException) { rejectedLength = true; }
+            verify(rejectedLength, "Invalid payload lengths cannot reduce the disk reserve");
+            bool rejectedOverflow = false;
+            try { RuntimeInstallerHelper.GetRequiredWorkingSpaceBytes(new long[] { long.MaxValue }); }
+            catch (OverflowException) { rejectedOverflow = true; }
+            verify(rejectedOverflow, "Overflow in payload space calculations fails closed");
+            verify(RuntimeInstallerHelper.IsRestartExitCode(3010) && RuntimeInstallerHelper.IsRestartExitCode(1641) &&
+                !RuntimeInstallerHelper.IsRestartExitCode(0) && !RuntimeInstallerHelper.IsRestartExitCode(1638) &&
+                !RuntimeInstallerHelper.IsRestartExitCode(1603),
+                "Restart codes are distinguished from success, version conflict and failure");
+
+            using (PrerequisiteControl page = CreateForUiTest(null))
+            {
+                verify(!page.chkDokany.Checked && !page.chkwinFSP.Checked,
+                    "Both driver checkboxes are visibly unchecked on a new page");
+                page.installationComplete = true;
+                page.chkDokany.Checked = true;
+                verify(!page.installationComplete && page.GetPrerequisiteSelection().RuntimeSelection.InstallDokany,
+                    "Explicit Dokany selection invalidates an old completed result");
+                page.installationComplete = true;
+                page.chkwinFSP.Checked = true;
+                verify(!page.installationComplete && page.GetPrerequisiteSelection().RuntimeSelection.InstallWinFsp,
+                    "Explicit WinFsp selection invalidates an old completed result");
+                verify(page.GetSelectedStepCount(page.GetPrerequisiteSelection()) == 2,
+                    "Only the two selected missing driver payloads count as work");
+                page.UpdatePrerequisiteOptions();
+                verify(page.chkDokany.Checked && page.chkwinFSP.Checked,
+                    "Returning to the page preserves both explicit driver choices");
+                page.SetButtonsInstallingState(true);
+                verify(!page.chkDokany.Enabled && !page.chkwinFSP.Enabled,
+                    "Both driver choices are disabled before any worker starts");
+                page.chkDokany.Checked = false;
+                page.chkwinFSP.Checked = false;
+                verify(page.chkDokany.Checked && page.chkwinFSP.Checked,
+                    "Programmatic changes to either driver are also rejected while busy");
+                page.SetButtonsInstallingState(false);
+                verify(page.chkDokany.Enabled && page.chkwinFSP.Enabled,
+                    "Unlock restores both explicit driver options");
+                page.gamingReadinessCapturedAtUtc = DateTime.UtcNow;
+                page.BtnNext_Click(page, EventArgs.Empty);
+                verify(page.installerWorker == null && page.progressTitleText == "Espaço insuficiente para preparar componentes",
+                    "Selecting only drivers cannot bypass the UI low-disk gate");
+                page.gamingReadinessProfile.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
+                page.gamingReadinessProfile.PendingRestart = true;
+                page.BtnNext_Click(page, EventArgs.Empty);
+                verify(page.installerWorker == null && page.progressTitleText == "Reinicialização pendente",
+                    "Selecting only drivers cannot bypass the UI restart gate");
+                page.gamingReadinessProfile = null;
+                page.BtnNext_Click(page, EventArgs.Empty);
+                verify(page.installerWorker == null && page.progressTitleText == "Diagnóstico necessário",
+                    "Driver-only choices wait for fresh evidence without synchronous detection");
+
+                GamingReadinessProfile ready = CreateSelectionTestProfile(GamingReadinessState.Ready);
+                page.gamingReadinessProfile = ready;
+                page.gamingReadinessCapturedAtUtc = DateTime.UtcNow;
+                ready.MutableRuntimeStatuses.Single(item => item.Component.Id == "dokany").State = GamingReadinessState.Unknown;
+                verify(!page.SkipIfAllInstalled(), "A selected driver with unknown state prevents automatic page skip");
+                page.chkDokany.Checked = false;
+                verify(page.SkipIfAllInstalled(), "An unselected optional driver does not prevent the original skip behavior");
+                ready.PendingRestart = true;
+                verify(!page.SkipIfAllInstalled(), "Even all-Ready evidence cannot auto-skip pending-restart warning");
+                ready.PendingRestart = false;
+                RuntimeInstallerHelper.MarkRestartRequired(ready, winfsp, 3010);
+                verify(ready.PendingRestart && ready.RuntimeStatuses.Single(item => item.Component.Id == "winfsp").State == GamingReadinessState.Attention,
+                    "A 3010 result is pending verification, never falsely Ready");
+                verify(ready.Findings.Any(item => item.Code == "installer-restart-winfsp"),
+                    "Restart-pending result is included in the diagnostic report");
+                page.SetButtonsInstallingState(true);
+                page.InstallerWorker_RunWorkerCompleted(page, new RunWorkerCompletedEventArgs(
+                    new PrerequisiteInstallationResult(new PrerequisiteSelection
+                    {
+                        RuntimeSelection = new GamingRuntimeInstallSelection { InstallWinFsp = true }
+                    }, ready), null, false));
+                verify(!page.installationComplete && page.prerequisiteRestartRequired && !page.IsInstallationRunning() && page.btnNext.Enabled,
+                    "Restart outcome pauses on Prerequisites, unlocks the page and does not navigate");
+                GamingReadinessProfile later = CreateSelectionTestProfile(GamingReadinessState.Ready);
+                later.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
+                page.CompleteGamingReadinessScan(++page.gamingReadinessRevision, later, null);
+                page.BtnNext_Click(page, EventArgs.Empty);
+                verify(page.prerequisiteRestartRequired && !page.SkipIfAllInstalled() && page.installerWorker == null &&
+                    page.progressTitleText == "Reinicialização pendente",
+                    "A later scanner cannot erase a reboot requested by the installer in this session");
+                page.chkDokany.Checked = false;
+                page.chkwinFSP.Checked = false;
+                verify(page.GetSelectedStepCount(page.GetPrerequisiteSelection()) == 0,
+                    "Deselect-all preserves zero-work semantics even after a restart warning");
+                RuntimeInstallerHelper.MarkRestartRequired(later, dokany, 1641);
+                verify(later.PendingRestart && later.RuntimeStatuses.Single(item => item.Component.Id == "dokany").Detail.Contains("1641"),
+                    "Unexpected 1641 is reported as initiated reboot, not hidden as ordinary success");
+                verify(page.gamingReadinessWorker == null && page.installerWorker == null,
+                    "All optional-driver tests finish without diagnostics, processes or payload extraction");
+            }
         }
     }
 

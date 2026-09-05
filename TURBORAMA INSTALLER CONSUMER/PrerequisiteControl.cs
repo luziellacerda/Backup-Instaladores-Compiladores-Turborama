@@ -18,6 +18,7 @@ namespace InstallerHost
 		private int gamingReadinessRevision;
 		private bool gamingReadinessScanPending;
 		private bool installationComplete;
+		private bool prerequisiteRestartRequired;
 		private bool selectionInitialized;
 		private int? observedSelectionMask;
 		private bool selectionLocked;
@@ -75,9 +76,12 @@ namespace InstallerHost
 
 		public bool SkipIfAllInstalled()
 		{
-			if (IsInstallationRunning() || !HasCurrentReadinessProfile()) return false;
+			if (IsInstallationRunning() || !HasCurrentReadinessProfile() || prerequisiteRestartRequired ||
+				gamingReadinessProfile.PendingRestart) return false;
+			GamingRuntimeInstallSelection selection = GetPrerequisiteSelection().RuntimeSelection;
 			GamingRuntimeComponent[] installable = GamingRuntimeManifest.GetComponents()
-				.Where(component => component.CanInstallOffline && component.Tier != GamingRuntimeTier.Optional &&
+				.Where(component => component.CanInstallOffline &&
+					(component.Tier != GamingRuntimeTier.Optional || RuntimeInstallerHelper.IsSelectedOfflineComponent(component, selection)) &&
 					GamingRuntimeManifest.IsApplicableToCurrentOs(component))
 				.ToArray();
 			return installable.Length > 0 && installable.All(component =>
@@ -122,24 +126,31 @@ namespace InstallerHost
 				return;
 			}
 			PrerequisiteSelection selection = GetPrerequisiteSelection();
-			if ((selection.RuntimeSelection.InstallMicrosoftRuntimeStack || selection.RuntimeSelection.InstallDirectXLegacy) &&
+			if (HasSelectedRuntimeGroup(selection.RuntimeSelection) &&
 				!HasCurrentReadinessProfile())
 			{
 				SetProgressHeaderSafe("Diagnóstico necessário", "Aguarde a análise do PC e clique em Avançar novamente. Nenhuma instalação foi iniciada.");
 				BeginGamingReadinessScan(true);
 				return;
 			}
-            int totalSteps = GetSelectedStepCount(selection);
-            int runtimeSteps = totalSteps - (selection.OpenNvidiaOfficialSource ? 1 : 0);
-            if (runtimeSteps > 0 && gamingReadinessProfile.SystemDriveFreeBytes < 2L * 1024L * 1024L * 1024L)
-            {
-                SetProgressHeaderSafe("Espaço insuficiente para preparar componentes",
-                    "Libere pelo menos 2 GB no disco do Windows e clique em Avançar novamente. Nenhum instalador foi iniciado. " +
-                    "Esta é uma reserva inicial para os componentes, não o espaço necessário para o produto completo.");
-                BeginGamingReadinessScan(true);
-                return;
-            }
-            if (totalSteps <= 0)
+			int totalSteps = GetSelectedStepCount(selection);
+			int runtimeSteps = totalSteps - (selection.OpenNvidiaOfficialSource ? 1 : 0);
+			if (HasSelectedRuntimeGroup(selection.RuntimeSelection) &&
+				(prerequisiteRestartRequired || gamingReadinessProfile.PendingRestart))
+			{
+				SetProgressHeaderSafe("Reinicialização pendente",
+					"Salve seus arquivos e reinicie o Windows manualmente antes de preparar mais componentes. Nenhum reinício será solicitado por esta tela.");
+				return;
+			}
+			string preflightBlock = RuntimeInstallerHelper.GetInstallationPreflightBlockReason(
+				gamingReadinessProfile, selection.RuntimeSelection, runtimeSteps > 0);
+			if (preflightBlock != null)
+			{
+				SetProgressHeaderSafe("Não foi possível preparar os componentes", preflightBlock);
+				BeginGamingReadinessScan(true);
+				return;
+			}
+			if (totalSteps <= 0)
 			{
 				Logger.Log("No prerequisite action selected or required; continuing to Install screen.");
 				installationComplete = true;
@@ -232,7 +243,16 @@ namespace InstallerHost
 
 			gamingReadinessProfile = result.Profile;
 			gamingReadinessCapturedAtUtc = DateTime.UtcNow;
+			prerequisiteRestartRequired = prerequisiteRestartRequired || (result.Profile != null && result.Profile.PendingRestart);
 			ApplyGamingReadinessProfileToUi();
+			if (prerequisiteRestartRequired)
+			{
+				installationComplete = false;
+				SetProgressHeaderSafe("Reinicialização pendente",
+					"O processamento foi pausado. Salve seus arquivos, reinicie o Windows manualmente e abra o instalador novamente para confirmar os componentes e concluir as etapas restantes.");
+				UpdateProgressVisualsSafe();
+				return;
+			}
 			installationComplete = true;
 			SetProgressHeaderSafe(
 				"Etapas selecionadas processadas",
@@ -297,10 +317,8 @@ namespace InstallerHost
 
 			chkVCpp.Enabled = true;
 			chkDirectX.Enabled = true;
-			chkDokany.Enabled = false;
-			chkDokany.Checked = false;
-			chkwinFSP.Enabled = false;
-			chkwinFSP.Checked = false;
+			chkDokany.Enabled = IsOfflineOptionApplicable("dokany");
+			chkwinFSP.Enabled = IsOfflineOptionApplicable("winfsp");
 			UpdateNvidiaDriverCheckbox();
 			SetButtonsInstallingState(false);
 			UpdateProgressMaximumFromSelection();
@@ -314,6 +332,8 @@ namespace InstallerHost
 				{
 					InstallMicrosoftRuntimeStack = chkVCpp.Enabled && chkVCpp.Checked,
 					InstallDirectXLegacy = chkDirectX.Enabled && chkDirectX.Checked,
+					InstallDokany = chkDokany.Enabled && chkDokany.Checked,
+					InstallWinFsp = chkwinFSP.Enabled && chkwinFSP.Checked,
 					OpenNvidiaOfficialSource = chkNvidiaApp != null && chkNvidiaApp.Enabled && chkNvidiaApp.Checked
 				},
 				OpenNvidiaOfficialSource = chkNvidiaApp != null && chkNvidiaApp.Enabled && chkNvidiaApp.Checked
@@ -326,7 +346,7 @@ namespace InstallerHost
 			{
 				return 0;
 			}
-			if (!selection.RuntimeSelection.InstallMicrosoftRuntimeStack && !selection.RuntimeSelection.InstallDirectXLegacy)
+			if (!HasSelectedRuntimeGroup(selection.RuntimeSelection))
 				return selection.OpenNvidiaOfficialSource ? 1 : 0;
 			// Never let BuildInstallationPlan fall back to a synchronous detector.
 			// Next waits for a complete fresh scan when runtime groups are selected.
@@ -352,7 +372,9 @@ namespace InstallerHost
 			PrerequisiteSelection selection = GetPrerequisiteSelection();
 			int selectionMask = (selection.RuntimeSelection.InstallMicrosoftRuntimeStack ? 1 : 0) |
 				(selection.RuntimeSelection.InstallDirectXLegacy ? 2 : 0) |
-				(selection.OpenNvidiaOfficialSource ? 4 : 0);
+				(selection.OpenNvidiaOfficialSource ? 4 : 0) |
+				(selection.RuntimeSelection.InstallDokany ? 8 : 0) |
+				(selection.RuntimeSelection.InstallWinFsp ? 16 : 0);
 			if (observedSelectionMask.HasValue && observedSelectionMask.Value != selectionMask)
 			{
 				bool previouslyComplete = installationComplete;
@@ -409,7 +431,7 @@ namespace InstallerHost
 		private void SetSelectionLocked(bool locked)
 		{
 			if (selectionLocked == locked) return;
-			CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp };
+			CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp, chkDokany, chkwinFSP };
 			if (locked)
 			{
 				InvalidateGamingReadinessScan();
@@ -437,7 +459,7 @@ namespace InstallerHost
 			restoringLockedSelection = true;
 			try
 			{
-				CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp };
+				CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp, chkDokany, chkwinFSP };
 				for (int index = 0; index < options.Length; index++)
 					options[index].Checked = (lockedCheckedMask & (1 << index)) != 0;
 			}
@@ -449,6 +471,19 @@ namespace InstallerHost
 			TimeSpan age = DateTime.UtcNow - gamingReadinessCapturedAtUtc;
 			return !gamingReadinessScanPending && age >= TimeSpan.Zero && age.TotalMinutes <= 5.0 &&
 				HasCompleteReadinessProfile(gamingReadinessProfile);
+		}
+
+		private static bool HasSelectedRuntimeGroup(GamingRuntimeInstallSelection selection)
+		{
+			return selection != null && (selection.InstallMicrosoftRuntimeStack || selection.InstallDirectXLegacy ||
+				selection.InstallDokany || selection.InstallWinFsp);
+		}
+
+		private static bool IsOfflineOptionApplicable(string componentId)
+		{
+			return GamingRuntimeManifest.GetComponents().Any(component =>
+				string.Equals(component.Id, componentId, StringComparison.OrdinalIgnoreCase) &&
+				component.CanInstallOffline && GamingRuntimeManifest.IsApplicableToCurrentOs(component));
 		}
 
 		private static bool HasCompleteReadinessProfile(GamingReadinessProfile profile)
@@ -550,13 +585,13 @@ namespace InstallerHost
 			}
 			if (diskSpaceLabel != null)
 			{
-				bool lowSpace = gamingReadinessProfile.SystemDriveFreeBytes > 0 &&
-					gamingReadinessProfile.SystemDriveFreeBytes < 2L * 1024L * 1024L * 1024L;
+				bool lowSpace = gamingReadinessProfile.SystemDriveFreeBytes < RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
 				diskSpaceLabel.Text = "Disco do Windows: " + gamingReadinessProfile.SystemDrive + " · " +
 					gamingReadinessProfile.SystemDriveFreeDisplay + " livres." +
 					(lowSpace ? " Pouco espaço disponível: libere espaço antes de instalar componentes." :
-					" Confira também o espaço exigido pelo produto na unidade de destino.");
-				diskSpaceLabel.ForeColor = lowSpace ? Palette.Warning : Palette.Muted;
+					" Confira também o espaço exigido pelo produto na unidade de destino.") +
+					(prerequisiteRestartRequired || gamingReadinessProfile.PendingRestart ? " Reinicialização pendente: reinicie o Windows antes de instalar componentes." : string.Empty);
+				diskSpaceLabel.ForeColor = lowSpace || prerequisiteRestartRequired || gamingReadinessProfile.PendingRestart ? Palette.Warning : Palette.Muted;
 			}
 			if (readinessButton != null)
 			{
@@ -672,7 +707,9 @@ namespace InstallerHost
 			}
 			if (progressHintLabel != null)
 			{
-				progressHintLabel.Text = value >= maximum
+				progressHintLabel.Text = prerequisiteRestartRequired
+					? "Pausado para reinicialização; as etapas restantes não foram executadas."
+					: value >= maximum
 					? "As etapas selecionadas foram processadas; confira o diagnóstico."
 					: "Hash, tamanho, editor e revogação são verificados antes da execução.";
 			}

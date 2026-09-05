@@ -62,10 +62,12 @@
     <Compile Include="WelcomeControl.cs" />
     <Compile Include="WelcomeControl.Designer.cs" />
     <Compile Include="ConsumerLayout.cs" />
+    <Compile Include="TurboRamaArtwork.cs" />
     <Compile Include="UiKit.cs" />
     <Compile Include="ActionButton.cs" />
     <Compile Include="VectorIcon.cs" />
     <EmbeddedResource Include="prerequisites.lock.json"><LogicalName>InstallerHost.prerequisites.lock.json</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\art\turborama-f15-arcade-v1.png"><LogicalName>InstallerHost.resources.art.turborama-f15-arcade-v1.png</LogicalName></EmbeddedResource>
   </ItemGroup>
   <ItemGroup Condition="'$(IncludePrerequisitePayloads)' == 'true'">
     <EmbeddedResource Include="resources\prerequisites\vc_redist.x64.exe"><LogicalName>InstallerHost.resources.prerequisites.vc_redist.x64.exe</LogicalName></EmbeddedResource>
@@ -88,6 +90,8 @@
     <EmbeddedResource Include="resources\prerequisites\vcredist2013_x64.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2013_x64.zip</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="resources\prerequisites\vcredist2013_x86.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2013_x86.zip</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="resources\prerequisites\xnafx40_redist.msi"><LogicalName>InstallerHost.resources.prerequisites.xnafx40_redist.msi</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\DokanSetup.exe"><LogicalName>InstallerHost.resources.prerequisites.DokanSetup.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\winfsp-2.2.26215.msi"><LogicalName>InstallerHost.resources.prerequisites.winfsp-2.2.26215.msi</LogicalName></EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

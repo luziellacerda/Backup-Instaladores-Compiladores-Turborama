@@ -342,6 +342,34 @@
       ]
     },
     {
+      "name": "DokanSetup.exe",
+      "length": 19194904,
+      "sha256": "BF602263A594F595B4FDD8C4E822172B103DE93F07FD6A51A8FF69569BFD1460",
+      "fileType": "Exe",
+      "installTier": "Optional",
+      "productVersion": "2.3.1.1000",
+      "signerSubject": "CN=LEOSAC, O=LEOSAC, STREET=39 rue Principale, PostalCode=67220, L=Breitenau, S=Bas-Rhin, C=FR, SERIALNUMBER=919 690 420 00014, OID.1.3.6.1.4.1.311.60.2.1.1=Colmar, OID.1.3.6.1.4.1.311.60.2.1.2=Haut-Rhin, OID.1.3.6.1.4.1.311.60.2.1.3=FR, OID.2.5.4.15=Private Organization",
+      "signerThumbprint": "7BCFE8FE4BF821AC83AAD6D7ED60F4D21194E5E0",
+      "certificatePublicKeySha256": "E34129FD8C071D2537E091D3B26EEAD3F90CFC65D2163A3C589B86BA15C6C547",
+      "sourceUrls": [
+        "https://github.com/dokan-dev/dokany/releases/download/v2.3.1.1000/DokanSetup.exe"
+      ]
+    },
+    {
+      "name": "winfsp-2.2.26215.msi",
+      "length": 2207744,
+      "sha256": "2ECB5C89405488A95BBD8A01875E02C48534FD37BBDFD84488F7590464D65944",
+      "fileType": "Msi",
+      "installTier": "Optional",
+      "productVersion": "2.2.26215",
+      "signerSubject": "CN=NAVIMATICS LLC, O=NAVIMATICS LLC, L=KIRKLAND, S=Washington, C=US, SERIALNUMBER=604 419 559, OID.2.5.4.15=Private Organization, OID.1.3.6.1.4.1.311.60.2.1.2=Washington, OID.1.3.6.1.4.1.311.60.2.1.3=US",
+      "signerThumbprint": "75C6C88B0B6C4556F13FCE3B081FC9051EAE457E",
+      "certificatePublicKeySha256": "42434887DD41C5EAB2A5265D1A82905FF61FCAC6B1A3AEEB0272388FAE4D03F7",
+      "sourceUrls": [
+        "https://github.com/winfsp/winfsp/releases/download/v2.2B4/winfsp-2.2.26215.msi"
+      ]
+    },
+    {
       "name": "xnafx40_redist.msi",
       "length": 7059456,
       "sha256": "2B03C130C4BB5F106B9619BEA8150201F7E982709CFE9A0CC8BDE75FF0A83B27",

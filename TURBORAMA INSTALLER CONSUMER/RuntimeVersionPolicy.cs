@@ -24,7 +24,10 @@ namespace InstallerHost
 				return false;
 			}
 
-			return IsVisualCppKey(component.DetectionKey) || IsDotNetDesktopKey(component.DetectionKey);
+			return IsVisualCppKey(component.DetectionKey) ||
+				IsDotNetDesktopKey(component.DetectionKey) ||
+				IsDokanyKey(component.DetectionKey) ||
+				IsWinFspKey(component.DetectionKey);
 		}
 
 		public static RuntimeVersionComparison Evaluate(
@@ -60,8 +63,36 @@ namespace InstallerHost
 			{
 				return CompareDotNetDesktop(detectedVersion, requiredProductVersion);
 			}
+			if (IsDokanyKey(detectionKey))
+			{
+				return CompareFourPart(detectedVersion, requiredProductVersion);
+			}
+			if (IsWinFspKey(detectionKey))
+			{
+				return CompareThreePart(detectedVersion, requiredProductVersion);
+			}
 
 			return RuntimeVersionComparison.NotManaged;
+		}
+
+		internal static bool HaveSameVersionFields(string first, string second, int fieldCount)
+		{
+			if (fieldCount != 3 && fieldCount != 4)
+			{
+				throw new ArgumentOutOfRangeException("fieldCount");
+			}
+			Version left;
+			Version right;
+			bool parsed = fieldCount == 4
+				? TryParseFourPartVersion(first, out left) && TryParseFourPartVersion(second, out right)
+				: TryParseAtLeastThreePartVersion(first, out left) && TryParseAtLeastThreePartVersion(second, out right);
+			if (!parsed)
+			{
+				return false;
+			}
+
+			return left.Major == right.Major && left.Minor == right.Minor && left.Build == right.Build &&
+				(fieldCount == 3 || left.Revision == right.Revision);
 		}
 
 		private static RuntimeVersionComparison CompareVisualCpp(string detectedVersion, string requiredProductVersion)
@@ -80,6 +111,46 @@ namespace InstallerHost
 		}
 
 		private static RuntimeVersionComparison CompareDotNetDesktop(string detectedVersion, string requiredProductVersion)
+		{
+			Version detected;
+			Version required;
+			if (!TryParseAtLeastThreePartVersion(detectedVersion, out detected) ||
+				!TryParseAtLeastThreePartVersion(requiredProductVersion, out required))
+			{
+				return RuntimeVersionComparison.Unknown;
+			}
+
+			int comparison = detected.Major.CompareTo(required.Major);
+			if (comparison == 0)
+			{
+				comparison = detected.Minor.CompareTo(required.Minor);
+			}
+			if (comparison == 0)
+			{
+				comparison = detected.Build.CompareTo(required.Build);
+			}
+
+			return comparison >= 0
+				? RuntimeVersionComparison.Current
+				: RuntimeVersionComparison.Outdated;
+		}
+
+		private static RuntimeVersionComparison CompareFourPart(string detectedVersion, string requiredProductVersion)
+		{
+			Version detected;
+			Version required;
+			if (!TryParseFourPartVersion(detectedVersion, out detected) ||
+				!TryParseFourPartVersion(requiredProductVersion, out required))
+			{
+				return RuntimeVersionComparison.Unknown;
+			}
+
+			return detected.CompareTo(required) >= 0
+				? RuntimeVersionComparison.Current
+				: RuntimeVersionComparison.Outdated;
+		}
+
+		private static RuntimeVersionComparison CompareThreePart(string detectedVersion, string requiredProductVersion)
 		{
 			Version detected;
 			Version required;
@@ -155,6 +226,16 @@ namespace InstallerHost
 				string.Equals(detectionKey, "dotnet-desktop-8-x86", StringComparison.OrdinalIgnoreCase) ||
 				string.Equals(detectionKey, "dotnet-desktop-10-x64", StringComparison.OrdinalIgnoreCase) ||
 				string.Equals(detectionKey, "dotnet-desktop-10-x86", StringComparison.OrdinalIgnoreCase);
+		}
+
+		private static bool IsDokanyKey(string detectionKey)
+		{
+			return string.Equals(detectionKey, "dokany", StringComparison.OrdinalIgnoreCase);
+		}
+
+		private static bool IsWinFspKey(string detectionKey)
+		{
+			return string.Equals(detectionKey, "winfsp", StringComparison.OrdinalIgnoreCase);
 		}
 	}
 }

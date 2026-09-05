@@ -13,7 +13,9 @@ $catalog = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json
 $exePath = Join-Path $PSScriptRoot 'bin\Release\InstallerHost.exe'
 $assembly = [Reflection.Assembly]::ReflectionOnlyLoadFrom($exePath)
 $resources = $assembly.GetManifestResourceNames()
-if ($resources.Count -ne ($catalog.payloads.Count + 1)) { throw 'Quantidade inesperada de recursos incorporados.' }
+[xml]$project = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'InstallerHost.csproj') -Raw
+$assets = @($project.SelectNodes('//*[local-name()="EmbeddedResource"]') | Where-Object { $_.GetAttribute('Include') -notlike 'resources\prerequisites\*' })
+if ($resources.Count -ne ($catalog.payloads.Count + $assets.Count)) { throw 'Quantidade inesperada de recursos incorporados.' }
 $sha = [Security.Cryptography.SHA256]::Create()
 try {
     foreach ($payload in $catalog.payloads) {
@@ -25,8 +27,13 @@ try {
         } finally { $stream.Dispose() }
         Write-Output ('PASS embedded ' + $payload.name)
     }
-    $stream = $assembly.GetManifestResourceStream('InstallerHost.prerequisites.lock.json')
-    try { $lockHash = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','') } finally { $stream.Dispose() }
-    if ($lockHash -ne (Get-FileHash -LiteralPath $catalogPath -Algorithm SHA256).Hash) { throw 'Lock incorporado difere do fonte.' }
+    foreach ($asset in $assets) {
+        $name = $asset.SelectSingleNode('*[local-name()="LogicalName"]').InnerText
+        $stream = $assembly.GetManifestResourceStream($name)
+        if ($null -eq $stream) { throw ('Recurso ausente: ' + $name) }
+        try { $assetHash = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','') } finally { $stream.Dispose() }
+        if ($assetHash -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $asset.GetAttribute('Include')) -Algorithm SHA256).Hash) { throw ('Recurso incorporado difere do fonte: ' + $name) }
+        Write-Output ('PASS embedded ' + $name)
+    }
 } finally { $sha.Dispose() }
-Write-Output 'PASS: 20 payloads e catálogo incorporados; inspeção somente leitura, sem executar o instalador.'
+Write-Output ('PASS: ' + $catalog.payloads.Count + ' payloads e ' + $assets.Count + ' recursos de interface/catálogo; inspeção somente leitura, sem executar o instalador.')

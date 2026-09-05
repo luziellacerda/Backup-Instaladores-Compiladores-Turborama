@@ -31,7 +31,9 @@ namespace InstallerHost
             {
                 Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
 				assertions += RuntimeVersionPolicyTests.Run();
+				assertions += PublisherPolicyTests.Run();
                 assertions += PrerequisiteControl.RunSelectionRegressionTests();
+                assertions += ArtworkTests.Run();
                 string directory = args.Length == 0 ? "TestResults\\consumer" : args[0]; Directory.CreateDirectory(directory);
                 using (MainForm form = new MainForm())
                 {
@@ -77,19 +79,48 @@ namespace InstallerHost
                             else if (step == 2) form.ShowPrerequisites(true); else if (step == 3) form.ShowInstall();
                             else form.ShowFinish("D:\\Exemplo-visual-nao-instalado");
                             Pump();
+                            if (step == 2) { Find<FlowLayoutPanel>(form, "prerequisiteContent").AutoScrollPosition = Point.Empty; Pump(); }
                             Check(form.TestPage.Controls.Find("ConsumerLayout", true).Length == 1, "Exactly one page layout tree");
                             Check(form.TestPage.Controls.Find("OriginalSequence", true).Length == 1, "Original five-step indicator exists");
+                            Control brand = Find<Control>(form.TestPage, "TurboRamaBrand");
+                            Control sequence = Find<Control>(form.TestPage, "OriginalSequence");
+                            Control heading = Find<TableLayoutPanel>(form.TestPage, "ConsumerLayout").GetControlFromPosition(0, 2);
+                            Control body = Find<Control>(form.TestPage, "WizardBody");
+                            Control footer = Find<Control>(form.TestPage, "WizardActions");
+                            Check(brand.Bottom <= sequence.Top && sequence.Bottom <= heading.Top && heading.Bottom <= body.Top && body.Bottom <= footer.Top,
+                                "Artwork, original sequence, heading, page and actions never overlap");
+                            if (step == 0)
+                            {
+                                Control hero = Find<Control>(form.TestPage, "TurboRamaHero");
+                                Control description = Find<Control>(form.TestPage, "WelcomeDescription");
+                                Check(description.Parent.Width <= hero.Width / 2 && description.Parent.Height <= hero.Height,
+                                    "Welcome copy stays in its own column and leaves the F-15 visible");
+                            }
                             ValidateLayout(form.TestPage);
                             using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
                             { form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(directory, "Step" + step + "-" + size.Width + ".png")); }
                             using (StreamWriter log = new StreamWriter(Path.Combine(directory, "Step" + step + "-" + size.Width + ".layout.txt"))) Dump(form.TestPage, log, 0);
+                            if (step == 2)
+                            {
+                                FlowLayoutPanel content = Find<FlowLayoutPanel>(form, "prerequisiteContent");
+                                CheckBox dokany = Find<CheckBox>(form, "chkDokany");
+                                CheckBox winfsp = Find<CheckBox>(form, "chkwinFSP");
+                                Point location = content.PointToClient(dokany.PointToScreen(Point.Empty));
+                                content.AutoScrollPosition = new Point(0, Math.Max(0, location.Y - content.AutoScrollPosition.Y - 16)); Pump();
+                                Check(dokany.Enabled && winfsp.Enabled && !dokany.Checked && !winfsp.Checked,
+                                    "New driver options remain available but unchecked in the original Prerequisites step");
+                                Check(winfsp.Text.IndexOf("Beta", StringComparison.OrdinalIgnoreCase) >= 0,
+                                    "WinFsp checkbox explicitly identifies the prerelease");
+                                using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
+                                { form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(directory, "Drivers-" + size.Width + ".png")); }
+                            }
                         }
                     }
                     Check(form.TestPage is FinishControl && form.TestPage.Controls.Find("btnBack", true).Length == 0,
                         "Conclusion has no Back, as in the original");
                     form.Close();
                 }
-                Console.WriteLine("CONSUMER UI PASS assertions=" + assertions + "; ten captures; no real scanner, installer or extraction invoked.");
+                Console.WriteLine("CONSUMER UI PASS assertions=" + assertions + "; twelve captures; no real scanner, installer or extraction invoked.");
                 return 0;
             }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }

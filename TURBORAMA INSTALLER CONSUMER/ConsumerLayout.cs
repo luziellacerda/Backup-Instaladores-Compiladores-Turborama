@@ -16,7 +16,9 @@ namespace InstallerHost
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            Label brand = Label("TURBORAMA  /  LZ GAMES", 16, true); brand.Margin = new Padding(0, 0, 0, 18); root.Controls.Add(brand, 0, 0);
+            TurboRamaArtwork brand = new TurboRamaArtwork(true) { Name = "TurboRamaBrand", Dock = DockStyle.Top,
+                Height = 78, Margin = new Padding(0, 0, 0, 12) };
+            root.Controls.Add(brand, 0, 0);
             TableLayoutPanel steps = new TableLayoutPanel { Name = "OriginalSequence", ColumnCount = 5, RowCount = 1,
                 Dock = DockStyle.Top, AutoSize = true, BackColor = Palette.Background, Margin = new Padding(0, 0, 0, 20) };
             for (int index = 0; index < Steps.Length; index++)
@@ -68,7 +70,7 @@ namespace InstallerHost
                 case "CancelButtonTitle": return "Cancelar instalação";
                 case "Finish": return "Concluir";
                 case "Welcome": return "Bem-vindo ao TurboRama.";
-                case "WelcomeText": return "Este assistente vai preparar os componentes necessários e instalar o sistema TurboRama no seu computador.\r\n\r\nFeche os outros programas antes de continuar. Clique em Avançar para começar.";
+                case "WelcomeText": return "Prepare os componentes e instale o TurboRama no seu PC.\r\n\r\nFeche os outros programas e clique em Avançar para começar.";
                 case "LicenseIntro": return "Termos de licença";
                 case "AgreeText": return "Li e aceito os termos da licença.";
                 case "PrerequisiteIntro": return "Prepare seu computador.";
