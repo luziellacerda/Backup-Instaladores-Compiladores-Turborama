@@ -49,14 +49,16 @@ try {
     $securityCompiler = Join-Path (Split-Path $consumerBuild) 'Roslyn\csc.exe'
     & $securityCompiler /nologo /target:exe /warnaserror+ /langversion:7.3 /define:PRODUCT_PACKAGE_SECURITY_TESTS /out:TestResults\executables\ProductPackageSecurityTests.exe /r:System.dll /r:System.Core.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll ProductPackageSecurity.cs SecureProductExtraction.cs LimitedUserImpersonation.cs Tests\ProductPackageSecurityTests.cs
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar testes de segurança.' }
-    & .\TestResults\executables\ProductPackageSecurityTests.exe (Join-Path $PSScriptRoot 'TestResults\security')
+    # O checkout do GitHub Actions pode ultrapassar o limite legado MAX_PATH do
+    # .NET Framework quando cada caso acrescenta GUIDs e nomes de fixtures.
+    $securityTestRoot = Join-Path ([IO.Path]::GetTempPath()) 'TurboRamaSecurityTests'
+    & .\TestResults\executables\ProductPackageSecurityTests.exe $securityTestRoot
     if ($LASTEXITCODE -ne 0) { throw 'Regressão de segurança do pacote.' }
 
 	$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 	try { $elevated = ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) }
 	finally { $identity.Dispose() }
 	$securityTestPath = Join-Path $PSScriptRoot 'TestResults\executables\ProductPackageSecurityTests.exe'
-	$securityTestRoot = Join-Path $PSScriptRoot 'TestResults\security'
 	if ($elevated) {
 		& $securityTestPath $securityTestRoot --elevated-token-only
 		$tokenRegressionExit = $LASTEXITCODE
