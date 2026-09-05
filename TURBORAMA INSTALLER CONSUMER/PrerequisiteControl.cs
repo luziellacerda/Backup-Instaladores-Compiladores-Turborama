@@ -222,12 +222,11 @@ namespace InstallerHost
 			{
 				string maskedError = DownloadDisplayMask.Apply(failure.Message);
 				Logger.Log("Prerequisite installation error: " + failure);
-				SetProgressHeaderSafe("Falha em uma etapa selecionada", maskedError);
-				installationComplete = false;
+				ShowInstallationFailure(maskedError);
 				MessageBox.Show(
 					"Uma etapa selecionada falhou ou não pôde ser confirmada. Nenhum código de erro foi ignorado." +
 					Environment.NewLine + Environment.NewLine + maskedError + Environment.NewLine + Environment.NewLine +
-					"Execute novamente como Administrador e confira o diagnóstico do PC.",
+					"Confira o motivo acima e o diagnóstico do PC antes de tentar novamente.",
 					"Pré-requisitos",
 					MessageBoxButtons.OK,
 					MessageBoxIcon.Error);
@@ -268,6 +267,16 @@ namespace InstallerHost
 				". Confira o resultado e clique em Avançar para continuar.");
 			UpdateProgressVisualsSafe();
 			Logger.Log("Selected prerequisites processed; waiting for Next on the Prerequisites screen.");
+		}
+
+		private void ShowInstallationFailure(string detail)
+		{
+			SetButtonsInstallingState(false);
+			SetProgressHeaderSafe("Falha em uma etapa selecionada", detail);
+			UpdateProgressVisualsSafe();
+			progressPercentLabel.Text = "Falha";
+			progressHintLabel.Text = "O processamento parou. Confira o motivo acima antes de tentar novamente.";
+			installationComplete = false;
 		}
 
 		public void BtnCancel_Click(object sender, EventArgs e)
@@ -435,7 +444,9 @@ namespace InstallerHost
 
 		private bool IsInstallationRunning()
 		{
-			return selectionLocked || (installerWorker != null && installerWorker.IsBusy);
+			// Explicit lifecycle: lock before dispatch and release at completion.
+			// BackgroundWorker.IsBusy can still be true inside its completion event.
+			return selectionLocked;
 		}
 
 		private void SetSelectionLocked(bool locked)

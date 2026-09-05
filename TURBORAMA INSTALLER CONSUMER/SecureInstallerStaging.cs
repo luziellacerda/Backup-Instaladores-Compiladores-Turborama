@@ -76,16 +76,13 @@ namespace InstallerHost
 					Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
 				VerifyExistingAncestorsHaveNoReparsePoints(commonData);
 
-				string applicationRoot = System.IO.Path.Combine(commonData, "TurboramaInstallerHost");
-				EnsureSecureRootDirectory(applicationRoot);
-				string stagingRoot = System.IO.Path.Combine(applicationRoot, "InstallerStaging");
-				EnsureSecureRootDirectory(stagingRoot);
-
+				// Legacy releases used an Admin-owned shared folder. Never depend on
+				// or change that folder: reserve a new private root atomically per run.
 				string safePurpose = MakeSafeName(purpose);
 				for (int attempt = 0; attempt < 10; attempt++)
 				{
 					string candidate = System.IO.Path.Combine(
-						stagingRoot, safePurpose + "_" + Guid.NewGuid().ToString("N"));
+						commonData, "TurboramaStaging_" + safePurpose + "_" + Guid.NewGuid().ToString("N"));
 					VerifyExistingAncestorsHaveNoReparsePoints(System.IO.Path.GetDirectoryName(candidate));
 					int error;
 					if (!TryCreateDirectoryAtomic(candidate, DirectorySecurityDescriptor, out error))
@@ -225,36 +222,6 @@ namespace InstallerHost
 			{
 				Logger.Log("Could not safely remove private installer staging '" + Path + "': " + ex.Message);
 			}
-		}
-
-		private static void EnsureSecureRootDirectory(string path)
-		{
-			string fullPath = System.IO.Path.GetFullPath(path);
-			VerifyExistingAncestorsHaveNoReparsePoints(System.IO.Path.GetDirectoryName(fullPath));
-			if (File.Exists(fullPath) && !Directory.Exists(fullPath))
-			{
-				throw new IOException("O caminho reservado ao staging já existe como arquivo: " + fullPath + ".");
-			}
-
-			if (Directory.Exists(fullPath))
-			{
-				// Fail-closed: uma raiz preexistente com owner Admin, ACL herdada ou
-				// integridade ausente é recusada, nunca reparada silenciosamente.
-				VerifyDirectoryPolicy(fullPath);
-				return;
-			}
-
-			int error;
-			if (!TryCreateDirectoryAtomic(fullPath, DirectorySecurityDescriptor, out error))
-			{
-				if ((error == ErrorAlreadyExists || error == ErrorFileExists) && Directory.Exists(fullPath))
-				{
-					VerifyDirectoryPolicy(fullPath);
-					return;
-				}
-				throw NewWin32Exception(error, "Não foi possível criar a raiz segura de staging.");
-			}
-			VerifyDirectoryPolicy(fullPath);
 		}
 
 		private static void HardenTreeContentsCore(string directoryPath)

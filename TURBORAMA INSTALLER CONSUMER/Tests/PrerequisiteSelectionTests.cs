@@ -111,6 +111,11 @@ namespace InstallerHost
 				page.SetButtonsInstallingState(false);
 				verify(page.progressBar.Style == ProgressBarStyle.Continuous && page.progressBar.MarqueeAnimationSpeed == 0,
 					"Completion or failure stops the loading animation");
+				page.SetButtonsInstallingState(true);
+				page.ShowInstallationFailure("Falha simulada ao criar pasta temporária");
+				verify(!page.IsInstallationRunning() && page.btnNext.Enabled && page.progressBar.MarqueeAnimationSpeed == 0 &&
+					page.progressPercentLabel.Text == "Falha" && page.progressDetailText.Contains("pasta temporária"),
+					"A staging failure replaces in-progress text, stops animation and permits retry");
 				page.chkVCpp.Checked = false;
 				verify(page.restrictedRepairComponentIds == null,
 					"A later manual checkbox change leaves repair mode and restores normal explicit group selection");
