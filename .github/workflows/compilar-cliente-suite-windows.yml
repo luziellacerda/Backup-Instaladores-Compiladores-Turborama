@@ -169,7 +169,8 @@ jobs:
             -NoLogo -NoProfile -ExecutionPolicy Bypass `
             -File .\tools\tests\Test-NoCommercialServicesBuild.ps1 `
             -BuildDirectory .\build-github `
-            -Executable .\bin\x64\Release\emulationstation.exe
+            -Executable .\bin\x64\Release\emulationstation.exe `
+            -SuiteManagedAssembly .\suite-licensing\bin\Release\net10.0-windows\win-x64\TurboRama.Suite.Access.dll
           if ($LASTEXITCODE -ne 0) {
             throw "Validacao do perfil sem servicos falhou com codigo $LASTEXITCODE."
           }

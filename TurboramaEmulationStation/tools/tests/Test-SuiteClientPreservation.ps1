@@ -17,7 +17,10 @@ try {
         'TurboramaEmulationStation/es-app/CMakeLists.txt',
         'TurboramaEmulationStation/es-app/src/EmulationStation.h',
         'TurboramaEmulationStation/es-app/src/main.cpp',
-        'TurboramaEmulationStation/es-app/src/FileData.cpp'
+        'TurboramaEmulationStation/es-app/src/FileData.cpp',
+        # Test-only adaptation for the embedded Microsoft HTTP/2 runtime's
+        # CreditManager metadata name. App/game/memory/audio sources unchanged.
+        'TurboramaEmulationStation/tools/tests/Test-NoCommercialServicesBuild.ps1'
     )
     $changes = @(& git diff --no-renames --name-status $BaseCommit -- .)
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao comparar a base.' }

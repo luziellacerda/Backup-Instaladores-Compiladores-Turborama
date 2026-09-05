@@ -133,6 +133,19 @@ ignorado, executa o diagnóstico de identidade e altera um byte do recurso em um
 cópia de teste: o acesso precisa falhar. O EXE publicado não é adulterado e seu
 SHA-256 é conferido novamente. Nenhuma licença de cliente é usada nos testes.
 
+O primeiro build 1.0.1 compilou, mas um teste bloqueou a publicação ao encontrar
+o texto `CreditManager` no runtime .NET embutido. O .NET tem uma classe
+`System.Net.Http.CreditManager` de controle de fluxo HTTP, diferente do gerenciador
+comercial do frontend. A correção é exclusivamente no teste: só essa ocorrência
+dentro do recurso Suite, identificado e validado pelo hash de compilação, recebe
+tratamento específico. `CreditManager` fora desse recurso continua proibido,
+os outros sete marcadores comerciais continuam sendo procurados no EXE inteiro,
+e a DLL gerenciada do próprio aplicativo é examinada pelos oito marcadores.
+Nenhum recurso é alterado/ocultado no EXE publicado ou executado pelos testes.
+As verificações de fontes, comandos recusados, menus, otimizações e hardening
+continuam obrigatórias. O teste de preservação autoriza essa mudança de teste,
+sem ampliar a lista de fontes de funcionamento que podem ser modificadas.
+
 Diagnósticos que terminam sem abrir interface/jogos nem acessar o servidor:
 
 ```text

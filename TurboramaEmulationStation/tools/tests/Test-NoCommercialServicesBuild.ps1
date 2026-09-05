@@ -3,7 +3,11 @@ param(
     [string]$BuildDirectory,
 
     [Parameter(Mandatory = $true)]
-    [string]$Executable
+    [string]$Executable,
+
+    # Required only for the Suite edition: inspect our managed application
+    # separately from the self-contained Microsoft .NET runtime it carries.
+    [string]$SuiteManagedAssembly = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,6 +32,20 @@ Assert (Test-Path -LiteralPath $coreProjectPath -PathType Leaf) "Projeto MSBuild
 Assert (Test-Path -LiteralPath $exePath -PathType Leaf) "Executavel ausente: $exePath"
 
 $cache = Get-Content -LiteralPath $cachePath -Raw
+$suiteProfile = $cache -match '(?m)^TURBORAMA_REQUIRE_SUITE_LICENSE:BOOL=ON\s*$'
+$suitePayload = $null
+if ($suiteProfile) {
+    Assert (![string]::IsNullOrWhiteSpace($SuiteManagedAssembly)) `
+        'SuiteManagedAssembly e obrigatorio para conferir o codigo gerenciado desta edicao.'
+    $SuiteManagedAssembly = [IO.Path]::GetFullPath($SuiteManagedAssembly)
+    Assert (Test-Path -LiteralPath $SuiteManagedAssembly -PathType Leaf) 'Assembly gerenciado da Suite ausente.'
+    Assert ([Reflection.AssemblyName]::GetAssemblyName($SuiteManagedAssembly).Name -eq 'TurboRama.Suite.Access') `
+        'Assembly gerenciado nao corresponde ao aplicativo de acesso da Suite.'
+    $pin = [regex]::Match($cache, '(?m)^TURBORAMA_SUITE_HELPER_SHA256:STRING=([0-9A-Fa-f]{64})\s*$')
+    Assert $pin.Success 'Pin SHA256 do componente Suite ausente do CMakeCache.'
+    . (Join-Path $PSScriptRoot 'Get-SuiteEmbeddedPayload.ps1')
+    $suitePayload = Assert-SuiteEmbeddedPayloadHash $exePath $pin.Groups[1].Value
+}
 Assert ($cache -match '(?m)^TURBORAMA_ENABLE_COMMERCIAL_SERVICES:BOOL=OFF\s*$') `
     'O cache CMake nao identifica o perfil sem servicos comerciais.'
 Assert ($cache -match '(?m)^TURBORAMA_RELEASE_HARDENING:BOOL=ON\s*$') `
@@ -206,6 +224,20 @@ namespace TurboRama
     {
         public static string FindAny(string path, string[] patterns)
         {
+            return FindAny(path, patterns, 0, 0);
+        }
+
+        public static string FindAny(string path, string[] patterns, long suiteOffset, long suiteSize)
+        {
+            using (FileStream stream = File.OpenRead(path))
+                return FindAny(stream, patterns, suiteOffset, suiteSize);
+        }
+
+        private static string FindAny(Stream stream, string[] patterns, long suiteOffset, long suiteSize)
+        {
+            if (suiteOffset < 0 || suiteSize < 0 || suiteSize > stream.Length ||
+                suiteOffset > stream.Length - suiteSize)
+                throw new ArgumentOutOfRangeException("suiteSize");
             if (patterns == null || patterns.Length == 0)
                 return null;
 
@@ -216,22 +248,65 @@ namespace TurboRama
             const int chunkSize = 4 * 1024 * 1024;
             byte[] buffer = new byte[chunkSize + longest - 1];
             int retained = 0;
-            using (FileStream stream = File.OpenRead(path))
+            int read;
+            while ((read = stream.Read(buffer, retained, chunkSize)) > 0)
             {
-                int read;
-                while ((read = stream.Read(buffer, retained, chunkSize)) > 0)
+                int total = retained + read;
+                long chunkOffset = stream.Position - total;
+                string text = System.Text.Encoding.ASCII.GetString(buffer, 0, total);
+                foreach (string pattern in patterns)
                 {
-                    int total = retained + read;
-                    string text = System.Text.Encoding.ASCII.GetString(buffer, 0, total);
-                    foreach (string pattern in patterns)
-                        if (text.IndexOf(pattern, StringComparison.Ordinal) >= 0)
-                            return pattern;
-
-                    retained = Math.Min(longest - 1, total);
-                    Buffer.BlockCopy(buffer, total - retained, buffer, 0, retained);
+                    if (String.IsNullOrEmpty(pattern)) throw new ArgumentException("Empty pattern");
+                    int searchFrom = 0;
+                    for (;;)
+                    {
+                        int index = text.IndexOf(pattern, searchFrom, StringComparison.Ordinal);
+                        if (index < 0) break;
+                        long absolute = chunkOffset + index;
+                        // System.Net.Http.CreditManager is Microsoft's HTTP/2
+                        // transport window controller. Its short metadata name
+                        // is allowed ONLY wholly inside the hash-verified Suite
+                        // resource. All native occurrences and every specific
+                        // payment/rental marker remain forbidden everywhere.
+                        bool runtimeName = pattern == "CreditManager" && suiteSize >= pattern.Length &&
+                            absolute >= suiteOffset && absolute <= suiteOffset + suiteSize - pattern.Length;
+                        if (!runtimeName) return pattern;
+                        searchFrom = index + 1;
+                    }
                 }
+
+                retained = Math.Min(longest - 1, total);
+                Buffer.BlockCopy(buffer, total - retained, buffer, 0, retained);
             }
             return null;
+        }
+
+        public static bool RunSelfTest()
+        {
+            const string marker = "CreditManager";
+            string[] patterns = { marker, "TurboRamaPixAgent" };
+            Func<string, long, long, string> scan = (text, start, size) => {
+                using (var stream = new MemoryStream(System.Text.Encoding.ASCII.GetBytes(text)))
+                    return FindAny(stream, patterns, start, size);
+            };
+            if (scan("x" + marker + "y", 1, marker.Length) != null ||
+                scan("x" + marker + "y", 0, 0) != marker ||
+                scan("x" + marker + "y", 2, marker.Length) != marker ||
+                scan("x" + marker + "y", 1, marker.Length - 1) != marker ||
+                scan(marker + "_" + marker, 0, marker.Length) != marker ||
+                scan(marker + "_" + marker, marker.Length + 1, marker.Length) != marker ||
+                scan("TurboRamaPixAgent", 0, 16) != "TurboRamaPixAgent") return false;
+            // Exercise retention across the streaming chunk boundary too.
+            byte[] boundary = new byte[4 * 1024 * 1024 + 32];
+            int offset = 4 * 1024 * 1024 - 6;
+            byte[] token = System.Text.Encoding.ASCII.GetBytes(marker);
+            Buffer.BlockCopy(token, 0, boundary, offset, token.Length);
+            using (var stream = new MemoryStream(boundary))
+                if (FindAny(stream, patterns, offset, token.Length) != null) return false;
+            using (var stream = new MemoryStream(boundary))
+                if (FindAny(stream, patterns, offset, token.Length - 1) != marker) return false;
+            try { scan("abc", 1, Int64.MaxValue); return false; }
+            catch (ArgumentOutOfRangeException) { return true; }
         }
 
         public static string[] FindMissing(string path, string[] patterns)
@@ -286,7 +361,17 @@ $forbiddenBinaryMarkers = @(
     'CONTABILIDADE LOCADORA',
     'F10 disponivel somente para credito'
 )
-$foundMarker = [TurboRama.BinaryPattern]::FindAny($exePath, $forbiddenBinaryMarkers)
+Assert ([TurboRama.BinaryPattern]::RunSelfTest()) 'Regressao do scanner binario de servicos.'
+if ($suiteProfile) {
+    $managedMarker = [TurboRama.BinaryPattern]::FindAny($SuiteManagedAssembly, $forbiddenBinaryMarkers)
+    Assert ([string]::IsNullOrEmpty($managedMarker)) `
+        "Marcador comercial encontrado no codigo gerenciado da Suite: $managedMarker"
+    $foundMarker = [TurboRama.BinaryPattern]::FindAny($exePath, $forbiddenBinaryMarkers,
+        [long]$suitePayload.Offset, [long]$suitePayload.Size)
+}
+else {
+    $foundMarker = [TurboRama.BinaryPattern]::FindAny($exePath, $forbiddenBinaryMarkers)
+}
 Assert ([string]::IsNullOrEmpty($foundMarker)) `
     "Marcador de servico comercial encontrado no executavel: $foundMarker"
 
@@ -318,6 +403,10 @@ Assert ($missingMarkers.Count -eq 0) `
     "Marcadores obrigatorios ausentes do executavel: $($missingMarkers -join ', ')"
 
 Write-Host 'NO_COMMERCIAL_SERVICES_TEST=OK'
+if ($suiteProfile) {
+    Write-Host 'SuiteRuntimeMetadata=System.Net.Http.CreditManager (only inside SHA256-verified RCDATA 31001)'
+    Write-Host 'SuiteManagedCommercialMarkers=0 (all eight markers checked)'
+}
 Write-Host "Executable=$exePath"
 Write-Host "ExcludedSources=$($forbiddenSources.Count)"
 Write-Host "RequiredOptimizationSources=$($requiredAppSources.Count + $requiredCoreSources.Count)"
