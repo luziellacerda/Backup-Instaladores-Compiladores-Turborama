@@ -29,7 +29,7 @@ namespace InstallerHost
                 count += 2;
             }
             foreach (bool banner in new[] { true, false })
-            foreach (Size size in new[] { new Size(760, banner ? 78 : 385), new Size(1064, banner ? 78 : 385), new Size(1, 1) })
+            foreach (Size size in new[] { new Size(760, banner ? 66 : 385), new Size(1064, banner ? 66 : 385), new Size(1, 1) })
             using (PaintProbe control = new PaintProbe(banner))
             using (Bitmap clean = new Bitmap(size.Width, size.Height))
             using (Bitmap dirty = new Bitmap(size.Width, size.Height))
@@ -75,7 +75,7 @@ namespace InstallerHost
                     if (clean.GetPixel(x, y) != dirty.GetPixel(x, y)) throw new Exception("Artwork clip differs from complete repaint: banner=" + banner + "; size=" + size + "; clip=" + clip + "; pixel=" + x + "," + y + "; expected=" + clean.GetPixel(x, y) + "; actual=" + dirty.GetPixel(x, y));
                 count++;
                 }
-                if (size.Width > 1)
+                if (!banner && size.Width > 1)
                 {
                     bool hasLight = false;
                     Color background = TurboRama.Next.Palette.Background;
@@ -120,7 +120,7 @@ namespace InstallerHost
             {
                 foreach (int pass in new[] { 0, 1, 2 })
                 {
-                    Size size = new Size(pass == 0 ? 1064 : 764, banner ? 78 : 257);
+                    Size size = new Size(pass == 0 ? 1064 : 764, banner ? 66 : 257);
                     Color background = pass == 2 ? Color.FromArgb(20, 22, 28) : TurboRama.Next.Palette.Background;
                     reused.Size = size; reused.BackColor = background;
                     using (PaintProbe fresh = new PaintProbe(banner) { Size = size, BackColor = background })

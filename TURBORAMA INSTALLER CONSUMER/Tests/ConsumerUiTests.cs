@@ -87,6 +87,11 @@ namespace InstallerHost
                             Control heading = Find<TableLayoutPanel>(form.TestPage, "ConsumerLayout").GetControlFromPosition(0, 2);
                             Control body = Find<Control>(form.TestPage, "WizardBody");
                             Control footer = Find<Control>(form.TestPage, "WizardActions");
+                            WizardSequenceBar sequenceBar = (WizardSequenceBar)sequence;
+                            Check(sequenceBar.StepCount == 5 && sequenceBar.CurrentStep == step,
+                                "Progress map preserves the original order and highlights the current page");
+                            Check(!sequenceBar.TabStop && sequenceBar.Controls.Count == 0,
+                                "Read-only progress map does not add focus traps or hidden menu controls");
                             Check(brand.Bottom <= sequence.Top && sequence.Bottom <= heading.Top && heading.Bottom <= body.Top && body.Bottom <= footer.Top,
                                 "Artwork, original sequence, heading, page and actions never overlap");
                             if (step == 0)

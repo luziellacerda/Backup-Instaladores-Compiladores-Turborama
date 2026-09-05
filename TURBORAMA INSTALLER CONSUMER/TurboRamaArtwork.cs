@@ -99,11 +99,13 @@ namespace InstallerHost
             {
                 DrawBrand(g);
                 int glow = 135 + (int)(30 * Math.Sin(phase));
-                using (LinearGradientBrush rail = new LinearGradientBrush(new Rectangle(0, Height - 7, Width, 7),
+                int railLeft = Math.Max(0, (int)(31 * g.DpiX / 96f));
+                int railWidth = Math.Min(Math.Max(1, Width - railLeft), (int)(310 * g.DpiX / 96f));
+                using (LinearGradientBrush rail = new LinearGradientBrush(new Rectangle(railLeft, Height - 7, railWidth, 7),
                     SystemInformation.HighContrast ? SystemColors.ControlText : Color.FromArgb(glow, Palette.Accent),
                     Color.FromArgb(0, Palette.Accent), 0f))
                 {
-                    g.FillRectangle(rail, 0, Height - 2, Width, 2);
+                    g.FillRectangle(rail, railLeft, Height - 2, railWidth, 2);
                 }
             }
             base.OnPaint(e);
@@ -201,7 +203,7 @@ namespace InstallerHost
                         Fade(graphics, new Rectangle(target.Left, target.Bottom - Math.Max(2, (int)(target.Height * .20f)), target.Width, Math.Max(2, (int)(target.Height * .20f))), 270f);
                         Fade(graphics, new Rectangle(target.Right - Math.Max(2, (int)(target.Width * .06f)), target.Top, Math.Max(2, (int)(target.Width * .06f)), target.Height), 180f);
                     }
-                    DrawAmbientLight(graphics, ClientSize, banner);
+                    if (!banner) DrawAmbientLight(graphics, ClientSize, false);
                 }
                 return surface;
             }
@@ -214,13 +216,7 @@ namespace InstallerHost
         {
             if (size.Width < 2 || size.Height < 2) return;
             float w = size.Width, h = size.Height;
-            if (bannerMode)
-            {
-                float logoWidth = Math.Min(w * .43f, 430f);
-                SoftLight(graphics, new RectangleF(2, h * .08f, logoWidth, h * .72f), Palette.Violet, 48);
-                SoftLight(graphics, new RectangleF(12, h * .20f, logoWidth * .72f, h * .48f), Color.FromArgb(158, 218, 255), 26);
-            }
-            else
+            if (!bannerMode)
             {
                 SoftLight(graphics, new RectangleF(w * .004f, h * .04f, w * .49f, h * .88f), Palette.Violet, 44);
                 SoftLight(graphics, new RectangleF(w * .008f, h * .10f, w * .36f, h * .52f), Color.FromArgb(158, 218, 255), 22);

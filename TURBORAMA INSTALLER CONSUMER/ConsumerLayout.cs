@@ -1,9 +1,86 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using TurboRama.Next;
 namespace InstallerHost
 {
+    // Read-only progress map for the original five pages. It replaces boxed
+    // labels with connected neon nodes without changing navigation or order.
+    internal class WizardSequenceBar : Control
+    {
+        private readonly int currentStep;
+        internal int CurrentStep { get { return currentStep; } }
+        internal int StepCount { get { return ConsumerLayout.Steps.Length; } }
+        internal WizardSequenceBar(int step)
+        {
+            currentStep = step; Name = "OriginalSequence"; Height = 48; Dock = DockStyle.Top;
+            Margin = new Padding(0, 0, 0, 18); BackColor = Palette.Background; TabStop = false;
+            AccessibleRole = AccessibleRole.StaticText; AccessibleName = "Etapas da instalação";
+            AccessibleDescription = "Etapa " + (step + 1) + " de 5: " + ConsumerLayout.Steps[step];
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        }
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            Color color = SystemInformation.HighContrast ? SystemColors.Control : BackColor;
+            using (Brush brush = new SolidBrush(color)) e.Graphics.FillRectangle(brush, Rectangle.Intersect(ClientRectangle, e.ClipRectangle));
+        }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            OnPaintBackground(e);
+            if (Width < 10 || Height < 10) return;
+            Graphics graphics = e.Graphics;
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            float dpi = graphics.DpiX / 96f;
+            float segment = Width / (float)StepCount;
+            float nodeY = 11f * dpi;
+            float radius = Math.Max(7f, 8.5f * dpi);
+            Color line = SystemInformation.HighContrast ? SystemColors.ControlDark : Palette.Line;
+            Color complete = SystemInformation.HighContrast ? SystemColors.ControlText : Color.FromArgb(170, Palette.Violet);
+            Color active = SystemInformation.HighContrast ? SystemColors.Highlight : Palette.Accent;
+            using (Pen baseLine = new Pen(line, Math.Max(1f, dpi)))
+            using (Pen progress = new Pen(complete, Math.Max(1.5f, 2f * dpi)))
+            {
+                baseLine.StartCap = baseLine.EndCap = LineCap.Round;
+                progress.StartCap = progress.EndCap = LineCap.Round;
+                float first = segment * .5f, last = segment * (StepCount - .5f);
+                graphics.DrawLine(baseLine, first, nodeY, last, nodeY);
+                if (currentStep > 0) graphics.DrawLine(progress, first, nodeY, segment * (currentStep + .5f), nodeY);
+            }
+            for (int index = 0; index < StepCount; index++)
+            {
+                float centerX = segment * (index + .5f);
+                RectangleF node = new RectangleF(centerX - radius, nodeY - radius, radius * 2, radius * 2);
+                Color nodeColor = index < currentStep ? complete : index == currentStep ? active : line;
+                if (!SystemInformation.HighContrast && index == currentStep)
+                {
+                    using (Brush glow = new SolidBrush(Color.FromArgb(28, active)))
+                        graphics.FillEllipse(glow, RectangleF.Inflate(node, 6f * dpi, 6f * dpi));
+                }
+                using (Brush fill = new SolidBrush(index <= currentStep ? nodeColor : BackColor)) graphics.FillEllipse(fill, node);
+                using (Pen edge = new Pen(nodeColor, Math.Max(1.2f, 1.6f * dpi))) graphics.DrawEllipse(edge, node);
+                using (Font number = new Font("Segoe UI Semibold", 7.25f, FontStyle.Bold))
+                {
+                    string value = (index + 1).ToString("00");
+                    Color numberColor = index <= currentStep ? Palette.Background : Palette.Muted;
+                    TextRenderer.DrawText(graphics, value, number, Rectangle.Round(node),
+                        SystemInformation.HighContrast ? SystemColors.ControlText : numberColor,
+                        TextFormatFlags.NoPrefix | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                        TextFormatFlags.SingleLine | TextFormatFlags.PreserveGraphicsClipping);
+                }
+                Rectangle labelBounds = new Rectangle((int)(segment * index), (int)(24 * dpi),
+                    Math.Max(1, (int)segment), Math.Max(1, Height - (int)(24 * dpi)));
+                using (Font label = new Font("Segoe UI Semibold", 9f, index == currentStep ? FontStyle.Bold : FontStyle.Regular))
+                    TextRenderer.DrawText(graphics, ConsumerLayout.Steps[index], label, labelBounds,
+                        index == currentStep ? active : Palette.Muted,
+                        TextFormatFlags.NoPrefix | TextFormatFlags.HorizontalCenter | TextFormatFlags.Top |
+                        TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.PreserveGraphicsClipping);
+            }
+            base.OnPaint(e);
+        }
+    }
+
     // One layout tree per original wizard page; no overlays or hidden old UI.
     internal static class ConsumerLayout
     {
@@ -17,19 +94,9 @@ namespace InstallerHost
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             TurboRamaArtwork brand = new TurboRamaArtwork(true) { Name = "TurboRamaBrand", Dock = DockStyle.Top,
-                Height = 78, Margin = new Padding(0, 0, 0, 12) };
+                Height = 66, Margin = new Padding(0, 0, 0, 10) };
             root.Controls.Add(brand, 0, 0);
-            TableLayoutPanel steps = new TableLayoutPanel { Name = "OriginalSequence", ColumnCount = 5, RowCount = 1,
-                Dock = DockStyle.Top, AutoSize = true, BackColor = Palette.Background, Margin = new Padding(0, 0, 0, 20) };
-            for (int index = 0; index < Steps.Length; index++)
-            {
-                steps.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-                Label indicator = Label((index + 1).ToString("00") + "  " + Steps[index], 10, index == step);
-                indicator.Name = "Step" + index; indicator.ForeColor = index == step ? Palette.Accent : Palette.Muted;
-                indicator.BackColor = index == step ? Palette.Raised : Palette.Background;
-                indicator.Padding = new Padding(8, 10, 8, 10); indicator.Dock = DockStyle.Fill;
-                indicator.Margin = new Padding(0, 0, index == 4 ? 0 : 8, 0); steps.Controls.Add(indicator, index, 0);
-            }
+            WizardSequenceBar steps = new WizardSequenceBar(step);
             root.Controls.Add(steps, 0, 1);
             heading = Label(Steps[step], 25, true); heading.Name = "WizardHeading"; heading.Dock = DockStyle.Top;
             heading.Margin = new Padding(0, 0, 0, 18); root.Controls.Add(heading, 0, 2);
