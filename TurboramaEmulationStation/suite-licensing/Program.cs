@@ -26,8 +26,9 @@ internal static class Program
             var identity = new SuiteCngMachineIdentity(authority.IdentityPolicy);
             // Reuse-only preflight, before even collecting the license identifier.
             _ = identity.Describe();
-            runtime = new SuiteLicensingRuntime(
-                new SuiteLicenseClient(authority, identity), authority, TimeProvider.System);
+            var client = new SuiteLicenseClient(authority, identity);
+            runtime = new SuiteLicensingRuntime(client, authority, TimeProvider.System);
+            using var networkCollector = NetworkInventoryCollector.TryStart(client, runtime, lifetime.Token);
             using var form = new LicenseForm(runtime, bridge, lifetime);
             bridge.Start(() => runtime.IsAvailable
                 && runtime.CurrentContext?.IsAuthorized == true);

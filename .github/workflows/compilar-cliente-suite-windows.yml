@@ -1,4 +1,4 @@
-name: CLIENTE SUITE ATIVADO v1.0.1 - EXE unico Windows x64
+name: CLIENTE SUITE ATIVADO v1.1.0 - EXE unico Windows x64
 
 "on":
   push:
@@ -8,6 +8,12 @@ name: CLIENTE SUITE ATIVADO v1.0.1 - EXE unico Windows x64
       - .github/workflows/compilar-cliente-suite-windows.yml
       - TurboramaEmulationStation/**
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publicar release após homologar o servidor de destino'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -19,8 +25,8 @@ concurrency:
 env:
   PROJECT_DIR: TurboramaEmulationStation
   WIN32_LIBS_COMMIT: 468eaba48c028921a4bf2abdfa3f3a00ce8d4c0d
-  RELEASE_TAG: build-CLIENTE-SUITE-ATIVADO-v1.0.1-20260905
-  PACKAGE_BASENAME: TurboramaEmulationStation-Suite-v1.0.1-Windows-x64
+  RELEASE_TAG: build-CLIENTE-SUITE-ATIVADO-v1.1.0-20260905
+  PACKAGE_BASENAME: TurboramaEmulationStation-Suite-v1.1.0-Windows-x64
   _CL_: /Zm300
 
 jobs:
@@ -60,7 +66,7 @@ jobs:
           $digest = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant()
           "SUITE_HELPER_PATH=$helper" | Add-Content -LiteralPath $env:GITHUB_ENV
           "SUITE_HELPER_SHA256=$digest" | Add-Content -LiteralPath $env:GITHUB_ENV
-          "RELEASE_TAG=es-suite-v1.0.1-$($env:GITHUB_SHA.Substring(0,12))" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "RELEASE_TAG=es-suite-v1.1.0-$($env:GITHUB_SHA.Substring(0,12))" | Add-Content -LiteralPath $env:GITHUB_ENV
 
       - name: Testar extracao privada e ponte nativa embutida
         run: |
@@ -294,7 +300,7 @@ jobs:
           }
 
           @(
-            'TurboRama EmulationStation Suite Edition v1.0.1 - Windows x64'
+            'TurboRama EmulationStation Suite Edition v1.1.0 - Windows x64'
             'Modulo Suite embutido no emulationstation.exe; helper adjacente nao e utilizado'
             'Acesso: mesma ativacao CNG/TPM do TurboRama Suite, validacao online'
             "SHA-256 do modulo Suite: $env:SUITE_HELPER_SHA256"
@@ -344,8 +350,8 @@ jobs:
           Invoke-SmokeTest '--suite-access-self-test'
           Invoke-SmokeTest '--suite-access-integrity-self-test'
           & (Join-Path $project 'tools/tests/Test-SuitePackage.ps1') -PackageDirectory $stage
-          Copy-Item -LiteralPath (Join-Path $project 'docs/SUITE-EDITION-v1.0.1.md') -Destination (Join-Path $stage 'LEIA-ME-SUITE.md')
-          $updateZip = Join-Path $env:RUNNER_TEMP 'Turborama-ES-Suite-v1.0.1-Atualizacao.zip'
+          Copy-Item -LiteralPath (Join-Path $project 'docs/SUITE-EDITION-v1.1.0.md') -Destination (Join-Path $stage 'LEIA-ME-SUITE.md')
+          $updateZip = Join-Path $env:RUNNER_TEMP 'Turborama-ES-Suite-v1.1.0-Atualizacao.zip'
           Compress-Archive -LiteralPath @((Join-Path $stage 'emulationstation.exe'), (Join-Path $stage 'LEIA-ME-SUITE.md')) -DestinationPath $updateZip -CompressionLevel Optimal
           "UPDATE_ZIP_PATH=$updateZip" | Add-Content -LiteralPath $env:GITHUB_ENV
 
@@ -388,14 +394,28 @@ jobs:
           "Binarios x64 verificados: $($portableBinaries.Count)"
           "Plugins VLC: $pluginCount"
 
+      - name: Guardar artefatos candidatos com origem e hashes
+        uses: actions/upload-artifact@v4
+        with:
+          name: es-suite-candidate-${{ github.sha }}
+          path: |
+            ${{ env.ZIP_PATH }}
+            ${{ env.ZIP_HASH_PATH }}
+            ${{ env.UPDATE_ZIP_PATH }}
+            ${{ env.EXE_PATH }}
+            ${{ env.EXE_HASH_PATH }}
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Publicar EXE e pacotes em release exclusivo Suite
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
           @"
-          Edicao Suite v1.0.1 para cliente sem servicos comerciais, com modulo de acesso embutido.
+          Edicao Suite v1.1.0 para cliente sem servicos comerciais, com modulo de acesso embutido.
           Reutiliza a ativacao Suite deste usuario Windows e valida a licenca online.
           Requer a extensao de sessao EmulationStation instalada/habilitada no servidor.
           Primeiro acesso: informar o mesmo identificador da licenca; nao solicita nova ativacao.
@@ -433,7 +453,7 @@ jobs:
 
             & gh release edit $env:RELEASE_TAG `
               --repo $env:GITHUB_REPOSITORY `
-              --title "EmulationStation Suite v1.0.1 - EXE unico Windows x64 (teste)" `
+              --title "EmulationStation Suite v1.1.0 - EXE unico Windows x64 (teste)" `
               --notes-file $notes --prerelease --latest=false
           }
           else {
@@ -441,7 +461,7 @@ jobs:
               $env:ZIP_PATH $env:ZIP_HASH_PATH $env:UPDATE_ZIP_PATH $env:EXE_PATH $env:EXE_HASH_PATH `
               --repo $env:GITHUB_REPOSITORY `
               --target $env:GITHUB_SHA `
-              --title "EmulationStation Suite v1.0.1 - EXE unico Windows x64 (teste)" `
+              --title "EmulationStation Suite v1.1.0 - EXE unico Windows x64 (teste)" `
               --notes-file $notes --prerelease --latest=false
           }
           if ($LASTEXITCODE -ne 0) {

@@ -17,7 +17,7 @@ internal interface ISuiteMachineIdentity
         string action, string contextHash);
 }
 
-internal sealed class SuiteCngMachineIdentity : ISuiteMachineIdentity
+internal sealed partial class SuiteCngMachineIdentity : ISuiteMachineIdentity
 {
     private const string KeyPrefix = "TurboRama.Suite.OnlineIdentity.v1";
     private const string ImplementationTypeProperty = "Impl Type";

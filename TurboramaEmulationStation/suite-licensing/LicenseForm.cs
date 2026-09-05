@@ -27,7 +27,7 @@ internal sealed class LicenseForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(500, 280);
+        ClientSize = new Size(500, 330);
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Segoe UI", 10);
         var layout = new FlowLayoutPanel
@@ -37,8 +37,9 @@ internal sealed class LicenseForm : Form
         };
         layout.Controls.Add(new Label
         {
-            Text = "Use a mesma licença já ativada no TurboRama Suite.",
-            AutoSize = false, Width = 460, Height = 32
+            Text = "Use a mesma licença já ativada no TurboRama Suite.\n"
+                + "Informações básicas de rede ajudam no diagnóstico. Trocar de rede não bloqueia o acesso.",
+            AutoSize = false, Width = 460, Height = 72
         });
         layout.Controls.Add(_license);
         layout.Controls.Add(_status);
@@ -108,6 +109,12 @@ internal sealed class LicenseForm : Form
             if (!_lifetime.IsCancellationRequested)
                 _status.Text = ex switch
                 {
+                    SuiteApiException { Code: "ES_SESSION_CONFLICT" } =>
+                        "Já existe uma sessão EmulationStation neste computador. "
+                        + "Solicite ao administrador o encerramento da sessão anterior no painel e tente novamente.",
+                    SuiteApiException { Code: "INVALID_RESPONSE" } =>
+                        "Não foi possível validar a resposta do servidor para esta versão. "
+                        + "Confira a atualização do servidor e tente novamente.",
                     SuiteApiException { StatusCode: 404 or 503 } =>
                         "O servidor ainda não disponibilizou o acesso do EmulationStation. "
                         + "Tente novamente após a atualização do servidor.",

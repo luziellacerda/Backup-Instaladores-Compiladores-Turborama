@@ -19,7 +19,7 @@ using TurboBoxManager.Licensing;
 
 namespace TurboBoxManager.CatalogVerifier;
 
-public static class SuiteProtocolVerifier
+public static partial class SuiteProtocolVerifier
 {
     private const string LicenseId = "TR-000125";
     private static readonly string SessionId = new('1', 64);
@@ -29,6 +29,7 @@ public static class SuiteProtocolVerifier
 
     public static void Run()
     {
+        VerifySharedContractAsync().GetAwaiter().GetResult();
         VerifyAdditiveSuiteRouteNamespace();
         VerifyCanonicalContexts();
         VerifyLegacyV1SigningEnvelope();
@@ -495,7 +496,7 @@ public static class SuiteProtocolVerifier
             try
             {
                 Equal("{\"schemaVersion\":1,"
-                    + "\"kind\":\"TURBORAMA_SUITE_SESSION_OPEN_CHALLENGE\","
+                    + "\"kind\":\"TURBORAMA_SUITE_ES_SESSION_OPEN_CHALLENGE\","
                     + "\"productId\":\"TURBORAMA_SUITE\","
                     + "\"licenseId\":\"TR-000125\","
                     + "\"deviceId\":\"" + DeviceId + "\","
@@ -1157,11 +1158,13 @@ public static class SuiteProtocolVerifier
 
     private sealed class TestMachineIdentity : ISuiteMachineIdentity
     {
+        public int SignCalls { get; private set; }
         public SuiteDeviceDescriptor Describe() => FixtureDescriptor();
 
         public string Sign(SuiteChallengeResponse challenge, string licenseId,
             string sessionId, string action, string contextHash)
         {
+            SignCalls++;
             _ = challenge;
             _ = licenseId;
             _ = sessionId;
@@ -1223,6 +1226,16 @@ public static class SuiteProtocolVerifier
         public string KeyId { get; }
 
         public byte[] ExportSubjectPublicKeyInfo() => _spki.ToArray();
+
+        public byte[] SignRaw(object assertion,string kind,string domain)
+        {
+            var payload=JsonSerializer.SerializeToUtf8Bytes(assertion,new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var message=Encoding.ASCII.GetBytes(domain).Concat(payload).ToArray();
+            var signature=_rsa.SignData(message,HashAlgorithmName.SHA256,RSASignaturePadding.Pss);
+            return JsonSerializer.SerializeToUtf8Bytes(new SuiteSignedAssertionEnvelope(1,kind,
+                SuiteOnlineLicenseProtocol.SigningAlgorithm,KeyId,Convert.ToBase64String(payload),
+                Convert.ToBase64String(signature)),new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        }
 
         public byte[] SignActivationChallenge(
             SuiteActivationChallengeAssertion assertion,
@@ -1306,6 +1319,7 @@ public static class SuiteProtocolVerifier
         private readonly bool _stallHeartbeat;
         private readonly bool _replayChallenges;
         private readonly bool _unsignedChallenges;
+        private readonly string _contractFault;
         private readonly TaskCompletionSource _heartbeatStarted = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         private int _requestCount;
@@ -1314,11 +1328,11 @@ public static class SuiteProtocolVerifier
         public SessionAuthorityHandler(TimeProvider timeProvider,
             TestOnlineAssertionSigner signer, int sessionLifetimeSeconds,
             bool stallHeartbeat, bool replayChallenges = false,
-            bool unsignedChallenges = false)
+            bool unsignedChallenges = false, string contractFault = "")
             => (_timeProvider, _signer, _sessionLifetimeSeconds, _stallHeartbeat,
-                _replayChallenges, _unsignedChallenges) =
+                _replayChallenges, _unsignedChallenges, _contractFault) =
                 (timeProvider, signer, sessionLifetimeSeconds, stallHeartbeat,
-                    replayChallenges, unsignedChallenges);
+                    replayChallenges, unsignedChallenges, contractFault);
 
         public Task HeartbeatStarted => _heartbeatStarted.Task;
         public int RequestCount => Volatile.Read(ref _requestCount);
@@ -1328,6 +1342,10 @@ public static class SuiteProtocolVerifier
         {
             Interlocked.Increment(ref _requestCount);
             var route = request.RequestUri?.AbsolutePath.TrimStart('/') ?? "";
+            if(route==SuiteOnlineLicenseProtocol.ChallengeRoute||route==SuiteOnlineLicenseProtocol.SuiteSessionRoute)
+                True(request.Headers.TryGetValues("X-TurboRama-Client",out var scope)&&scope.SequenceEqual(new[]{"EMULATIONSTATION"}),
+                    "Each shared request must have exactly one ES header.");
+            else True(!request.Headers.Contains("X-TurboRama-Client"),"ES header must not reach other routes.");
             var bytes = request.Content is null
                 ? Array.Empty<byte>()
                 : await request.Content.ReadAsByteArrayAsync(cancellationToken)
@@ -1437,6 +1455,12 @@ public static class SuiteProtocolVerifier
                             expiresAtUnixSeconds = assertion.ExpiresAtUnixSeconds
                         });
                     }
+                    if(_contractFault=="legacy-challenge")
+                    {
+                        const string kind="TURBORAMA_SUITE_SESSION_OPEN_CHALLENGE";
+                        return JsonBytesResponse(HttpStatusCode.OK,_signer.SignRaw(assertion with {Kind=kind},kind,
+                            "TurboRamaSuiteOnlineAssertion/session-open-challenge/v1\0"));
+                    }
                     return JsonBytesResponse(HttpStatusCode.OK,
                         _signer.SignOperationChallenge(assertion));
                 }
@@ -1465,6 +1489,13 @@ public static class SuiteProtocolVerifier
                         now,
                         now + _sessionLifetimeSeconds,
                         Math.Min(60, _sessionLifetimeSeconds - 1));
+                    if(_contractFault=="legacy-result")
+                    {
+                        const string kind="TURBORAMA_SUITE_SESSION_OPEN";
+                        return JsonBytesResponse(HttpStatusCode.OK,_signer.SignRaw(assertion with {Kind=kind},kind,
+                            "TurboRamaSuiteOnlineAssertion/session-open/v1\0"));
+                    }
+                    if(_contractFault=="conflict")assertion=assertion with {Status="CONFLICT",AuthorizedUntilUnixSeconds=now,HeartbeatAfterSeconds=5};
                     return JsonBytesResponse(HttpStatusCode.OK,
                         _signer.SignSession(assertion));
                 }

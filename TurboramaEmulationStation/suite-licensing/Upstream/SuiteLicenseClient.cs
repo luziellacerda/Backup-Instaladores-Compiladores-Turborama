@@ -23,7 +23,7 @@ public sealed class SuiteApiException : Exception
     public string Code { get; }
 }
 
-internal sealed class SuiteLicenseClient : IDisposable
+internal sealed partial class SuiteLicenseClient : IDisposable
 {
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(20);
 
@@ -163,6 +163,8 @@ internal sealed class SuiteLicenseClient : IDisposable
         var requestBytes = SuiteOnlineLicenseProtocol.SerializeRequest(request);
         using var content = new ZeroingJsonContent(requestBytes);
         using var message = new HttpRequestMessage(HttpMethod.Post, route) { Content = content };
+        if (route is SuiteOnlineLicenseProtocol.ChallengeRoute or SuiteOnlineLicenseProtocol.SuiteSessionRoute)
+            message.Headers.Add("X-TurboRama-Client", "EMULATIONSTATION");
         using var response = await _http.SendAsync(message,
             HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 

@@ -186,7 +186,7 @@ public sealed record SuiteSessionAssertion(
 /// The signing domain and signed envelope deliberately remain byte-for-byte
 /// compatible with the existing v1 PIX protocol.
 /// </summary>
-public static class SuiteOnlineLicenseProtocol
+public static partial class SuiteOnlineLicenseProtocol
 {
     public const int SchemaVersion = 1;
     public const string ProductId = "TURBORAMA_SUITE";
@@ -201,24 +201,24 @@ public static class SuiteOnlineLicenseProtocol
     // protocol.
     public const string ActivationChallengeRoute = "v1/suite/activations/challenge";
     public const string ActivationCompleteRoute = "v1/suite/activations/complete";
-    public const string ChallengeRoute = "v1/suite/emulationstation/challenges";
-    public const string SuiteSessionRoute = "v1/suite/emulationstation/sessions";
+    public const string ChallengeRoute = "v1/suite/challenges";
+    public const string SuiteSessionRoute = "v1/suite/sessions";
 
     public const string ActivationChallengeAssertionKind =
         "TURBORAMA_SUITE_ACTIVATION_CHALLENGE";
     public const string ActivationResultAssertionKind =
         "TURBORAMA_SUITE_ACTIVATION_RESULT";
     public const string SessionOpenChallengeAssertionKind =
-        "TURBORAMA_SUITE_SESSION_OPEN_CHALLENGE";
+        "TURBORAMA_SUITE_ES_SESSION_OPEN_CHALLENGE";
     public const string SessionHeartbeatChallengeAssertionKind =
-        "TURBORAMA_SUITE_SESSION_HEARTBEAT_CHALLENGE";
+        "TURBORAMA_SUITE_ES_SESSION_HEARTBEAT_CHALLENGE";
     public const string CatalogReadChallengeAssertionKind =
         "TURBORAMA_SUITE_CATALOG_READ_CHALLENGE";
     public const string DownloadAuthorizeChallengeAssertionKind =
         "TURBORAMA_SUITE_DOWNLOAD_AUTHORIZE_CHALLENGE";
-    public const string SessionOpenAssertionKind = "TURBORAMA_SUITE_SESSION_OPEN";
+    public const string SessionOpenAssertionKind = "TURBORAMA_SUITE_ES_SESSION_OPEN";
     public const string SessionHeartbeatAssertionKind =
-        "TURBORAMA_SUITE_SESSION_HEARTBEAT";
+        "TURBORAMA_SUITE_ES_SESSION_HEARTBEAT";
 
     private static readonly byte[] SigningDomain =
         Encoding.ASCII.GetBytes("TurboRamaOnlineMachineProof/v1\0");
@@ -676,9 +676,13 @@ public static class SuiteOnlineLicenseProtocol
             || !string.Equals(assertion.Action, action, StringComparison.Ordinal)
             || !FixedHexEquals(assertion.ContextHash, contextHash)
             || !FixedHexEquals(assertion.ChallengeId, challengeId)
-            || assertion.AuthorizedUntilUnixSeconds <= nowUnixSeconds)
+            || (assertion.Status != "CONFLICT" && assertion.AuthorizedUntilUnixSeconds <= nowUnixSeconds))
             throw new SecurityException(
                 "A resposta assinada nao pertence a esta sessao.");
+
+        if (assertion.Status == "CONFLICT")
+            throw new SuiteApiException(409, "ES_SESSION_CONFLICT",
+                "Existe uma sessão EmulationStation vigente. Solicite o encerramento ao administrador e tente novamente.");
 
         var response = new SuiteSessionResponse(
             assertion.SchemaVersion,
@@ -888,13 +892,20 @@ public static class SuiteOnlineLicenseProtocol
         if (assertion.SchemaVersion != SchemaVersion
             || !string.Equals(assertion.Kind, expectedKind, StringComparison.Ordinal)
             || !string.Equals(assertion.ProductId, ProductId, StringComparison.Ordinal)
-            || !string.Equals(assertion.Status, "ACTIVE", StringComparison.Ordinal))
+            || (assertion.Status != "ACTIVE" && !(assertion.Status == "CONFLICT" && assertion.Action == "session.open")))
             throw new SecurityException("A assertion da sessao possui tipo invalido.");
         _ = RequireCanonicalIdentifier(assertion.LicenseId, "LicenseId", 6, 64);
         _ = RequireCanonicalHex(assertion.DeviceId, "DeviceId", 64);
         _ = RequireCanonicalHex(assertion.SessionId, "SessionId", 64);
         _ = RequireCanonicalHex(assertion.ContextHash, "ContextHash", 64);
         _ = RequireCanonicalHex(assertion.ChallengeId, "ChallengeId", 64);
+        if (assertion.Status == "CONFLICT")
+        {
+            ValidateUnixTimeSeconds(assertion.ServerTimeUnixSeconds, "O horário do conflito");
+            if (assertion.AuthorizedUntilUnixSeconds != assertion.ServerTimeUnixSeconds || assertion.HeartbeatAfterSeconds != 5)
+                throw new SecurityException("Conflito não pode conceder autorização.");
+            return;
+        }
         var response = new SuiteSessionResponse(
             assertion.SchemaVersion,
             assertion.ProductId,

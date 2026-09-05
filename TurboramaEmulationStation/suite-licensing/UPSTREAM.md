@@ -23,10 +23,10 @@ Cabeçalhos de proveniência foram acrescentados e quebras de linha normalizadas
 envelope assinado, hash exato, chave offline, chave online distinta, validade,
 SPKI canônico, URL HTTPS, JSON estrito e metadados de assembly.
 
-`Upstream/SuiteProtocol.cs`: alterados somente os valores das constantes
-`ChallengeRoute` e `SuiteSessionRoute` para acrescentar
-`emulationstation/`. Produto, versão, domínio de assinatura, ações, serialização
-canônica, tipos de assertion e validadores permanecem iguais.
+`Upstream/SuiteProtocol.cs`: na versão 1.1.0, as duas rotas de sessão são
+compartilhadas e usam os quatro Kind ES assinados. Os domínios originais, produto,
+ações e bytes da prova de máquina permanecem iguais. CONFLICT assinado e sem
+janela de autorização é reconhecido apenas após validar assinatura e contexto.
 Os DTOs e validadores puros de ativação foram conservados para permitir comparação
 com a suíte de testes original. Não há método HTTP de ativação no cliente desta
 edição, nem qualquer interface que receba código de ativação.
@@ -44,6 +44,12 @@ por catálogo/downloads. Mantidos o construtor somente de licença,
 `OpenSessionAsync`, tratamento de indisponibilidade da identidade, desafios
 anti-replay, HTTP limitado, cancelamento, parser assinado e pinagem TLS.
 O seam interno de transporte permanece para testes sintéticos.
+
+`Upstream/NetworkInventoryContract.cs` e `SuiteNetworkInventory.cs`: contrato
+complementar com domínios próprios, validação canônica, limite de oito interfaces,
+escopo de aplicação e prova pela chave CNG existente. O cabeçalho ES só é enviado
+nas duas rotas compartilhadas de sessão. `NetworkInventoryCollector.cs` faz a
+coleta com debounce fora do fluxo de autorização e sem registrar endereços crus.
 
 `Upstream/SuiteSession.cs`: mantidos o contexto/capacidade, inscrições atômicas,
 serialização de operações, abertura, loop de heartbeat, monitor independente de
