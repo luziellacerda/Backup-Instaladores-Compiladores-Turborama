@@ -503,6 +503,11 @@ int main(int argc, char* argv[])
 		fprintf(passed ? stdout : stderr, "SUITE_ACCESS_TEST=%s\n", passed ? "OK" : "FAILED");
 		return passed ? 0 : 44;
 	}
+	if (argc == 2 && strcmp(argv[1], "--suite-access-probe-identity") == 0)
+	{
+		// Read-only diagnostic. No session, activation, frontend or game launch.
+		return SuiteAccessGate::probeIdentity();
+	}
 	if (argc == 2 && strcmp(argv[1], "--suite-access-integrity-self-test") == 0)
 	{
 		const bool passed = SuiteAccessGate::verifyHelperIntegrity();

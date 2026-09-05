@@ -1,4 +1,4 @@
-name: CLIENTE SUITE ATIVADO v1.0.0 - EmulationStation Windows x64
+name: CLIENTE SUITE ATIVADO v1.0.1 - EXE unico Windows x64
 
 "on":
   push:
@@ -19,8 +19,8 @@ concurrency:
 env:
   PROJECT_DIR: TurboramaEmulationStation
   WIN32_LIBS_COMMIT: 468eaba48c028921a4bf2abdfa3f3a00ce8d4c0d
-  RELEASE_TAG: build-CLIENTE-SUITE-ATIVADO-v1.0.0-20260905
-  PACKAGE_BASENAME: TurboramaEmulationStation-Suite-v1.0.0-Windows-x64
+  RELEASE_TAG: build-CLIENTE-SUITE-ATIVADO-v1.0.1-20260905
+  PACKAGE_BASENAME: TurboramaEmulationStation-Suite-v1.0.1-Windows-x64
   _CL_: /Zm300
 
 jobs:
@@ -58,8 +58,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Falha no modulo Suite.' }
           $helper = Join-Path $PWD 'suite-licensing/publish/TurboRama.Suite.Access.exe'
           $digest = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant()
+          "SUITE_HELPER_PATH=$helper" | Add-Content -LiteralPath $env:GITHUB_ENV
           "SUITE_HELPER_SHA256=$digest" | Add-Content -LiteralPath $env:GITHUB_ENV
-          "RELEASE_TAG=es-suite-v1.0.0-$($env:GITHUB_SHA.Substring(0,12))" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "RELEASE_TAG=es-suite-v1.0.1-$($env:GITHUB_SHA.Substring(0,12))" | Add-Content -LiteralPath $env:GITHUB_ENV
+
+      - name: Testar extracao privada e ponte nativa embutida
+        run: |
+          & ./TurboramaEmulationStation/tools/tests/Test-SuiteNative.ps1 `
+            -OutputDirectory (Join-Path $env:RUNNER_TEMP 'suite-native-tests')
+          if ($LASTEXITCODE -ne 0) { throw 'Falha nos testes nativos Suite.' }
 
       - name: Baixar dependencias Windows fixadas
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -129,6 +136,7 @@ jobs:
             -DTURBORAMA_ENABLE_COMMERCIAL_SERVICES=OFF `
             -DTURBORAMA_RELEASE_HARDENING=ON `
             -DTURBORAMA_REQUIRE_SUITE_LICENSE=ON `
+            "-DTURBORAMA_SUITE_HELPER_PATH=$env:SUITE_HELPER_PATH" `
             "-DTURBORAMA_SUITE_HELPER_SHA256=$env:SUITE_HELPER_SHA256" `
             -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=FALSE `
             -DCMAKE_SYSTEM_VERSION=10.0.26100.0
@@ -186,7 +194,6 @@ jobs:
 
           $runtime = [ordered]@{
             (Join-Path $project 'bin\x64\Release\emulationstation.exe') = 'emulationstation.exe'
-            (Join-Path $project 'suite-licensing\publish\TurboRama.Suite.Access.exe') = 'TurboRama.Suite.Access.exe'
             (Join-Path $deps 'FreeImage\x64\FreeImage.dll') = 'FreeImage.dll'
             (Join-Path $deps 'curl\x64\bin\libcurl.dll') = 'libcurl.dll'
             (Join-Path $deps 'libvlc\x64\libvlc.dll') = 'libvlc.dll'
@@ -286,7 +293,8 @@ jobs:
           }
 
           @(
-            'TurboRama EmulationStation Suite Edition v1.0.0 - Windows x64'
+            'TurboRama EmulationStation Suite Edition v1.0.1 - Windows x64'
+            'Modulo Suite embutido no emulationstation.exe; helper adjacente nao e utilizado'
             'Acesso: mesma ativacao CNG/TPM do TurboRama Suite, validacao online'
             "SHA-256 do modulo Suite: $env:SUITE_HELPER_SHA256"
             'Requer rotas Suite EmulationStation instaladas e habilitadas no servidor'
@@ -335,10 +343,18 @@ jobs:
           Invoke-SmokeTest '--suite-access-self-test'
           Invoke-SmokeTest '--suite-access-integrity-self-test'
           & (Join-Path $project 'tools/tests/Test-SuitePackage.ps1') -PackageDirectory $stage
-          Copy-Item -LiteralPath (Join-Path $project 'docs/SUITE-EDITION-v1.0.0.md') -Destination (Join-Path $stage 'LEIA-ME-SUITE.md')
-          $updateZip = Join-Path $env:RUNNER_TEMP 'Turborama-ES-Suite-v1.0.0-Atualizacao.zip'
-          Compress-Archive -LiteralPath @((Join-Path $stage 'emulationstation.exe'), (Join-Path $stage 'TurboRama.Suite.Access.exe'), (Join-Path $stage 'LEIA-ME-SUITE.md')) -DestinationPath $updateZip -CompressionLevel Optimal
+          Copy-Item -LiteralPath (Join-Path $project 'docs/SUITE-EDITION-v1.0.1.md') -Destination (Join-Path $stage 'LEIA-ME-SUITE.md')
+          $updateZip = Join-Path $env:RUNNER_TEMP 'Turborama-ES-Suite-v1.0.1-Atualizacao.zip'
+          Compress-Archive -LiteralPath @((Join-Path $stage 'emulationstation.exe'), (Join-Path $stage 'LEIA-ME-SUITE.md')) -DestinationPath $updateZip -CompressionLevel Optimal
           "UPDATE_ZIP_PATH=$updateZip" | Add-Content -LiteralPath $env:GITHUB_ENV
+
+          $exe = Join-Path $stage 'emulationstation.exe'
+          $exeHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $exeHashFile = Join-Path $env:RUNNER_TEMP 'emulationstation.exe.sha256'
+          "$exeHash *emulationstation.exe" | Set-Content -LiteralPath $exeHashFile -Encoding ascii
+          "EXE_PATH=$exe" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "EXE_HASH_PATH=$exeHashFile" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "EXE_SHA256=$exeHash" | Add-Content -LiteralPath $env:GITHUB_ENV
 
           $manifest = Join-Path $stage 'SHA256SUMS.txt'
           Get-ChildItem -LiteralPath $stage -Recurse -File |
@@ -371,29 +387,34 @@ jobs:
           "Binarios x64 verificados: $($portableBinaries.Count)"
           "Plugins VLC: $pluginCount"
 
-      - name: Publicar ZIP em um release separado
+      - name: Publicar EXE e pacotes em release exclusivo Suite
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
           @"
-          Nova edicao Suite v1.0.0 para cliente sem servicos comerciais.
+          Edicao Suite v1.0.1 para cliente sem servicos comerciais, com modulo de acesso embutido.
           Reutiliza a ativacao Suite deste usuario Windows e valida a licenca online.
           Requer a extensao de sessao EmulationStation instalada/habilitada no servidor.
           Primeiro acesso: informar o mesmo identificador da licenca; nao solicita nova ativacao.
-          Pacote de atualizacao: substituir JUNTOS emulationstation.exe e TurboRama.Suite.Access.exe.
-          Ambos ficam vinculados por SHA-256. Nao misturar arquivos de compilacoes diferentes.
+          Atualizacao: substituir somente emulationstation.exe numa instalacao com as dependencias existentes.
+          O helper Suite esta embutido e e extraido internamente em pasta privada com verificacao SHA-256.
+          Um helper antigo ao lado do EXE e ignorado; nao e necessario baixar ou atualizar esse arquivo.
+          O EXE avulso nao substitui as DLLs/recursos da instalacao. O ZIP completo inclui as dependencias.
+          Mesma logica Suite de chave existente e servidor; nenhuma nova ativacao ou servico pago.
 
           - Commit da fonte: $env:GITHUB_SHA
           - Commit de win32-libs: $env:WIN32_LIBS_COMMIT
           - Arquivos no pacote: $env:PACKAGE_FILE_COUNT
           - SHA-256 do ZIP: $env:ZIP_SHA256
+          - SHA-256 do EXE: $env:EXE_SHA256
           - Runner: Windows Server 2022 / Visual Studio 2022
           - Removidos da compilacao: PIX, pagamentos, creditos, contabilidade,
             locadora, cronometro e controle comercial de tempo
 
-          O executavel nao possui assinatura digital. Use `TESTAR-ISOLADO.cmd`
+          O executavel nao possui Authenticode; o aviso SmartScreen pode continuar.
+          Nenhum certificado ou servico de assinatura pago foi contratado. Use TESTAR-ISOLADO.cmd
           para testar sem alterar o perfil normal do EmulationStation.
           "@ | Set-Content -LiteralPath $notes -Encoding utf8NoBOM
 
@@ -403,7 +424,7 @@ jobs:
 
           if ($releaseExists) {
             & gh release upload $env:RELEASE_TAG `
-              $env:ZIP_PATH $env:ZIP_HASH_PATH $env:UPDATE_ZIP_PATH `
+              $env:ZIP_PATH $env:ZIP_HASH_PATH $env:UPDATE_ZIP_PATH $env:EXE_PATH $env:EXE_HASH_PATH `
               --repo $env:GITHUB_REPOSITORY --clobber
             if ($LASTEXITCODE -ne 0) {
               throw 'Falha ao atualizar os arquivos do release.'
@@ -411,15 +432,15 @@ jobs:
 
             & gh release edit $env:RELEASE_TAG `
               --repo $env:GITHUB_REPOSITORY `
-              --title "EmulationStation Suite v1.0.0 - Windows x64 (teste)" `
+              --title "EmulationStation Suite v1.0.1 - EXE unico Windows x64 (teste)" `
               --notes-file $notes --prerelease --latest=false
           }
           else {
             & gh release create $env:RELEASE_TAG `
-              $env:ZIP_PATH $env:ZIP_HASH_PATH $env:UPDATE_ZIP_PATH `
+              $env:ZIP_PATH $env:ZIP_HASH_PATH $env:UPDATE_ZIP_PATH $env:EXE_PATH $env:EXE_HASH_PATH `
               --repo $env:GITHUB_REPOSITORY `
               --target $env:GITHUB_SHA `
-              --title "EmulationStation Suite v1.0.0 - Windows x64 (teste)" `
+              --title "EmulationStation Suite v1.0.1 - EXE unico Windows x64 (teste)" `
               --notes-file $notes --prerelease --latest=false
           }
           if ($LASTEXITCODE -ne 0) {

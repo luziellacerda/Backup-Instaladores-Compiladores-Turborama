@@ -1,5 +1,9 @@
 # Acesso do EmulationStation pela ativação do TurboRama Suite
 
+Desde a edição **1.0.1**, o módulo é embutido no `emulationstation.exe`.
+Leia também `../docs/SUITE-EDITION-v1.0.1.md`. A lógica gerenciada de licença,
+identidade, cache e servidor permanece igual à edição 1.0.0.
+
 Este componente pertence à nova edição do EmulationStation baseada no cliente sem
 serviços. Reutiliza a licença e a identidade CNG que o TurboRama Suite já ativou
 no computador. O servidor confirma a autorização a cada abertura e a renova
@@ -69,10 +73,13 @@ ativação ou chave privada. Todo conteúdo lido continua sujeito ao servidor.
 
 ## Ponte com o executável nativo
 
-O executável nativo verifica o SHA-256 aprovado de
-`TurboRama.Suite.Access.exe` antes de iniciá-lo pelo caminho absoluto, com
-ambiente controlado, diretório privado de extração do runtime e pipes anônimos
-herdados. O helper permanece ativo enquanto o EmulationStation precisa da sessão.
+O executável nativo verifica o SHA-256 aprovado do módulo embutido em RCDATA 31001,
+extrai-o com CREATE_NEW em um diretório aleatório privado e mantém o arquivo
+bloqueado contra escrita/exclusão depois de conferir hash e identidade.
+Inicia esse arquivo pelo caminho absoluto, com ambiente controlado, diretório
+privado de extração do runtime e pipes anônimos herdados. O helper permanece
+ativo enquanto o EmulationStation precisa da sessão. Um helper adjacente antigo
+é ignorado, não executado e não removido. A chave CNG não está embutida no EXE.
 
 O protocolo usa ASCII/UTF-8 sem BOM e LF literal:
 
@@ -100,10 +107,14 @@ pwsh -File suite-licensing/Build.ps1
 O script executa primeiro o projeto `tests/Verifier.csproj`. Depois publica um
 helper win-x64 autocontido em `suite-licensing/publish/TurboRama.Suite.Access.exe`
 e o hash em `TurboRama.Suite.Access.exe.sha256`. O binário e o hash devem ser
-passados à configuração CMake da edição Suite. O cliente não instala .NET.
+passados à configuração CMake da edição Suite, usando os parâmetros
+`TURBORAMA_SUITE_HELPER_PATH` (caminho absoluto) e `TURBORAMA_SUITE_HELPER_SHA256`.
+O módulo é incorporado ao EXE, não copiado para o pacote final. O cliente não instala .NET.
 Uma alteração no helper exige recompilar o ES para atualizar o hash embutido.
 
-`--probe-identity` é um diagnóstico somente de leitura: retorna
+No frontend, `--suite-access-probe-identity` executa o diagnóstico embutido e
+retorna 0/21, ou 44 se houver falha de integridade, extração ou processo.
+No módulo de compilação, `--probe-identity` é um diagnóstico somente de leitura: retorna
 `EXISTING_IDENTITY_AVAILABLE` e código 0 quando a chave existente atende à
 política, ou `EXISTING_IDENTITY_UNAVAILABLE` e código 21. Não revela
 identificadores, não assina, não usa a rede e não modifica a identidade.

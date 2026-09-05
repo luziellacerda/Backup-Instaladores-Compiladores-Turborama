@@ -15,6 +15,9 @@ public:
 	void stop();
 	static bool runSelfTest();
 	static bool verifyHelperIntegrity();
+	// Local diagnostic only: 0 = existing Suite identity, 21 = unavailable,
+	// 44 = embedded payload/extraction/process failure. Never activates/signs.
+	static int probeIdentity();
 
 	SuiteAccessGate(const SuiteAccessGate&) = delete;
 	SuiteAccessGate& operator=(const SuiteAccessGate&) = delete;

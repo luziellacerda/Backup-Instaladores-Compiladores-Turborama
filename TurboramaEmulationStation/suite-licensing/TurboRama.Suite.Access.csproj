@@ -8,9 +8,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>TurboRama.Suite.Access</AssemblyName>
     <RootNamespace>TurboRama.EmulationStation.Access</RootNamespace>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.1</Version>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <FileVersion>1.0.1.0</FileVersion>
     <Product>TurboRama EmulationStation Suite</Product>
     <Company>TurboRama</Company>
     <Description>Validação online da ativação existente do TurboRama Suite.</Description>

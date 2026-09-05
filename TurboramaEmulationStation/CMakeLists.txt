@@ -25,7 +25,9 @@ option(TURBORAMA_ENABLE_COMMERCIAL_SERVICES
 option(TURBORAMA_REQUIRE_SUITE_LICENSE
 	"Require the existing TurboRama Suite activation for this Windows client edition" ON)
 set(TURBORAMA_SUITE_HELPER_SHA256 "" CACHE STRING
-	"Build-time SHA-256 of the self-contained TurboRama.Suite.Access.exe shipped with this edition")
+	"Build-time SHA-256 of the self-contained TurboRama.Suite.Access.exe embedded in this edition")
+set(TURBORAMA_SUITE_HELPER_PATH "" CACHE FILEPATH
+	"Absolute path to the self-contained TurboRama.Suite.Access.exe to embed in emulationstation.exe")
 if(TURBORAMA_REQUIRE_SUITE_LICENSE)
 	if(NOT WIN32)
 		message(FATAL_ERROR "The Suite-activated client edition requires Windows")
@@ -38,9 +40,22 @@ if(TURBORAMA_REQUIRE_SUITE_LICENSE)
 		NOT TURBORAMA_SUITE_HELPER_SHA256 MATCHES "^[0-9A-Fa-f]+$")
 		message(FATAL_ERROR "Build the Suite access helper first and supply its exact SHA-256 via TURBORAMA_SUITE_HELPER_SHA256")
 	endif()
-	message(STATUS "TurboRama edition: SUITE ATIVADO 1.0.0 (EmulationStation 42)")
-elseif(NOT "${TURBORAMA_SUITE_HELPER_SHA256}" STREQUAL "")
-	message(FATAL_ERROR "A Suite helper pin cannot be supplied with Suite licensing disabled")
+	if(NOT IS_ABSOLUTE "${TURBORAMA_SUITE_HELPER_PATH}" OR
+		NOT EXISTS "${TURBORAMA_SUITE_HELPER_PATH}" OR
+		IS_DIRECTORY "${TURBORAMA_SUITE_HELPER_PATH}")
+		message(FATAL_ERROR "TURBORAMA_SUITE_HELPER_PATH must identify the existing helper by absolute path")
+	endif()
+	file(SHA256 "${TURBORAMA_SUITE_HELPER_PATH}" TURBORAMA_SUITE_ACTUAL_DIGEST)
+	string(TOLOWER "${TURBORAMA_SUITE_HELPER_SHA256}" TURBORAMA_SUITE_HELPER_SHA256)
+	if(NOT "${TURBORAMA_SUITE_ACTUAL_DIGEST}" STREQUAL "${TURBORAMA_SUITE_HELPER_SHA256}")
+		message(FATAL_ERROR "The Suite helper does not match TURBORAMA_SUITE_HELPER_SHA256")
+	endif()
+	# Reconfigure and verify the digest when the input payload changes.
+	set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${TURBORAMA_SUITE_HELPER_PATH}")
+	message(STATUS "TurboRama edition: SUITE ATIVADO 1.0.1 (EmulationStation 42; embedded access)")
+elseif(NOT "${TURBORAMA_SUITE_HELPER_SHA256}" STREQUAL "" OR
+	NOT "${TURBORAMA_SUITE_HELPER_PATH}" STREQUAL "")
+	message(FATAL_ERROR "A Suite helper cannot be supplied with Suite licensing disabled")
 endif()
 
 if(NOT TURBORAMA_ENABLE_COMMERCIAL_SERVICES)

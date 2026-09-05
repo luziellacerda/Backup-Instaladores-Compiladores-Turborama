@@ -1,5 +1,8 @@
 # TurboRama EmulationStation — Suite Edition 1.0.0
 
+Documento histórico da entrega em dois executáveis. Para a atualização com
+módulo embutido e EXE único, consulte `SUITE-EDITION-v1.0.1.md`.
+
 Nova edição Windows x64 que abre usando uma licença já ativada pelo TurboRama Suite no mesmo usuário do Windows. A identidade criptográfica é a mesma; a sessão de execução do EmulationStation é separada para permitir usar os dois programas juntos.
 
 ## Origem e escopo

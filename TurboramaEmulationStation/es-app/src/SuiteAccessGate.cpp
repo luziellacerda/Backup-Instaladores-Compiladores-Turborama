@@ -13,6 +13,7 @@
 #include <sddl.h>
 #include <ShlObj.h>
 #include "SuiteAccessGate.h"
+#include "SuiteAccessResource.h"
 
 #include <array>
 #include <algorithm>
@@ -27,6 +28,8 @@ namespace
 	constexpr DWORD LoginTimeoutMs = 300000;
 	constexpr DWORD ReplyTimeoutMs = 3000;
 	constexpr DWORD PollIntervalMs = 1000;
+	constexpr DWORD ProbeTimeoutMs = 30000;
+	constexpr DWORD IoChunkBytes = 1024 * 1024;
 	constexpr long long MaximumProofAgeMs = 4000;
 	constexpr char HelperDigest[] = TURBORAMA_SUITE_HELPER_SHA256;
 	constexpr wchar_t HelperName[] = L"TurboRama.Suite.Access.exe";
@@ -116,16 +119,35 @@ namespace
 		std::vector<unsigned char> mObject;
 	};
 
-	bool helperPath(std::wstring& path, std::wstring& directory)
+	struct EmbeddedHelper
 	{
-		std::vector<wchar_t> buffer(32768);
-		const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-		if (length == 0 || length >= buffer.size()) return false;
-		path.assign(buffer.data(), length);
-		const auto slash = path.find_last_of(L"\\/");
-		if (slash == std::wstring::npos) return false;
-		directory = path.substr(0, slash);
-		path = directory + L"\\" + HelperName;
+		const unsigned char* bytes = nullptr;
+		DWORD size = 0;
+	};
+
+	bool verifiedEmbeddedHelper(EmbeddedHelper& payload)
+	{
+		const HMODULE module = GetModuleHandleW(nullptr);
+		const HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(TURBORAMA_SUITE_ACCESS_RESOURCE_ID),
+			MAKEINTRESOURCEW(10)); // RT_RCDATA, independent of the build's UNICODE setting.
+		if (!resource) return false;
+		const DWORD size = SizeofResource(module, resource);
+		const HGLOBAL loaded = LoadResource(module, resource);
+		const auto* bytes = static_cast<const unsigned char*>(loaded ? LockResource(loaded) : nullptr);
+		if (!bytes || size < 64 || size > 512u * 1024u * 1024u) return false;
+		// Hash the mapped resource directly; do not duplicate the bundled runtime
+		// in a large heap buffer while the frontend's embedded theme is mapped.
+		Sha256 hash;
+		for (DWORD offset = 0; offset < size;)
+		{
+			const DWORD count = std::min(IoChunkBytes, size - offset);
+			if (!hash.append(bytes + offset, count)) return false;
+			offset += count;
+		}
+		std::array<unsigned char, 32> digest{};
+		if (!hash.finish(digest.data()) || !digestMatches(digest.data(), HelperDigest)) return false;
+		payload.bytes = bytes;
+		payload.size = size;
 		return true;
 	}
 
@@ -134,11 +156,12 @@ namespace
 		// Holding this handle with read-only sharing prevents in-place writes,
 		// replacement and deletion until the licensing process has stopped.
 		file.reset(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
-			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
+			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
 		if (!file.valid()) return false;
 		BY_HANDLE_FILE_INFORMATION info{};
 		if (!GetFileInformationByHandle(file.get(), &info) ||
-			(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) return false;
+			(info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0 ||
+			info.nNumberOfLinks != 1) return false;
 		Sha256 hash;
 		std::vector<unsigned char> buffer(1024 * 1024);
 		for (;;)
@@ -159,6 +182,40 @@ namespace
 		return GetFileInformationByHandle(first, &a) && GetFileInformationByHandle(second, &b) &&
 			a.dwVolumeSerialNumber == b.dwVolumeSerialNumber &&
 			a.nFileIndexHigh == b.nFileIndexHigh && a.nFileIndexLow == b.nFileIndexLow;
+	}
+
+	bool extractEmbeddedHelper(const EmbeddedHelper& payload, const std::wstring& directory,
+		std::wstring& path, Handle& lockedFile)
+	{
+		path = directory + L"\\" + HelperName;
+		// The root is freshly generated and held against rename/reparse changes.
+		// CREATE_NEW never adopts an older executable, link, or reparse entry.
+		Handle writer(CreateFileW(path.c_str(), GENERIC_WRITE | FILE_READ_ATTRIBUTES, 0, nullptr,
+			CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+		if (!writer.valid()) return false;
+		BY_HANDLE_FILE_INFORMATION created{};
+		if (!GetFileInformationByHandle(writer.get(), &created) ||
+			(created.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0 ||
+			created.nNumberOfLinks != 1) return false;
+		for (DWORD offset = 0; offset < payload.size;)
+		{
+			const DWORD count = std::min(IoChunkBytes, payload.size - offset);
+			DWORD written = 0;
+			if (!WriteFile(writer.get(), payload.bytes + offset, count, &written, nullptr) || written != count)
+				return false;
+			offset += written;
+		}
+		if (!FlushFileBuffers(writer.get())) return false;
+		// A writable handle would prevent the Windows image loader from opening
+		// the file. Reopen read-only, compare object identity, then hash while the
+		// final handle denies all writers/deleters for the complete child lifetime.
+		writer.reset();
+		if (!lockAndVerifyHelper(path, lockedFile)) return false;
+		BY_HANDLE_FILE_INFORMATION final{};
+		return GetFileInformationByHandle(lockedFile.get(), &final) &&
+			created.dwVolumeSerialNumber == final.dwVolumeSerialNumber &&
+			created.nFileIndexHigh == final.nFileIndexHigh && created.nFileIndexLow == final.nFileIndexLow &&
+			final.nFileSizeHigh == 0 && final.nFileSizeLow == payload.size;
 	}
 
 	bool makePipe(Handle& readEnd, Handle& writeEnd, bool childReads)
@@ -260,12 +317,13 @@ namespace
 		}
 		LocalFree(descriptor);
 		if (!created) return false;
-		lock.reset(CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+		lock.reset(CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
 			nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
 		if (!lock.valid()) return false;
 		BY_HANDLE_FILE_INFORMATION info{};
 		return GetFileInformationByHandle(lock.get(), &info) &&
-			(info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
+			(info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0 &&
+			(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 	}
 
 	bool buildChildEnvironment(std::vector<wchar_t>& block, std::wstring& extractionPath, Handle& extractionLock)
@@ -314,12 +372,76 @@ namespace
 
 struct SuiteAccessGate::State
 {
-	Handle helperFile, helperDirectory, extractionDirectory, process, job, input, output, stopEvent;
-	std::wstring extractionPath;
+	Handle helperFile, extractionDirectory, process, job, input, output, stopEvent;
+	std::wstring extractionPath, helperPath;
+	std::vector<wchar_t> childEnvironment;
 	std::atomic<bool> revoked{ true };
 	std::atomic<long long> lastProof{ 0 };
 	std::thread monitor;
 	bool started = false;
+	~State() { close(); }
+
+	bool prepare()
+	{
+		EmbeddedHelper payload;
+		return verifiedEmbeddedHelper(payload) &&
+			buildChildEnvironment(childEnvironment, extractionPath, extractionDirectory) &&
+			extractEmbeddedHelper(payload, extractionPath, helperPath, helperFile);
+	}
+
+	bool launch(const wchar_t* argument)
+	{
+		Handle childInput, childOutput, childError, childThread;
+		if (!makePipe(childInput, input, true) || !makePipe(output, childOutput, false)) return false;
+		SECURITY_ATTRIBUTES security{ sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
+		childError.reset(CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+			&security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+		stopEvent.reset(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+		job.reset(CreateJobObjectW(nullptr, nullptr));
+		if (!childError.valid() || !stopEvent.valid() || !job.valid()) return false;
+		JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+		limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+		if (!SetInformationJobObject(job.get(), JobObjectExtendedLimitInformation, &limits, sizeof(limits)))
+			return false;
+
+		SIZE_T attributeSize = 0;
+		InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeSize);
+		if (attributeSize == 0) return false;
+		std::vector<unsigned char> attributes(attributeSize);
+		STARTUPINFOEXW startup{};
+		startup.StartupInfo.cb = sizeof(startup);
+		startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+		startup.StartupInfo.hStdInput = childInput.get();
+		startup.StartupInfo.hStdOutput = childOutput.get();
+		startup.StartupInfo.hStdError = childError.get();
+		startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributes.data());
+		if (!InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &attributeSize)) return false;
+		HANDLE inherited[] = { childInput.get(), childOutput.get(), childError.get() };
+		const bool attributesReady = UpdateProcThreadAttribute(startup.lpAttributeList, 0,
+			PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr) != FALSE;
+		std::wstring command = L"\"" + helperPath + L"\" " + argument;
+		PROCESS_INFORMATION child{};
+		const bool created = attributesReady && CreateProcessW(helperPath.c_str(), command.data(), nullptr, nullptr,
+			TRUE, CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
+			childEnvironment.data(), extractionPath.c_str(), &startup.StartupInfo, &child) != FALSE;
+		DeleteProcThreadAttributeList(startup.lpAttributeList);
+		if (!created) return false;
+		process.reset(child.hProcess);
+		childThread.reset(child.hThread);
+		if (!AssignProcessToJobObject(job.get(), child.hProcess))
+		{
+			// A suspended process not assigned to our job must also be reclaimed.
+			TerminateProcess(child.hProcess, 44);
+			return false;
+		}
+		std::vector<wchar_t> imagePath(32768);
+		DWORD imageLength = static_cast<DWORD>(imagePath.size());
+		if (!QueryFullProcessImageNameW(child.hProcess, 0, imagePath.data(), &imageLength)) return false;
+		Handle loadedImage(CreateFileW(imagePath.data(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+		if (!loadedImage.valid() || !sameFile(helperFile.get(), loadedImage.get())) return false;
+		return ResumeThread(childThread.get()) != static_cast<DWORD>(-1);
+	}
 
 	bool readReply(const char* expected, DWORD timeout, long long& receivedAt)
 	{
@@ -381,10 +503,11 @@ struct SuiteAccessGate::State
 		process.reset();
 		output.reset();
 		helperFile.reset();
-		helperDirectory.reset();
 		extractionDirectory.reset();
 		if (!extractionPath.empty()) removePrivateRuntime(extractionPath);
 		extractionPath.clear();
+		helperPath.clear();
+		childEnvironment.clear();
 		stopEvent.reset();
 	}
 };
@@ -402,76 +525,13 @@ bool SuiteAccessGate::start(std::string& error)
 	error = "Nao foi possivel validar a ativacao do TurboRama Suite. Abra o Suite nesta conta do Windows e tente novamente.";
 	if (mState->started) return false;
 	mState->started = true;
-	std::wstring path, directory;
-	if (!helperPath(path, directory)) return false;
-	mState->helperDirectory.reset(CreateFileW(directory.c_str(), FILE_READ_ATTRIBUTES,
-		FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
-	if (!mState->helperDirectory.valid() || !lockAndVerifyHelper(path, mState->helperFile))
-	{
-		error = "O componente de acesso do TurboRama Suite esta ausente ou foi alterado. Reinstale o pacote completo desta versao.";
-		mState->close();
-		return false;
-	}
-
-	Handle childInput, childOutput, childError, childThread;
 	auto fail = [&]() { mState->close(); return false; };
-	std::vector<wchar_t> childEnvironment;
-	if (!buildChildEnvironment(childEnvironment, mState->extractionPath, mState->extractionDirectory))
-		return fail();
-	if (!makePipe(childInput, mState->input, true) || !makePipe(mState->output, childOutput, false))
-		return fail();
-	SECURITY_ATTRIBUTES security{ sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
-	childError.reset(CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-		&security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
-	mState->stopEvent.reset(CreateEventW(nullptr, TRUE, FALSE, nullptr));
-	mState->job.reset(CreateJobObjectW(nullptr, nullptr));
-	if (!childError.valid() || !mState->stopEvent.valid() || !mState->job.valid()) return fail();
-	JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-	limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-	if (!SetInformationJobObject(mState->job.get(), JobObjectExtendedLimitInformation, &limits, sizeof(limits)))
-		return fail();
-
-	SIZE_T attributeSize = 0;
-	InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeSize);
-	if (attributeSize == 0) return fail();
-	std::vector<unsigned char> attributes(attributeSize);
-	STARTUPINFOEXW startup{};
-	startup.StartupInfo.cb = sizeof(startup);
-	startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-	startup.StartupInfo.hStdInput = childInput.get();
-	startup.StartupInfo.hStdOutput = childOutput.get();
-	startup.StartupInfo.hStdError = childError.get();
-	startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributes.data());
-	if (!InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &attributeSize)) return fail();
-	HANDLE inherited[] = { childInput.get(), childOutput.get(), childError.get() };
-	const bool attributesReady = UpdateProcThreadAttribute(startup.lpAttributeList, 0,
-		PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr) != FALSE;
-	std::wstring command = L"\"" + path + L"\" --bridge";
-	PROCESS_INFORMATION child{};
-	const bool created = attributesReady && CreateProcessW(path.c_str(), command.data(), nullptr, nullptr,
-		TRUE, CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
-		childEnvironment.data(), directory.c_str(), &startup.StartupInfo, &child) != FALSE;
-	DeleteProcThreadAttributeList(startup.lpAttributeList);
-	if (!created) return fail();
-	mState->process.reset(child.hProcess);
-	childThread.reset(child.hThread);
-	if (!AssignProcessToJobObject(mState->job.get(), child.hProcess))
+	if (!mState->prepare())
 	{
-		// A suspended process not assigned to our job must also be reclaimed.
-		TerminateProcess(child.hProcess, 44);
+		error = "Nao foi possivel preparar o acesso integrado do TurboRama Suite. Verifique o arquivo emulationstation.exe e o acesso a esta conta do Windows.";
 		return fail();
 	}
-	std::vector<wchar_t> imagePath(32768);
-	DWORD imageLength = static_cast<DWORD>(imagePath.size());
-	if (!QueryFullProcessImageNameW(child.hProcess, 0, imagePath.data(), &imageLength)) return fail();
-	Handle loadedImage(CreateFileW(imagePath.data(), GENERIC_READ, FILE_SHARE_READ, nullptr,
-		OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
-	if (!loadedImage.valid() || !sameFile(mState->helperFile.get(), loadedImage.get())) return fail();
-	if (ResumeThread(childThread.get()) == static_cast<DWORD>(-1)) return fail();
-	childInput.reset();
-	childOutput.reset();
-	childError.reset();
-	childThread.reset();
+	if (!mState->launch(L"--bridge")) return fail();
 	long long receivedAt = 0;
 	if (!mState->readReply("READY\n", LoginTimeoutMs, receivedAt) || !fresh(nowMs(), receivedAt)) return fail();
 	mState->lastProof.store(receivedAt);
@@ -499,9 +559,32 @@ void SuiteAccessGate::stop() { mState->close(); }
 
 bool SuiteAccessGate::verifyHelperIntegrity()
 {
-	std::wstring path, directory;
-	Handle file;
-	return helperPath(path, directory) && lockAndVerifyHelper(path, file);
+	State test;
+	if (!test.prepare()) return false;
+	// The extracted image must remain immutable until the child stops.
+	Handle writer(CreateFileW(test.helperPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+		nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+	if (writer.valid()) return false;
+	Handle deleter(CreateFileW(test.helperPath.c_str(), DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+	return !deleter.valid();
+}
+
+int SuiteAccessGate::probeIdentity()
+{
+	State test;
+	if (!test.prepare() || !test.launch(L"--probe-identity")) return 44;
+	if (WaitForSingleObject(test.process.get(), ProbeTimeoutMs) != WAIT_OBJECT_0) return 44;
+	DWORD code = 44;
+	if (!GetExitCodeProcess(test.process.get(), &code) || (code != 0 && code != 21)) return 44;
+	const char* expected = code == 0 ? "EXISTING_IDENTITY_AVAILABLE\n" : "EXISTING_IDENTITY_UNAVAILABLE\n";
+	std::array<char, 64> reply{};
+	DWORD available = 0, read = 0;
+	if (!PeekNamedPipe(test.output.get(), nullptr, 0, nullptr, &available, nullptr) ||
+		available != std::strlen(expected) || available > reply.size() ||
+		!ReadFile(test.output.get(), reply.data(), available, &read, nullptr) ||
+		!exactReply(reply.data(), read, expected)) return 44;
+	return static_cast<int>(code);
 }
 
 bool SuiteAccessGate::runSelfTest()

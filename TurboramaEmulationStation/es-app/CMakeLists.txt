@@ -276,8 +276,20 @@ endif()
 #-------------------------------------------------------------------------------
 # define OS specific sources and headers
 if(TURBORAMA_REQUIRE_SUITE_LICENSE)
-	list(APPEND ES_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteAccessGate.h)
-	list(APPEND ES_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteAccessGate.cpp)
+	# Resource compiler uses forward slashes and a quoted absolute input path.
+	file(TO_CMAKE_PATH "${TURBORAMA_SUITE_HELPER_PATH}" TURBORAMA_SUITE_HELPER_RESOURCE_PATH)
+	if(TURBORAMA_SUITE_HELPER_RESOURCE_PATH MATCHES "[\"\r\n]")
+		message(FATAL_ERROR "The Suite helper path contains characters unsupported by Windows resources")
+	endif()
+	set(TURBORAMA_SUITE_RESOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/SuiteAccessResource.rc")
+	configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteAccessResource.rc.in"
+		"${TURBORAMA_SUITE_RESOURCE}" @ONLY)
+	set_source_files_properties("${TURBORAMA_SUITE_RESOURCE}" PROPERTIES
+		OBJECT_DEPENDS "${TURBORAMA_SUITE_HELPER_PATH}")
+	list(APPEND ES_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteAccessGate.h
+		${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteAccessResource.h)
+	list(APPEND ES_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteAccessGate.cpp
+		"${TURBORAMA_SUITE_RESOURCE}")
 endif()
 
 if(MSVC)
