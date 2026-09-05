@@ -1,0 +1,412 @@
+{
+  "date": "2026-09-05",
+  "repository": "luziellacerda/Backup-Instaladores-Compiladores-Turborama",
+  "scopes": [
+    {
+      "from": "6f6b8b8372610fc2abe1e137d99a48c3ec52412e",
+      "files": [
+        {
+          "scope": "00-memoria",
+          "file": "TurboramaEmulationStation/es-app/src/FileData.cpp",
+          "name": "00-memoria-01-FileData-cpp.md",
+          "hunks": 9,
+          "add": 99,
+          "del": 22,
+          "chapter": "02A-MEMORIA-E-VIDEOS.md"
+        },
+        {
+          "scope": "00-memoria",
+          "file": "TurboramaEmulationStation/es-app/src/FileData.h",
+          "name": "00-memoria-02-FileData-h.md",
+          "hunks": 5,
+          "add": 16,
+          "del": 3,
+          "chapter": "02A-MEMORIA-E-VIDEOS.md"
+        },
+        {
+          "scope": "00-memoria",
+          "file": "TurboramaEmulationStation/es-app/src/views/SystemView.cpp",
+          "name": "00-memoria-03-SystemView-cpp.md",
+          "hunks": 19,
+          "add": 211,
+          "del": 23,
+          "chapter": "02A-MEMORIA-E-VIDEOS.md"
+        },
+        {
+          "scope": "00-memoria",
+          "file": "TurboramaEmulationStation/es-app/src/views/SystemView.h",
+          "name": "00-memoria-04-SystemView-h.md",
+          "hunks": 2,
+          "add": 8,
+          "del": 0,
+          "chapter": "02A-MEMORIA-E-VIDEOS.md"
+        },
+        {
+          "scope": "00-memoria",
+          "file": "TurboramaEmulationStation/es-core/src/Settings.cpp",
+          "name": "00-memoria-05-Settings-cpp.md",
+          "hunks": 1,
+          "add": 15,
+          "del": 6,
+          "chapter": "02A-MEMORIA-E-VIDEOS.md"
+        },
+        {
+          "scope": "00-memoria",
+          "file": "TurboramaEmulationStation/es-core/src/components/CarouselComponent.cpp",
+          "name": "00-memoria-06-CarouselComponent-cpp.md",
+          "hunks": 15,
+          "add": 223,
+          "del": 35,
+          "chapter": "02A-MEMORIA-E-VIDEOS.md"
+        },
+        {
+          "scope": "00-memoria",
+          "file": "TurboramaEmulationStation/es-core/src/components/CarouselComponent.h",
+          "name": "00-memoria-07-CarouselComponent-h.md",
+          "hunks": 3,
+          "add": 8,
+          "del": 1,
+          "chapter": "02A-MEMORIA-E-VIDEOS.md"
+        },
+        {
+          "scope": "00-memoria",
+          "file": "TurboramaEmulationStation/es-core/src/components/VideoVlcComponent.cpp",
+          "name": "00-memoria-08-VideoVlcComponent-cpp.md",
+          "hunks": 22,
+          "add": 1039,
+          "del": 362,
+          "chapter": "02A-MEMORIA-E-VIDEOS.md"
+        },
+        {
+          "scope": "00-memoria",
+          "file": "TurboramaEmulationStation/es-core/src/components/VideoVlcComponent.h",
+          "name": "00-memoria-09-VideoVlcComponent-h.md",
+          "hunks": 10,
+          "add": 53,
+          "del": 4,
+          "chapter": "02A-MEMORIA-E-VIDEOS.md"
+        }
+      ],
+      "id": "00-memoria",
+      "to": "0e02780b761cb488c591416d2986130efcc166dd"
+    },
+    {
+      "from": "0e02780b761cb488c591416d2986130efcc166dd",
+      "files": [
+        {
+          "scope": "01-base",
+          "file": ".github/workflows/compilar-emulationstation-windows.yml",
+          "name": "01-base-01-compilar-emulationstation-windows-yml.md",
+          "hunks": 1,
+          "add": 387,
+          "del": 0,
+          "chapter": "02-ARQUITETURA-E-INICIALIZACAO.md"
+        },
+        {
+          "scope": "01-base",
+          "file": "TurboramaEmulationStation/es-app/src/main.cpp",
+          "name": "01-base-02-main-cpp.md",
+          "hunks": 4,
+          "add": 26,
+          "del": 7,
+          "chapter": "02-ARQUITETURA-E-INICIALIZACAO.md"
+        },
+        {
+          "scope": "01-base",
+          "file": "TurboramaEmulationStation/es-core/src/EmbeddedTheme.cpp",
+          "name": "01-base-03-EmbeddedTheme-cpp.md",
+          "hunks": 11,
+          "add": 482,
+          "del": 100,
+          "chapter": "02-ARQUITETURA-E-INICIALIZACAO.md"
+        },
+        {
+          "scope": "01-base",
+          "file": "TurboramaEmulationStation/es-core/src/EmbeddedTheme.h",
+          "name": "01-base-04-EmbeddedTheme-h.md",
+          "hunks": 2,
+          "add": 5,
+          "del": 2,
+          "chapter": "02-ARQUITETURA-E-INICIALIZACAO.md"
+        },
+        {
+          "scope": "01-base",
+          "file": "TurboramaEmulationStation/es-core/src/resources/ResourceManager.cpp",
+          "name": "01-base-05-ResourceManager-cpp.md",
+          "hunks": 2,
+          "add": 10,
+          "del": 6,
+          "chapter": "02-ARQUITETURA-E-INICIALIZACAO.md"
+        },
+        {
+          "scope": "01-base",
+          "file": "TurboramaEmulationStation/es-core/src/resources/ResourceManager.h",
+          "name": "01-base-06-ResourceManager-h.md",
+          "hunks": 2,
+          "add": 1,
+          "del": 2,
+          "chapter": "02-ARQUITETURA-E-INICIALIZACAO.md"
+        },
+        {
+          "scope": "01-base",
+          "file": "TurboramaEmulationStation/tools/tests/Test-EmbeddedThemeBuild.ps1",
+          "name": "01-base-07-Test-EmbeddedThemeBuild-ps1.md",
+          "hunks": 2,
+          "add": 30,
+          "del": 6,
+          "chapter": "02-ARQUITETURA-E-INICIALIZACAO.md"
+        }
+      ],
+      "id": "01-base",
+      "to": "76b214874973fe24017823401216896f3d7a6f40"
+    },
+    {
+      "from": "76b214874973fe24017823401216896f3d7a6f40",
+      "files": [
+        {
+          "scope": "02-cliente",
+          "file": ".github/workflows/compilar-cliente-sem-servicos-windows.yml",
+          "name": "02-cliente-01-compilar-cliente-sem-servicos-windows-yml.md",
+          "hunks": 1,
+          "add": 406,
+          "del": 0,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/CMakeLists.txt",
+          "name": "02-cliente-02-CMakeLists-txt.md",
+          "hunks": 3,
+          "add": 26,
+          "del": 1,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/COMPILAR-WINDOWS.bat",
+          "name": "02-cliente-03-COMPILAR-WINDOWS-bat.md",
+          "hunks": 2,
+          "add": 3,
+          "del": 3,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/es-app/CMakeLists.txt",
+          "name": "02-cliente-04-CMakeLists-txt.md",
+          "hunks": 5,
+          "add": 31,
+          "del": 17,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/es-app/src/FileData.cpp",
+          "name": "02-cliente-05-FileData-cpp.md",
+          "hunks": 11,
+          "add": 18,
+          "del": 2,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/es-app/src/MainMenuAuth.cpp",
+          "name": "02-cliente-06-MainMenuAuth-cpp.md",
+          "hunks": 1,
+          "add": 652,
+          "del": 0,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/es-app/src/MainMenuAuth.h",
+          "name": "02-cliente-07-MainMenuAuth-h.md",
+          "hunks": 1,
+          "add": 20,
+          "del": 0,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/es-app/src/guis/GuiMenu.cpp",
+          "name": "02-cliente-08-GuiMenu-cpp.md",
+          "hunks": 10,
+          "add": 198,
+          "del": 36,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/es-app/src/guis/GuiMenu.h",
+          "name": "02-cliente-09-GuiMenu-h.md",
+          "hunks": 2,
+          "add": 14,
+          "del": 0,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/es-app/src/main.cpp",
+          "name": "02-cliente-10-main-cpp.md",
+          "hunks": 10,
+          "add": 68,
+          "del": 2,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/es-app/src/views/SystemView.cpp",
+          "name": "02-cliente-11-SystemView-cpp.md",
+          "hunks": 9,
+          "add": 14,
+          "del": 0,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/es-app/src/views/SystemView.h",
+          "name": "02-cliente-12-SystemView-h.md",
+          "hunks": 4,
+          "add": 6,
+          "del": 0,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/es-app/src/views/ViewController.cpp",
+          "name": "02-cliente-13-ViewController-cpp.md",
+          "hunks": 8,
+          "add": 12,
+          "del": 0,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/es-app/src/views/ViewController.h",
+          "name": "02-cliente-14-ViewController-h.md",
+          "hunks": 1,
+          "add": 2,
+          "del": 0,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/tools/compilar.ps1",
+          "name": "02-cliente-15-compilar-ps1.md",
+          "hunks": 1,
+          "add": 3,
+          "del": 1,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        },
+        {
+          "scope": "02-cliente",
+          "file": "TurboramaEmulationStation/tools/tests/Test-NoCommercialServicesBuild.ps1",
+          "name": "02-cliente-16-Test-NoCommercialServicesBuild-ps1.md",
+          "hunks": 1,
+          "add": 328,
+          "del": 0,
+          "chapter": "03-VERSAO-SEM-SERVICOS.md"
+        }
+      ],
+      "id": "02-cliente",
+      "to": "947dad45f5e9cd556cce6f15045a5dd6119bdf95"
+    },
+    {
+      "from": "76b214874973fe24017823401216896f3d7a6f40",
+      "files": [
+        {
+          "scope": "03-pix",
+          "file": ".github/workflows/compilar-emulationstation-windows.yml",
+          "name": "03-pix-01-compilar-emulationstation-windows-yml.md",
+          "hunks": 8,
+          "add": 52,
+          "del": 7,
+          "chapter": "04-VERSAO-PIX-E-AUDIO.md"
+        },
+        {
+          "scope": "03-pix",
+          "file": "TurboramaEmulationStation/CMakeLists.txt",
+          "name": "03-pix-02-CMakeLists-txt.md",
+          "hunks": 2,
+          "add": 2,
+          "del": 1,
+          "chapter": "04-VERSAO-PIX-E-AUDIO.md"
+        },
+        {
+          "scope": "03-pix",
+          "file": "TurboramaEmulationStation/es-app/src/FileData.cpp",
+          "name": "03-pix-03-FileData-cpp.md",
+          "hunks": 2,
+          "add": 7,
+          "del": 0,
+          "chapter": "04-VERSAO-PIX-E-AUDIO.md"
+        },
+        {
+          "scope": "03-pix",
+          "file": "TurboramaEmulationStation/es-core/src/components/VideoVlcComponent.cpp",
+          "name": "03-pix-04-VideoVlcComponent-cpp.md",
+          "hunks": 5,
+          "add": 25,
+          "del": 0,
+          "chapter": "04-VERSAO-PIX-E-AUDIO.md"
+        },
+        {
+          "scope": "03-pix",
+          "file": "TurboramaEmulationStation/es-core/src/components/VideoVlcComponent.h",
+          "name": "03-pix-05-VideoVlcComponent-h.md",
+          "hunks": 1,
+          "add": 1,
+          "del": 0,
+          "chapter": "04-VERSAO-PIX-E-AUDIO.md"
+        },
+        {
+          "scope": "03-pix",
+          "file": "TurboramaEmulationStation/tools/AUDIO-LEIA-ME.txt",
+          "name": "03-pix-06-AUDIO-LEIA-ME-txt.md",
+          "hunks": 1,
+          "add": 23,
+          "del": 0,
+          "chapter": "04-VERSAO-PIX-E-AUDIO.md"
+        },
+        {
+          "scope": "03-pix",
+          "file": "TurboramaEmulationStation/tools/Repair-RetroArchAudio.ps1",
+          "name": "03-pix-07-Repair-RetroArchAudio-ps1.md",
+          "hunks": 1,
+          "add": 47,
+          "del": 0,
+          "chapter": "04-VERSAO-PIX-E-AUDIO.md"
+        },
+        {
+          "scope": "03-pix",
+          "file": "TurboramaEmulationStation/tools/tests/Test-AudioHandoff.ps1",
+          "name": "03-pix-08-Test-AudioHandoff-ps1.md",
+          "hunks": 1,
+          "add": 83,
+          "del": 0,
+          "chapter": "04-VERSAO-PIX-E-AUDIO.md"
+        },
+        {
+          "scope": "03-pix",
+          "file": "TurboramaEmulationStation/tools/tests/Test-CreditManagerFailClosed.ps1",
+          "name": "03-pix-09-Test-CreditManagerFailClosed-ps1.md",
+          "hunks": 1,
+          "add": 8,
+          "del": 0,
+          "chapter": "04-VERSAO-PIX-E-AUDIO.md"
+        },
+        {
+          "scope": "03-pix",
+          "file": "TurboramaEmulationStation/tools/tests/Test-RetroArchAudioRepair.ps1",
+          "name": "03-pix-10-Test-RetroArchAudioRepair-ps1.md",
+          "hunks": 1,
+          "add": 20,
+          "del": 0,
+          "chapter": "04-VERSAO-PIX-E-AUDIO.md"
+        }
+      ],
+      "id": "03-pix",
+      "to": "476e06179f89ac209ff808dffb27555d740f93d2"
+    }
+  ]
+}
