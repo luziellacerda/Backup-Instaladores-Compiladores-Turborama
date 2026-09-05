@@ -129,8 +129,17 @@ namespace InstallerHost
 				BeginGamingReadinessScan(true);
 				return;
 			}
-			int totalSteps = GetSelectedStepCount(selection);
-			if (totalSteps <= 0)
+            int totalSteps = GetSelectedStepCount(selection);
+            int runtimeSteps = totalSteps - (selection.OpenNvidiaOfficialSource ? 1 : 0);
+            if (runtimeSteps > 0 && gamingReadinessProfile.SystemDriveFreeBytes < 2L * 1024L * 1024L * 1024L)
+            {
+                SetProgressHeaderSafe("Espaço insuficiente para preparar componentes",
+                    "Libere pelo menos 2 GB no disco do Windows e clique em Avançar novamente. Nenhum instalador foi iniciado. " +
+                    "Esta é uma reserva inicial para os componentes, não o espaço necessário para o produto completo.");
+                BeginGamingReadinessScan(true);
+                return;
+            }
+            if (totalSteps <= 0)
 			{
 				Logger.Log("No prerequisite action selected or required; continuing to Install screen.");
 				installationComplete = true;

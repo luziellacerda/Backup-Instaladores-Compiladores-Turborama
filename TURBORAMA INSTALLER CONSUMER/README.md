@@ -10,6 +10,7 @@ Boas-vindas → Licença → Pré-requisitos → Instalação → Conclusão.
 - Quando um diagnóstico atual confirma os componentes aplicáveis, a etapa de pré-requisitos pode ser dispensada, inclusive no retorno.
 - Concluir a preparação não avança sozinho: aguarda Avançar.
 - Escolhas ficam bloqueadas durante execução; mudar a seleção invalida o resultado anterior.
+- A preparação não começa se o diagnóstico indicar menos de 2 GB livres no disco do Windows; isso é uma reserva inicial, não uma garantia do espaço necessário ao produto.
 - A pasta selecionada é preservada ao voltar. Extração mantém a transação segura, não sobrescreve conteúdo existente e roda com token limitado.
 
 ## Verificação e compilação

@@ -142,6 +142,12 @@ namespace InstallerHost
                     "All regression assertions finish without any scanner or installer execution");
 
                 verify(!page.SkipIfAllInstalled(), "Unknown fixture does not skip the Prerequisites page");
+                page.chkVCpp.Checked = true;
+                page.BtnNext_Click(page, EventArgs.Empty);
+                verify(page.installerWorker == null && !page.IsInstallationRunning() &&
+                    page.progressTitleText == "Espaço insuficiente para preparar componentes",
+                    "Low system-disk space blocks runtime execution before creating a worker");
+                page.chkVCpp.Checked = false;
                 GamingReadinessProfile ready = CreateSelectionTestProfile(GamingReadinessState.Ready);
                 page.gamingReadinessProfile = ready;
                 page.gamingReadinessCapturedAtUtc = DateTime.UtcNow;
