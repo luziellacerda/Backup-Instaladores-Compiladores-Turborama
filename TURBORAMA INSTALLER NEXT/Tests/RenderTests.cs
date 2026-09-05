@@ -59,9 +59,18 @@ internal static class RenderTests
     private static void Capture(Form form, string path)
     {
         form.PerformLayout(); Application.DoEvents();
+        CheckScroll(form);
         using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
         { form.DrawToBitmap(bitmap, new Rectangle(0, 0, bitmap.Width, bitmap.Height)); bitmap.Save(path); }
         using (StreamWriter writer = new StreamWriter(path + ".layout.txt")) Dump(form, writer, 0);
+    }
+    private static void CheckScroll(Control control)
+    {
+        if (!control.Visible) return;
+        FlowLayoutPanel flow = control as FlowLayoutPanel;
+        if (flow != null && flow.HorizontalScroll.Visible)
+            throw new InvalidOperationException("Horizontal clipping in " + flow.Name + " on " + flow.Parent.GetType().Name);
+        foreach (Control child in control.Controls) CheckScroll(child);
     }
     private static void Dump(Control control, TextWriter writer, int depth)
     {

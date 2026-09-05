@@ -67,6 +67,14 @@ namespace TurboRama.Next
             };
             flow.SizeChanged += resize;
             flow.ControlAdded += delegate { resize(flow, EventArgs.Empty); };
+            bool arranging = false;
+            flow.Layout += delegate
+            {
+                if (arranging) return;
+                arranging = true;
+                try { resize(flow, EventArgs.Empty); }
+                finally { arranging = false; }
+            };
         }
     }
 

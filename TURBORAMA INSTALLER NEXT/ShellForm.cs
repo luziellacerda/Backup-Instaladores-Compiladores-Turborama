@@ -51,15 +51,17 @@ namespace TurboRama.Next
             Label badge = Ui.Label("●  LAB 01     ·     SEM INSTALAÇÃO", 9, Palette.Accent, true);
             badge.Dock = DockStyle.Fill; badge.TextAlign = ContentAlignment.MiddleRight;
             brand.Controls.Add(logo, 0, 0); brand.Controls.Add(badge, 1, 0); shell.Controls.Add(brand, 0, 0);
-            FlowLayoutPanel menu = new FlowLayoutPanel { Name = "MainNavigation", Dock = DockStyle.Fill, AutoSize = true,
-                WrapContents = true, Margin = new Padding(0, 0, 0, 18), Padding = Padding.Empty };
+            TableLayoutPanel menu = new TableLayoutPanel { Name = "MainNavigation", Dock = DockStyle.Fill, AutoSize = true,
+                ColumnCount = 4, RowCount = 1, Margin = new Padding(0, 0, 0, 18), Padding = Padding.Empty };
+            for (int column = 0; column < 4; column++) menu.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+            menu.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             string[] titles = { "01   Visão geral", "02   Diagnóstico", "03   Componentes", "04   Revisar plano" };
             for (int index = 0; index < titles.Length; index++)
             {
                 PageId target = (PageId)index;
-                ActionButton button = Ui.Button("Navigate" + target, titles[index]); button.Width = 202;
-                button.Margin = new Padding(0, 0, 12, 6);
-                button.Click += delegate { NavigateTo(target); }; menu.Controls.Add(button); navigation.Add(button);
+                ActionButton button = Ui.Button("Navigate" + target, titles[index]); button.Dock = DockStyle.Fill;
+                button.Margin = new Padding(0, 0, index == 3 ? 0 : 12, 6);
+                button.Click += delegate { NavigateTo(target); }; menu.Controls.Add(button, index, 0); navigation.Add(button);
             }
             shell.Controls.Add(menu, 0, 1);
             TableLayoutPanel stage = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
