@@ -17,6 +17,8 @@ namespace InstallerHost
         private readonly Timer glowTimer;
         private float phase;
         private readonly bool banner;
+        private Bitmap surfaceCache;
+        private Color surfaceColor;
         internal bool IsGlowRunning { get { return glowTimer.Enabled; } }
         internal static Size ArtworkSize { get { return Artwork.Value.Size; } }
         // Fit the WHOLE image, right-aligned. Never crop a part of the aircraft
@@ -86,25 +88,12 @@ namespace InstallerHost
             Graphics g = e.Graphics;
             if (!SystemInformation.HighContrast)
             {
-                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                // The brand strip stays quiet; the full photograph belongs in
-                // the welcome body, not repeated as a cropped header thumbnail.
-                if (!banner)
+                if (surfaceCache == null || surfaceCache.Size != ClientSize || surfaceColor != BackColor)
                 {
-                    Rectangle target = FitArtwork(ClientSize);
-                    using (System.Drawing.Imaging.ImageAttributes attributes = new System.Drawing.Imaging.ImageAttributes())
-                    {
-                        attributes.SetWrapMode(WrapMode.TileFlipXY);
-                        g.DrawImage(Artwork.Value, target, 0, 0, ArtworkSize.Width, ArtworkSize.Height,
-                            GraphicsUnit.Pixel, attributes);
-                    }
-                    // Feather all image edges into the page; the copy is transparent
-                    // over this continuous gradient, never on an opaque rectangle.
-                    Fade(g, new Rectangle(target.Left, target.Top, Math.Max(2, (int)(target.Width * .36f)), target.Height), 0f);
-                    Fade(g, new Rectangle(target.Left, target.Top, target.Width, Math.Max(2, (int)(target.Height * .18f))), 90f);
-                    Fade(g, new Rectangle(target.Left, target.Bottom - Math.Max(2, (int)(target.Height * .20f)), target.Width, Math.Max(2, (int)(target.Height * .20f))), 270f);
-                    Fade(g, new Rectangle(target.Right - Math.Max(2, (int)(target.Width * .06f)), target.Top, Math.Max(2, (int)(target.Width * .06f)), target.Height), 180f);
+                    if (surfaceCache != null) { surfaceCache.Dispose(); surfaceCache = null; }
+                    surfaceCache = CreateSurface(); surfaceColor = BackColor;
                 }
+                g.DrawImageUnscaled(surfaceCache, Point.Empty);
             }
             if (banner)
             {
@@ -130,6 +119,76 @@ namespace InstallerHost
             }
             base.OnPaint(e);
         }
+        private Bitmap CreateSurface()
+        {
+            // Compose the entire static background once per size. This prevents
+            // GDI+ image/gradient rounding from varying between parent and child
+            // dirty clips, and avoids resampling the photograph on every repaint.
+            Bitmap surface = new Bitmap(Width, Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            try
+            {
+                using (Graphics graphics = Graphics.FromImage(surface))
+                {
+                    graphics.Clear(BackColor);
+                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    if (!banner)
+                    {
+                        Rectangle target = FitArtwork(ClientSize);
+                        using (System.Drawing.Imaging.ImageAttributes attributes = new System.Drawing.Imaging.ImageAttributes())
+                        {
+                            attributes.SetWrapMode(WrapMode.TileFlipXY);
+                            graphics.DrawImage(Artwork.Value, target, 0, 0, ArtworkSize.Width, ArtworkSize.Height, GraphicsUnit.Pixel, attributes);
+                        }
+                        Fade(graphics, new Rectangle(target.Left, target.Top, Math.Max(2, (int)(target.Width * .36f)), target.Height), 0f);
+                        Fade(graphics, new Rectangle(target.Left, target.Top, target.Width, Math.Max(2, (int)(target.Height * .18f))), 90f);
+                        Fade(graphics, new Rectangle(target.Left, target.Bottom - Math.Max(2, (int)(target.Height * .20f)), target.Width, Math.Max(2, (int)(target.Height * .20f))), 270f);
+                        Fade(graphics, new Rectangle(target.Right - Math.Max(2, (int)(target.Width * .06f)), target.Top, Math.Max(2, (int)(target.Width * .06f)), target.Height), 180f);
+                    }
+                    DrawAmbientLight(graphics, ClientSize, banner);
+                }
+                return surface;
+            }
+            catch { surface.Dispose(); throw; }
+        }
+        // Static light behind live text. It is deliberately independent of the
+        // rail animation so transparent child controls never capture a different
+        // lighting phase and leave a rectangular seam during partial repaints.
+        internal static void DrawAmbientLight(Graphics graphics, Size size, bool bannerMode)
+        {
+            if (size.Width < 2 || size.Height < 2) return;
+            float w = size.Width, h = size.Height;
+            if (bannerMode)
+            {
+                SoftLight(graphics, new RectangleF(w * .002f, h * .015f, w * .64f, h * .87f), Palette.Violet, 72);
+                SoftLight(graphics, new RectangleF(w * .006f, h * .04f, w * .37f, h * .72f), Color.FromArgb(158, 218, 255), 40);
+                SoftLight(graphics, new RectangleF(w * .02f, h * .72f, w * .55f, h * .24f), Palette.Accent, 36);
+            }
+            else
+            {
+                SoftLight(graphics, new RectangleF(w * .004f, h * .04f, w * .49f, h * .88f), Palette.Violet, 44);
+                SoftLight(graphics, new RectangleF(w * .008f, h * .10f, w * .36f, h * .52f), Color.FromArgb(158, 218, 255), 22);
+            }
+        }
+        private static void SoftLight(Graphics graphics, RectangleF bounds, Color color, int opacity)
+        {
+            if (!graphics.IsVisible(bounds)) return;
+            GraphicsState state = graphics.Save();
+            try
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (GraphicsPath ellipse = new GraphicsPath())
+                {
+                    ellipse.AddEllipse(bounds);
+                    using (PathGradientBrush light = new PathGradientBrush(ellipse))
+                    {
+                        light.CenterColor = Color.FromArgb(opacity, color);
+                        light.SurroundColors = new[] { Color.FromArgb(0, color) };
+                        graphics.FillPath(light, ellipse);
+                    }
+                }
+            }
+            finally { graphics.Restore(state); }
+        }
         private void Fade(Graphics graphics, Rectangle bounds, float angle)
         {
             using (LinearGradientBrush brush = new LinearGradientBrush(bounds, BackColor, Color.FromArgb(0, BackColor), angle))
@@ -144,6 +203,9 @@ namespace InstallerHost
             }
         }
         protected override void Dispose(bool disposing)
-        { if (disposing) glowTimer.Dispose(); base.Dispose(disposing); }
+        {
+            if (disposing) { glowTimer.Dispose(); if (surfaceCache != null) surfaceCache.Dispose(); }
+            base.Dispose(disposing);
+        }
     }
 }
