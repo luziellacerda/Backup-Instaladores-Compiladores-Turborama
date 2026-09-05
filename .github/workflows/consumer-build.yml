@@ -35,6 +35,9 @@ jobs:
       - name: Restaurar os pacotes exatos do catalogo
         run: ./Restore-ConsumerPayloads.ps1
 
+      - name: Restaurar as fontes correspondentes dos runtimes
+        run: ./Restore-ThirdPartySources.ps1
+
       - name: Testar, compilar e verificar o EXE
         run: |
           $ErrorActionPreference = 'Stop'
@@ -53,6 +56,9 @@ jobs:
             TURBORAMA INSTALLER CONSUMER/bin/Release/InstallerHost.exe
             TURBORAMA INSTALLER CONSUMER/bin/Release/InstallerHost.exe.sha256
             TURBORAMA INSTALLER CONSUMER/bin/Release/InstallerHost-build-manifest.json
+            TURBORAMA INSTALLER CONSUMER/THIRD-PARTY-NOTICES.md
+            TURBORAMA INSTALLER CONSUMER/third-party-sources.lock.json
+            TURBORAMA INSTALLER CONSUMER/resources/third-party-sources/*.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 14

@@ -52,6 +52,7 @@
     <Compile Include="PrerequisiteDetector.cs" />
     <Compile Include="PrerequisiteDetector.Gaming.cs" />
 	<Compile Include="RuntimeVersionPolicy.cs" />
+	<Compile Include="JavaRuntimeDetector.cs" />
     <Compile Include="RuntimeInstallerHelper.cs" />
     <Compile Include="SecureProductExtraction.cs" />
     <Compile Include="SecureInstallerStaging.cs" />
@@ -71,6 +72,10 @@
     <EmbeddedResource Include="resources\art\turborama-f15-arcade-v1.png"><LogicalName>InstallerHost.resources.art.turborama-f15-arcade-v1.png</LogicalName></EmbeddedResource>
   </ItemGroup>
   <ItemGroup Condition="'$(IncludePrerequisitePayloads)' == 'true'">
+	<EmbeddedResource Include="resources\prerequisites\temurin-jre-8-x64.msi"><LogicalName>InstallerHost.resources.prerequisites.temurin-jre-8-x64.msi</LogicalName></EmbeddedResource>
+	<EmbeddedResource Include="resources\prerequisites\temurin-jre-17-x64.msi"><LogicalName>InstallerHost.resources.prerequisites.temurin-jre-17-x64.msi</LogicalName></EmbeddedResource>
+	<EmbeddedResource Include="resources\prerequisites\temurin-jre-21-x64.msi"><LogicalName>InstallerHost.resources.prerequisites.temurin-jre-21-x64.msi</LogicalName></EmbeddedResource>
+	<EmbeddedResource Include="resources\prerequisites\temurin-jre-25-x64.msi"><LogicalName>InstallerHost.resources.prerequisites.temurin-jre-25-x64.msi</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="resources\prerequisites\vc_redist.x64.exe"><LogicalName>InstallerHost.resources.prerequisites.vc_redist.x64.exe</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="resources\prerequisites\vc_redist.x86.exe"><LogicalName>InstallerHost.resources.prerequisites.vc_redist.x86.exe</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="resources\prerequisites\NDP48-x86-x64-AllOS-ENU.exe"><LogicalName>InstallerHost.resources.prerequisites.NDP48-x86-x64-AllOS-ENU.exe</LogicalName></EmbeddedResource>

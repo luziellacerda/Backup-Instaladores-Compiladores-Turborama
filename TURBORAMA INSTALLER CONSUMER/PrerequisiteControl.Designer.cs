@@ -24,6 +24,7 @@ namespace InstallerHost
             chkNvidiaApp = CreateOption("chkNvidiaApp", "Copiar link oficial do driver NVIDIA", false, 2);
             chkDokany = CreateOption("chkDokany", "Instalar Dokany — driver opcional", false, 3);
             chkwinFSP = CreateOption("chkwinFSP", "WinFsp 2026 Beta4 — opcional (teste)", false, 4);
+            chkOptionalCompatibility = CreateOption("chkOptionalCompatibility", "Compatibilidade adicional — Java 8/17/21/25 / XNA / .NET x86", false, 5);
 
             progressBar = new ProgressBar
             {
@@ -110,6 +111,8 @@ namespace InstallerHost
                 "Dokany 2.3.1: instala um driver de sistema de arquivos. Marque somente se um aplicativo exigir; pode precisar reiniciar o Windows.");
             AddOptionRow(selection, chkwinFSP,
                 "WinFsp 2.2 Beta 4: pré-lançamento oficial com correções de segurança; instala somente o núcleo do driver. Marque apenas se necessário. Pode exigir reinício.");
+            AddOptionRow(selection, chkOptionalCompatibility,
+                "Java 8, 17, 21 e 25, XNA 4.0 e .NET Desktop 10 x86 disponíveis no pacote. Instala somente os componentes ausentes ou desatualizados, por sua escolha. Não inclui emuladores nem jogos.");
             contentStack.Controls.Add(selection);
 
             progressSection = CreateSection("prerequisiteProgress");
@@ -137,6 +140,7 @@ namespace InstallerHost
             chkNvidiaApp.CheckedChanged += delegate { PrerequisiteOptionChanged(); };
             chkDokany.CheckedChanged += delegate { PrerequisiteOptionChanged(); };
             chkwinFSP.CheckedChanged += delegate { PrerequisiteOptionChanged(); };
+            chkOptionalCompatibility.CheckedChanged += delegate { PrerequisiteOptionChanged(); };
             ResumeLayout(true);
         }
 
@@ -198,6 +202,7 @@ namespace InstallerHost
         private CheckBox chkDirectX;
         private CheckBox chkDokany;
         private CheckBox chkwinFSP;
+        private CheckBox chkOptionalCompatibility;
         private Button btnCancel;
         private Button btnNext;
         private Button btnBack;

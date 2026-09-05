@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "policy": "Keep these unmodified corresponding source archives available with every distribution of the embedded Temurin runtimes. Never update a hash automatically after a mismatch.",
+  "sources": [
+    {
+      "name": "OpenJDK8U-jdk-sources_8u504b01.tar.gz",
+      "runtimeFileName": "temurin-jre-8-x64.msi",
+      "releaseId": "jdk8u504-b01",
+      "length": 94314011,
+      "sha256": "86CD14F299616DDDCA13268CC2FA794EB4D28FC732DEDAAD8C5B8A3078E5D3C9",
+      "sourceUrl": "https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u504-b01/OpenJDK8U-jdk-sources_8u504b01.tar.gz",
+      "checksumUrl": "https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u504-b01/OpenJDK8U-jdk-sources_8u504b01.tar.gz.sha256.txt"
+    },
+    {
+      "name": "OpenJDK17U-jdk-sources_17.0.20.1_1.tar.gz",
+      "runtimeFileName": "temurin-jre-17-x64.msi",
+      "releaseId": "jdk-17.0.20.1+1",
+      "length": 109272338,
+      "sha256": "21E2A065D244AB048E737F21AF5D1FC74DAAEB6707DE36477EAD8DB1DCA71214",
+      "sourceUrl": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk-sources_17.0.20.1_1.tar.gz",
+      "checksumUrl": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk-sources_17.0.20.1_1.tar.gz.sha256.txt"
+    },
+    {
+      "name": "OpenJDK21U-jdk-sources_21.0.12.1_1.tar.gz",
+      "runtimeFileName": "temurin-jre-21-x64.msi",
+      "releaseId": "jdk-21.0.12.1+1",
+      "length": 115126841,
+      "sha256": "573057D03584AE793FB7EC9A14C76D826D9187A53EFEEFD99DA47403A5308234",
+      "sourceUrl": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk-sources_21.0.12.1_1.tar.gz",
+      "checksumUrl": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk-sources_21.0.12.1_1.tar.gz.sha256.txt"
+    },
+    {
+      "name": "OpenJDK25U-jdk-sources_25.0.4.1_1.tar.gz",
+      "runtimeFileName": "temurin-jre-25-x64.msi",
+      "releaseId": "jdk-25.0.4.1+1",
+      "length": 120577922,
+      "sha256": "CB9E50D2EB3DE72FFD28466D7C511B4039B4BC4BD8F0D276D1E4CF81E30FDF09",
+      "sourceUrl": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk-sources_25.0.4.1_1.tar.gz",
+      "checksumUrl": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk-sources_25.0.4.1_1.tar.gz.sha256.txt"
+    }
+  ]
+}

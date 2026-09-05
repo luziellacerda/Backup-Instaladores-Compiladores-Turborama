@@ -26,6 +26,7 @@ namespace InstallerHost
 
 			return IsVisualCppKey(component.DetectionKey) ||
 				IsDotNetDesktopKey(component.DetectionKey) ||
+				IsJavaKey(component.DetectionKey) ||
 				IsDokanyKey(component.DetectionKey) ||
 				IsWinFspKey(component.DetectionKey);
 		}
@@ -62,6 +63,17 @@ namespace InstallerHost
 			if (IsDotNetDesktopKey(detectionKey))
 			{
 				return CompareDotNetDesktop(detectedVersion, requiredProductVersion);
+			}
+			if (IsJavaKey(detectionKey))
+			{
+				Version detected;
+				Version required;
+				int major = int.Parse(detectionKey.Split('-')[1]);
+				if (!TryParseFourPartVersion(detectedVersion, out detected) ||
+					!TryParseFourPartVersion(requiredProductVersion, out required) ||
+					detected.Major != major || required.Major != major)
+					return RuntimeVersionComparison.Unknown;
+				return detected.CompareTo(required) >= 0 ? RuntimeVersionComparison.Current : RuntimeVersionComparison.Outdated;
 			}
 			if (IsDokanyKey(detectionKey))
 			{
@@ -231,6 +243,14 @@ namespace InstallerHost
 		private static bool IsDokanyKey(string detectionKey)
 		{
 			return string.Equals(detectionKey, "dokany", StringComparison.OrdinalIgnoreCase);
+		}
+
+		private static bool IsJavaKey(string detectionKey)
+		{
+			return string.Equals(detectionKey, "java-8-x64", StringComparison.OrdinalIgnoreCase) ||
+				string.Equals(detectionKey, "java-17-x64", StringComparison.OrdinalIgnoreCase) ||
+				string.Equals(detectionKey, "java-21-x64", StringComparison.OrdinalIgnoreCase) ||
+				string.Equals(detectionKey, "java-25-x64", StringComparison.OrdinalIgnoreCase);
 		}
 
 		private static bool IsWinFspKey(string detectionKey)

@@ -33,6 +33,7 @@ namespace InstallerHost
 				Check(NativeWindowTheme.ColorRef(Color.FromArgb(16, 18, 23)) == 0x171210,
 					"Native title color uses Windows COLORREF channel order");
 				assertions += RuntimeVersionPolicyTests.Run();
+				assertions += JavaRuntimeDetectorTests.Run();
 				assertions += PublisherPolicyTests.Run();
                 assertions += PrerequisiteControl.RunSelectionRegressionTests();
                 assertions += ArtworkTests.Run();
@@ -144,6 +145,19 @@ namespace InstallerHost
                                     "WinFsp checkbox explicitly identifies the prerelease");
                                 using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
                                 { form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(directory, "Drivers-" + size.Width + ".png")); }
+                                CheckBox compatibility = Find<CheckBox>(form, "chkOptionalCompatibility");
+                                location = content.PointToClient(compatibility.PointToScreen(Point.Empty));
+                                content.AutoScrollPosition = new Point(0, Math.Max(0, location.Y - content.AutoScrollPosition.Y - 16)); Pump();
+                                location = content.PointToClient(compatibility.PointToScreen(Point.Empty));
+                                Check(compatibility.Enabled && !compatibility.Checked && location.Y >= 0 &&
+                                    location.Y + compatibility.Height <= content.ClientSize.Height,
+                                    "Additional compatibility is available, opt-in and fully reachable in the original scrolling prerequisite step");
+                                Check(compatibility.Text.Contains("Java 8/17/21/25") && compatibility.Text.Contains("XNA") &&
+                                    compatibility.Text.Contains(".NET x86"),
+                                    "Additional compatibility clearly names only its bundled dependency families");
+                                ValidateLayout(form.TestPage);
+                                using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
+                                { form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(directory, "Compatibility-" + size.Width + ".png")); }
                             }
                         }
                     }
@@ -151,7 +165,7 @@ namespace InstallerHost
                         "Conclusion has no Back, as in the original");
                     form.Close();
                 }
-                Console.WriteLine("CONSUMER UI PASS assertions=" + assertions + "; twelve captures; no real scanner, installer or extraction invoked.");
+                Console.WriteLine("CONSUMER UI PASS assertions=" + assertions + "; original five-step and optional-component captures; no real scanner, installer or extraction invoked.");
                 return 0;
             }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }

@@ -115,8 +115,8 @@ namespace InstallerHost
 					case "dotnet-desktop-10-x64":
 						installed = IsDotNetDesktopRuntimeInstalled(10, "x64", out version);
 						detail = installed == true
-							? "Runtime LTS moderno preferencial detectado."
-							: "Use somente o instalador x64 atual publicado pela Microsoft.";
+							? "Microsoft.WindowsDesktop.App " + version + " (x64) detectado."
+							: "Microsoft.WindowsDesktop.App 10 (x64) não foi encontrado no registro de instalação nem nas pastas do sistema. Consulte o relatório técnico para os locais verificados.";
 						break;
 					case "dotnet-desktop-10-x86":
 						installed = IsDotNetDesktopRuntimeInstalled(10, "x86", out version);
@@ -168,8 +168,11 @@ namespace InstallerHost
 						installed = IsProductInstalled("NVIDIA PhysX");
 						version = GetInstalledProductVersion("NVIDIA PhysX");
 						break;
-					case "java-runtime":
-						installed = IsJavaInstalled(out version);
+					case "java-8-x64":
+					case "java-17-x64":
+					case "java-21-x64":
+					case "java-25-x64":
+						installed = JavaRuntimeDetector.TryGetInstalledVersion(int.Parse(component.DetectionKey.Split('-')[1]), out version);
 						break;
 					case "dotnet-desktop-current":
 						installed = IsDotNetDesktopRuntimeInstalledAtLeast(9, out version);
@@ -301,28 +304,29 @@ namespace InstallerHost
 		private static List<Version> GetDotNetDesktopRuntimeVersions(string architecture)
 		{
 			HashSet<Version> versions = new HashSet<Version>();
-			RegistryView view = string.Equals(architecture, "x64", StringComparison.OrdinalIgnoreCase) && Environment.Is64BitOperatingSystem
-				? RegistryView.Registry64
-				: RegistryView.Registry32;
+			if ((!string.Equals(architecture, "x64", StringComparison.OrdinalIgnoreCase) &&
+				!string.Equals(architecture, "x86", StringComparison.OrdinalIgnoreCase)) ||
+				(string.Equals(architecture, "x64", StringComparison.OrdinalIgnoreCase) && !Environment.Is64BitOperatingSystem))
+			{
+				return versions.ToList();
+			}
+			architecture = architecture.ToLowerInvariant();
 
+			// .NET publishes ALL architectures in the 32-bit registry view. The
+			// architecture belongs to the key name, not to RegistryView.
+			// https://github.com/dotnet/designs/blob/main/accepted/2020/install-locations.md
+			string registryPath = @"SOFTWARE\dotnet\Setup\InstalledVersions\" + architecture + @"\sharedfx\Microsoft.WindowsDesktop.App";
 			try
 			{
-				using (RegistryKey key = OpenLocalMachineSubKey(view, @"SOFTWARE\dotnet\Setup\InstalledVersions\" + architecture + @"\sharedfx\Microsoft.WindowsDesktop.App"))
+				using (RegistryKey key = OpenLocalMachineSubKey(RegistryView.Registry32, registryPath))
 				{
 					if (key != null)
 					{
 						foreach (string versionName in key.GetValueNames())
 						{
 							Version parsed;
-							if (Version.TryParse(versionName, out parsed))
-							{
-								versions.Add(parsed);
-							}
-						}
-						foreach (string versionName in key.GetSubKeyNames())
-						{
-							Version parsed;
-							if (Version.TryParse(versionName, out parsed))
+							if (Version.TryParse(versionName, out parsed) && parsed.Build >= 0 &&
+								object.Equals(key.GetValue(versionName), 1))
 							{
 								versions.Add(parsed);
 							}
@@ -330,12 +334,15 @@ namespace InstallerHost
 					}
 				}
 			}
-			catch
+			catch (Exception ex)
 			{
+				Logger.Log(".NET Desktop registry detection failed (Registry32, " + architecture + "): " + ex.Message);
 			}
+			Logger.Log(".NET Desktop probe: HKLM Registry32\\" + registryPath + " | versions=" + string.Join(", ", versions));
 
 			foreach (string root in GetDotNetRoots(architecture))
 			{
+				Logger.Log(".NET Desktop probe: " + root + " | architecture=" + architecture);
 				try
 				{
 					string sharedFx = Path.Combine(root, "shared", "Microsoft.WindowsDesktop.App");
@@ -346,14 +353,18 @@ namespace InstallerHost
 					foreach (string directory in Directory.GetDirectories(sharedFx))
 					{
 						Version parsed;
-						if (Version.TryParse(Path.GetFileName(directory), out parsed))
+						if (Version.TryParse(Path.GetFileName(directory), out parsed) && parsed.Build >= 0 &&
+							File.Exists(Path.Combine(directory, "Microsoft.WindowsDesktop.App.deps.json")) &&
+							File.Exists(Path.Combine(directory, "PresentationFramework.dll")) &&
+							File.Exists(Path.Combine(directory, "System.Windows.Forms.dll")))
 						{
 							versions.Add(parsed);
 						}
 					}
 				}
-				catch
+				catch (Exception ex)
 				{
+					Logger.Log(".NET Desktop folder detection failed (" + root + "): " + ex.Message);
 				}
 			}
 
@@ -363,18 +374,42 @@ namespace InstallerHost
 		private static IEnumerable<string> GetDotNetRoots(string architecture)
 		{
 			HashSet<string> roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			string root = string.Equals(architecture, "x86", StringComparison.OrdinalIgnoreCase)
-				? Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)
-				: Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-			if (!string.IsNullOrWhiteSpace(root))
+			try
 			{
-				roots.Add(Path.Combine(root, "dotnet"));
+				using (RegistryKey key = OpenLocalMachineSubKey(RegistryView.Registry32,
+					@"SOFTWARE\dotnet\Setup\InstalledVersions\" + architecture))
+				{
+					string registered = key == null ? null : key.GetValue("InstallLocation") as string;
+					if (!string.IsNullOrWhiteSpace(registered) && Path.IsPathRooted(registered))
+					{
+						roots.Add(registered);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Logger.Log(".NET install location lookup failed (" + architecture + "): " + ex.Message);
 			}
 
-			string configured = Environment.GetEnvironmentVariable(string.Equals(architecture, "x86", StringComparison.OrdinalIgnoreCase) ? "DOTNET_ROOT(x86)" : "DOTNET_ROOT");
-			if (!string.IsNullOrWhiteSpace(configured))
+			// A 32-bit WinExe resolves SpecialFolder.ProgramFiles to Program Files
+			// (x86), even when looking for x64. Read the OS directory explicitly.
+			// Do not count user-controlled DOTNET_ROOT/portable SDKs as machine installs.
+			try
 			{
-				roots.Add(configured);
+				RegistryView nativeView = Environment.Is64BitOperatingSystem ? RegistryView.Registry64 : RegistryView.Registry32;
+				using (RegistryKey key = OpenLocalMachineSubKey(nativeView, @"SOFTWARE\Microsoft\Windows\CurrentVersion"))
+				{
+					string valueName = architecture == "x86" && Environment.Is64BitOperatingSystem ? "ProgramFilesDir (x86)" : "ProgramFilesDir";
+					string programFiles = key == null ? null : key.GetValue(valueName) as string;
+					if (!string.IsNullOrWhiteSpace(programFiles) && Path.IsPathRooted(programFiles))
+					{
+						roots.Add(Path.Combine(programFiles, "dotnet"));
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Logger.Log(".NET system directory lookup failed (" + architecture + "): " + ex.Message);
 			}
 			return roots;
 		}
@@ -820,20 +855,6 @@ namespace InstallerHost
 				}
 			}
 			return string.Empty;
-		}
-
-		private static bool IsJavaInstalled(out string version)
-		{
-			version = GetRegistryValueString(@"SOFTWARE\JavaSoft\JDK", "CurrentVersion");
-			if (string.IsNullOrWhiteSpace(version))
-			{
-				version = GetRegistryValueString(@"SOFTWARE\Eclipse Adoptium\JDK", "CurrentVersion");
-			}
-			if (!string.IsNullOrWhiteSpace(version))
-			{
-				return true;
-			}
-			return IsProductInstalled("Temurin") || IsProductInstalled("Java(TM)") || IsProductInstalled("OpenJDK");
 		}
 
 		private static bool IsWindowsMediaEdition(GamingReadinessProfile profile)

@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Principal;
+using Microsoft.Win32;
+using System.Runtime.InteropServices;
 
 namespace InstallerHost
 {
@@ -37,6 +39,12 @@ namespace InstallerHost
 			"vc-legacy-2013-x64",
 			"directx-june-2010",
 			"webview2-x64",
+			"dotnet-desktop-10-x86",
+			"xna-framework-40",
+			"java-8-x64",
+			"java-17-x64",
+			"java-21-x64",
+			"java-25-x64",
 			"dokany",
 			"winfsp"
 		};
@@ -244,11 +252,16 @@ namespace InstallerHost
 			bool hasRuntimeWork)
 		{
 			string generalBlock = GetInstallationPreflightBlockReason(profile, hasRuntimeWork);
-			if (generalBlock != null || !hasRuntimeWork || selection == null || !selection.InstallDokany ||
-				selection.InstallMicrosoftRuntimeStack)
+			if (generalBlock != null || !hasRuntimeWork || selection == null)
 			{
 				return generalBlock;
 			}
+			RuntimeComponentStatus unknown = profile.RuntimeStatuses.FirstOrDefault(item => item != null &&
+				item.State == GamingReadinessState.Unknown && IsSelectedOfflineComponent(item.Component, selection));
+			if (unknown != null)
+				return "Não foi possível consultar " + unknown.Component.DisplayName + ": " + unknown.Detail +
+					" Nenhum instalador foi iniciado. Corrija a consulta e execute uma nova análise.";
+			if (!selection.InstallDokany || selection.InstallMicrosoftRuntimeStack) return null;
 
 			string[] requiredVcIds = profile != null && profile.Is64BitOperatingSystem
 				? new[] { "vc-modern-x64", "vc-modern-x86" }
@@ -407,15 +420,19 @@ namespace InstallerHost
 			if (string.Equals(component.Id, "winfsp", StringComparison.OrdinalIgnoreCase))
 				return selection.InstallWinFsp;
 
-			// XNA e futuros payloads opcionais exigem uma opção própria; não são
-			// incluídos implicitamente pelo checkbox do stack recomendado.
 			if (component.Tier == GamingRuntimeTier.Optional)
 			{
-				return false;
+				return selection.InstallOptionalCompatibility && IsOptionalCompatibilityComponent(component.Id);
 			}
 
 			return selection.InstallMicrosoftRuntimeStack &&
 				(component.Category == GamingRuntimeCategory.MicrosoftRuntime || component.IsLegacy);
+		}
+
+		internal static bool IsOptionalCompatibilityComponent(string componentId)
+		{
+			return new[] { "xna-framework-40", "dotnet-desktop-10-x86", "java-8-x64", "java-17-x64", "java-21-x64", "java-25-x64" }
+				.Any(id => string.Equals(id, componentId, StringComparison.OrdinalIgnoreCase));
 		}
 
 		private static int InstallPlannedComponent(
@@ -450,6 +467,13 @@ namespace InstallerHost
 					return RunBundledInstaller(component, "/silent /install");
 				case "xna-framework-40":
 					return RunBundledMsi(component, "/qn /norestart");
+				case "java-8-x64":
+				case "java-17-x64":
+				case "java-21-x64":
+				case "java-25-x64":
+					// MSI defaults are version-specific. FeatureMain excludes PATH,
+					// JAVA_HOME, .jar associations and Oracle compatibility keys.
+					return RunBundledMsi(component, GetJavaInstallerArguments(component));
 				case "dokany":
 					return RunBundledInstaller(component, GetOptionalDriverArguments(component.Id));
 				case "winfsp":
@@ -457,6 +481,73 @@ namespace InstallerHost
 				default:
 					throw new InvalidOperationException("Não há estratégia de instalação aprovada para " + component.DisplayName + ".");
 			}
+		}
+
+		private static string GetJavaInstallerArguments(GamingRuntimeComponent component)
+		{
+			if (!Environment.Is64BitOperatingSystem) throw new InvalidOperationException("O pacote Java x64 exige Windows de 64 bits.");
+			string programFiles;
+			using (RegistryKey machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+			using (RegistryKey key = machine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion"))
+			{
+				programFiles = key == null ? null : key.GetValue("ProgramFilesDir") as string;
+			}
+			string registeredVersion;
+			string registeredPath;
+			JavaRuntimeDetector.TryGetRegisteredInstallation(int.Parse(component.Id.Split('-')[1]), out registeredVersion, out registeredPath);
+			PrerequisitePayloadLock payload = PrerequisiteIntegrityCatalog.GetRequiredPayload(component.BundleFileName);
+			int productState = MsiQueryProductState(payload.productCode);
+			if (productState != 5 && productState != -1 && productState != 1 && productState != 2)
+				throw new InvalidOperationException("O Windows Installer não confirmou o estado do Java (" + productState + "). Nenhuma manutenção foi iniciada.");
+			return GetJavaMaintenanceArguments(programFiles,
+				payload.productVersion, registeredVersion, registeredPath, productState == 5);
+		}
+
+		[DllImport("msi.dll", CharSet = CharSet.Unicode)]
+		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+		private static extern int MsiQueryProductState(string productCode);
+
+		internal static string GetJavaMaintenanceArguments(string programFiles, string productVersion, string registeredVersion, string registeredPath, bool sameMsiInstalled)
+		{
+			string install = GetJavaInstallerArguments(programFiles, productVersion);
+			if (string.IsNullOrWhiteSpace(registeredVersion))
+			{
+				if (sameMsiInstalled) throw new InvalidOperationException("O Java está registrado no Windows Installer, mas seu caminho não foi confirmado. Repare-o em Aplicativos do Windows antes de continuar.");
+				return install;
+			}
+			Version registered;
+			Version required = Version.Parse(productVersion);
+			if (!Version.TryParse(registeredVersion, out registered) || registered.Revision < 0 || registered.Major != required.Major)
+				throw new InvalidDataException("A versão registrada do Java não pôde ser confirmada para manutenção.");
+			if (registered > required)
+				throw new InvalidOperationException("Existe um Java " + registered + " mais novo com arquivos não confirmados. Repare essa versão pelo instalador original; este pacote " + required + " não fará downgrade.");
+			if (registered < required || !sameMsiInstalled) return install;
+			// Repair only FeatureMain of this exact installed MSI in its registered
+			// location. 'a' restores even damaged equal-version files; 'm' restores
+			// machine registration. No environment/association feature is selected.
+			return GetJavaArgumentsForDirectory(registeredPath) + " REINSTALL=FeatureMain REINSTALLMODE=am";
+		}
+
+		internal static string GetJavaInstallerArguments(string programFiles, string productVersion)
+		{
+			Version version;
+			if (string.IsNullOrWhiteSpace(programFiles) || programFiles.Length < 3 ||
+				!char.IsLetter(programFiles[0]) || programFiles[1] != ':' || programFiles[2] != '\\' ||
+				programFiles.IndexOfAny(new[] { '"', '\r', '\n', '%' }) >= 0 ||
+				!Version.TryParse(productVersion, out version) || version.Revision < 0)
+				throw new InvalidDataException("Diretório ou versão do Java inválido; instalação não iniciada.");
+			string destination = Path.Combine(programFiles, "Eclipse Adoptium", "jre-" + version + "-hotspot");
+			// https://adoptium.net/installation/windows/ requires INSTALLDIR with
+			// FeatureMain. A separate version folder keeps the four LTS lines apart.
+			return GetJavaArgumentsForDirectory(destination);
+		}
+
+		private static string GetJavaArgumentsForDirectory(string destination)
+		{
+			if (string.IsNullOrWhiteSpace(destination) || destination.Length < 4 || !char.IsLetter(destination[0]) ||
+				destination[1] != ':' || destination[2] != '\\' || destination.IndexOfAny(new[] { '"', '\r', '\n', '%' }) >= 0)
+				throw new InvalidDataException("Caminho registrado do Java inválido; reparo não iniciado.");
+			return "/qn /norestart ALLUSERS=1 ADDLOCAL=FeatureMain INSTALLDIR=\"" + Path.GetFullPath(destination).TrimEnd('\\') + "\"";
 		}
 
 		private static int RunBundledInstaller(GamingRuntimeComponent component, string arguments)

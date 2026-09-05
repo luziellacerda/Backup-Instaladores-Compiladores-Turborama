@@ -1,6 +1,9 @@
 #Requires -Version 5.1
 [CmdletBinding()]
-param([string]$MSBuildPath = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe')
+param(
+    [string]$MSBuildPath = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
+    [string]$RequireRuntime10X64Version = ''
+)
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
@@ -12,7 +15,22 @@ try {
     $consumerSources = @($consumerProject.SelectNodes('//*[local-name()="Compile"]') | ForEach-Object { $_.GetAttribute('Include') })
     $interfaceResources = @($consumerProject.SelectNodes('//*[local-name()="EmbeddedResource"]') | Where-Object { $_.GetAttribute('Include') -notlike 'resources\prerequisites\*' } | ForEach-Object { '/resource:' + $_.GetAttribute('Include') + ',' + $_.SelectSingleNode('*[local-name()="LogicalName"]').InnerText })
     $consumerCompiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-    & $consumerCompiler /nologo /target:exe /warnaserror+ /define:CONSUMER_UI_TESTS /main:InstallerHost.ConsumerUiTests /out:TestResults\executables\ConsumerUiTests.exe /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:Accessibility.dll $interfaceResources $consumerSources Tests\RuntimeVersionPolicyTests.cs Tests\PrerequisiteSelectionTests.cs Tests\ArtworkTests.cs Tests\PublisherPolicyTests.cs Tests\ConsumerUiTests.cs
+    foreach ($runtimeProbeArch in @('x86', 'x64')) {
+        if ($runtimeProbeArch -eq 'x64' -and -not [Environment]::Is64BitOperatingSystem) { continue }
+        $runtimeProbeBits = if ($runtimeProbeArch -eq 'x64') { 64 } else { 32 }
+        $runtimeProbeFramework = if ($runtimeProbeArch -eq 'x64') { 'Framework64' } else { 'Framework' }
+        $runtimeProbeCompiler = Join-Path $env:WINDIR ('Microsoft.NET\' + $runtimeProbeFramework + '\v4.0.30319\csc.exe')
+        $runtimeProbeExe = 'TestResults\executables\DotNetDesktopDetectionTests.' + $runtimeProbeArch + '.exe'
+        & $runtimeProbeCompiler /nologo /target:exe ('/platform:' + $runtimeProbeArch) /warnaserror+ /main:InstallerHost.DotNetDesktopDetectionTests ('/out:' + $runtimeProbeExe) /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll $interfaceResources $consumerSources Tests\DotNetDesktopDetectionTests.cs
+        if ($LASTEXITCODE -ne 0) { throw ('Falha ao compilar teste .NET Desktop ' + $runtimeProbeArch) }
+        $runtimeProbeArguments = @('--expect-process-bits=' + $runtimeProbeBits)
+        if (-not [string]::IsNullOrWhiteSpace($RequireRuntime10X64Version)) {
+            $runtimeProbeArguments += '--require-runtime10-x64=' + $RequireRuntime10X64Version
+        }
+        & (Join-Path $PSScriptRoot $runtimeProbeExe) @runtimeProbeArguments
+        if ($LASTEXITCODE -ne 0) { throw ('Regressão na detecção real do .NET Desktop pelo processo ' + $runtimeProbeArch) }
+    }
+    & $consumerCompiler /nologo /target:exe /warnaserror+ /define:CONSUMER_UI_TESTS /main:InstallerHost.ConsumerUiTests /out:TestResults\executables\ConsumerUiTests.exe /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:Accessibility.dll $interfaceResources $consumerSources Tests\RuntimeVersionPolicyTests.cs Tests\JavaRuntimeDetectorTests.cs Tests\PrerequisiteSelectionTests.cs Tests\ArtworkTests.cs Tests\PublisherPolicyTests.cs Tests\ConsumerUiTests.cs
     if ($LASTEXITCODE -ne 0) { throw 'Falha na compilação dos testes de interface.' }
     & .\TestResults\executables\ConsumerUiTests.exe (Join-Path $PSScriptRoot 'TestResults\consumer')
     if ($LASTEXITCODE -ne 0) { throw 'Falha nos testes de interface.' }

@@ -26,6 +26,7 @@ namespace InstallerHost
 		public string fileType { get; set; }
 		public string installTier { get; set; }
 		public string productVersion { get; set; }
+		public string productCode { get; set; }
 		public string signerSubject { get; set; }
 		public string signerThumbprint { get; set; }
 		public string certificatePublicKeySha256 { get; set; }
@@ -191,6 +192,12 @@ namespace InstallerHost
 				ValidateSignerAnchor(payload.signerSubject, payload.signerThumbprint,
 					payload.certificatePublicKeySha256, payload.name, payload.name);
 			}
+			if (payload.name.StartsWith("temurin-jre-", StringComparison.OrdinalIgnoreCase))
+			{
+				Guid productCode;
+				if (!Guid.TryParseExact(payload.productCode, "B", out productCode) || productCode == Guid.Empty)
+					throw new InvalidDataException("ProductCode MSI ausente ou inválido: " + payload.name);
+			}
 
 			PrerequisiteArchiveEntryLock[] entries = payload.archiveEntries ?? new PrerequisiteArchiveEntryLock[0];
 			HashSet<string> names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -252,6 +259,11 @@ namespace InstallerHost
 
 		private static string GetApprovedThirdPartySubject(string payloadName)
 		{
+			if (new[] { "temurin-jre-8-x64.msi", "temurin-jre-17-x64.msi", "temurin-jre-21-x64.msi", "temurin-jre-25-x64.msi" }
+				.Any(name => string.Equals(payloadName, name, StringComparison.OrdinalIgnoreCase)))
+			{
+				return "CN=Eclipse Foundation, O=Eclipse Foundation, L=Bruxelles, C=BE";
+			}
 			// Exceções são ligadas ao nome do payload de nível superior. Elas não
 			// relaxam os payloads Microsoft nem permitem reutilizar o editor em ZIPs.
 			if (string.Equals(payloadName, "DokanSetup.exe", StringComparison.OrdinalIgnoreCase))

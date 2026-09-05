@@ -22,6 +22,8 @@ namespace InstallerHost
 			"NAVIMATICS LLC"
 		};
 
+		private static readonly string[] AdoptiumPublisherTokens = { "Eclipse Foundation" };
+
 		private static readonly List<GamingRuntimeComponent> Components = BuildComponents();
 
 		// Mantidos para compatibilidade com o empacotador existente. A lista obrigatória
@@ -193,10 +195,10 @@ namespace InstallerHost
 				"physx", "NVIDIA Corporation", "https://www.nvidia.com/drivers/physx/physx-9-23-1019-driver/",
 				"Necessário somente para alguns jogos antigos que usam PhysX legado."));
 
-			items.Add(CreateGuidance(
-				"java-runtime", "Java para ferramentas específicas", GamingRuntimeCategory.EmulatorSupport, GamingRuntimeTier.Optional,
-				"java-runtime", "Eclipse Adoptium", "https://adoptium.net/temurin/releases/",
-				"Instale apenas se um emulador, servidor ou jogo legítimo solicitar Java e escolha a arquitetura exigida."));
+			AddJavaPackage(items, 8);
+			AddJavaPackage(items, 17);
+			AddJavaPackage(items, 21);
+			AddJavaPackage(items, 25);
 
 			items.Add(CreateGuidance(
 				"dotnet-desktop-current", ".NET Desktop Runtime atual", GamingRuntimeCategory.MicrosoftRuntime, GamingRuntimeTier.Optional,
@@ -216,6 +218,16 @@ namespace InstallerHost
 				"winfsp-2.2.26215.msi", "winfsp-2.2.26215.msi", true, false, new string[0], WinFspPublisherTokens));
 
 			return items;
+		}
+
+		private static void AddJavaPackage(List<GamingRuntimeComponent> items, int major)
+		{
+			string id = "java-" + major + "-x64";
+			string file = "temurin-jre-" + major + "-x64.msi";
+			items.Add(CreatePackage(id, "Java " + major + " LTS x64 — Eclipse Temurin", GamingRuntimeCategory.EmulatorSupport,
+				GamingRuntimeTier.Optional, "x64", id, "Eclipse Foundation", "https://adoptium.net/temurin/releases/?version=" + major,
+				"Para jogos e ferramentas que exigem Java " + major + ". Instalação opcional lado a lado; não troca PATH, JAVA_HOME nem associações de arquivos.",
+				file, file, true, false, new string[0], AdoptiumPublisherTokens));
 		}
 
 		private static void AddLegacyVisualCpp(List<GamingRuntimeComponent> items, string version, string architecture)

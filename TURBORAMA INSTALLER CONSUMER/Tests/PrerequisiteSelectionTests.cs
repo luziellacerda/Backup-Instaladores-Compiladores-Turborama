@@ -31,6 +31,7 @@ namespace InstallerHost
             chkNvidiaApp.Enabled = false;
             chkDokany.Checked = false;
             chkwinFSP.Checked = false;
+            chkOptionalCompatibility.Checked = false;
             UpdateProgressMaximumFromSelection();
             ApplyGamingReadinessProfileToUi();
             readinessLabel.Text = "Diagnóstico sintético — somente teste de interface";
@@ -88,12 +89,13 @@ namespace InstallerHost
 					InstallDirectXLegacy = true,
 					InstallDokany = true,
 					InstallWinFsp = true,
+					InstallOptionalCompatibility = true,
 					OpenNvidiaOfficialSource = true,
 					AllowedComponentIds = new[] { "vc-modern-x64", "directx-june-2010" }
 				});
 				GamingRuntimeInstallSelection repairSelection = page.GetPrerequisiteSelection().RuntimeSelection;
 				verify(repairSelection.InstallMicrosoftRuntimeStack && repairSelection.InstallDirectXLegacy &&
-					!repairSelection.InstallDokany && !repairSelection.InstallWinFsp &&
+					!repairSelection.InstallDokany && !repairSelection.InstallWinFsp && !repairSelection.InstallOptionalCompatibility &&
 					!repairSelection.OpenNvidiaOfficialSource &&
 					repairSelection.AllowedComponentIds.OrderBy(id => id).SequenceEqual(
 						new[] { "directx-june-2010", "vc-modern-x64" }),
@@ -269,8 +271,139 @@ namespace InstallerHost
                 verify(page.gamingReadinessWorker == null && page.installerWorker == null,
                     "Flow and stale-result tests never execute diagnostics or installers");
             }
+            RunProgressCountRegressionTests(verify);
+            RunOptionalCompatibilityRegressionTests(verify);
             RunOptionalDriverRegressionTests(verify);
             return passed;
+        }
+
+        private static void RunProgressCountRegressionTests(Action<bool, string> verify)
+        {
+            using (PrerequisiteControl page = CreateForUiTest(null))
+            {
+                verify(page.plannedStepCount == 0 && page.progressBar.Maximum == 1 && page.progressBar.Value == 0 &&
+                    page.progressCountLabel.Text == "Processadas: 0 de 0" && page.progressPercentLabel.Text == "0%",
+                    "Zero selected work displays 0 of 0, independently of the progress widget minimum range");
+                page.UpdateProgressBarSafe();
+                verify(page.progressBar.Value == 0 && page.progressCountLabel.Text == "Processadas: 0 de 0" &&
+                    !page.progressHintLabel.Text.Contains("foram processadas"),
+                    "A completion callback cannot invent a processed step or success for an empty plan");
+
+                page.SetProgressMaximumSafe(3);
+                verify(page.plannedStepCount == 3 && page.progressBar.Maximum == 3 &&
+                    page.progressCountLabel.Text == "Processadas: 0 de 3",
+                    "Worker-reported planned totals replace the true work count");
+                page.SetButtonsInstallingState(true);
+                page.UpdateProgressBarSafe();
+                verify(page.plannedStepCount == 3 && page.progressBar.Value == 1 &&
+                    page.progressCountLabel.Text == "Processadas: 1 de 3" &&
+                    page.progressPercentLabel.Text == "Em andamento" && page.progressBar.Style == ProgressBarStyle.Marquee,
+                    "Busy progress retains the actual step total and animated in-progress state");
+                page.SetProgressMaximumSafe(5);
+                verify(page.progressBar.Value == 1 && page.progressCountLabel.Text == "Processadas: 1 de 5",
+                    "Increasing a worker plan preserves completed steps without resetting their count");
+                page.SetProgressMaximumSafe(2);
+                page.UpdateProgressBarSafe();
+                page.UpdateProgressBarSafe();
+                verify(page.progressBar.Value == 2 && page.progressCountLabel.Text == "Processadas: 2 de 2",
+                    "Processed count never exceeds the revised true plan total");
+                page.SetButtonsInstallingState(false);
+                page.UpdateProgressVisualsSafe();
+                verify(page.progressBar.Style == ProgressBarStyle.Continuous && page.progressPercentLabel.Text == "100%",
+                    "Two completed steps out of two retain their real processed percentage after unlocking");
+                page.SetProgressMaximumSafe(0);
+                page.UpdateProgressBarSafe();
+                verify(page.plannedStepCount == 0 && page.progressBar.Value == 0 && page.progressBar.Maximum == 1 &&
+                    page.progressCountLabel.Text == "Processadas: 0 de 0" && page.progressPercentLabel.Text == "0%" &&
+                    !page.progressHintLabel.Text.Contains("foram processadas"),
+                    "A new empty plan clears previous full progress and never reports a false 100 percent");
+                page.SetProgressMaximumSafe(-1);
+                verify(page.plannedStepCount == 0 && page.progressCountLabel.Text == "Processadas: 0 de 0",
+                    "An invalid negative plan total cannot leak into the progress display");
+
+                page.SetProgressMaximumSafe(4);
+                page.SetButtonsInstallingState(true);
+                page.UpdateProgressBarSafe();
+                page.ShowInstallationFailure("Falha simulada de validação");
+                verify(page.plannedStepCount == 4 && page.progressBar.Value == 1 &&
+                    page.progressCountLabel.Text == "Processadas: 1 de 4" && page.progressPercentLabel.Text == "Falha" &&
+                    !page.IsInstallationRunning() && !page.installationComplete && page.progressBar.MarqueeAnimationSpeed == 0,
+                    "Failure preserves truthful partial work, stops loading and never turns it into success");
+                page.gamingReadinessCapturedAtUtc = DateTime.UtcNow;
+                page.chkOptionalCompatibility.Checked = true;
+                int selected = page.GetSelectedStepCount(page.GetPrerequisiteSelection());
+                verify(selected > 0 && page.plannedStepCount == selected &&
+                    page.progressCountLabel.Text == "Processadas: 0 de " + selected,
+                    "Changing checkbox selection replaces the failed plan with its new exact pending total");
+                page.chkOptionalCompatibility.Checked = false;
+                verify(page.plannedStepCount == 0 && page.progressCountLabel.Text == "Processadas: 0 de 0" &&
+                    page.progressPercentLabel.Text == "0%",
+                    "Deselect-all clears a previous nonempty plan without a phantom step");
+                verify(page.gamingReadinessWorker == null && page.installerWorker == null,
+                    "Progress counter regressions run without scanners, workers or installers");
+            }
+        }
+
+        private static void RunOptionalCompatibilityRegressionTests(Action<bool, string> verify)
+        {
+            verify(!GamingRuntimeInstallSelection.RecommendedDefaults().InstallOptionalCompatibility,
+                "Recommended defaults never opt into additional Java/XNA/.NET x86 compatibility");
+            verify(HasSelectedRuntimeGroup(new GamingRuntimeInstallSelection { InstallOptionalCompatibility = true }),
+                "Additional compatibility alone is a real runtime group and must pass normal preflight checks");
+            using (PrerequisiteControl page = CreateForUiTest(null))
+            {
+                verify(!page.chkOptionalCompatibility.Checked && page.chkOptionalCompatibility.Parent != null &&
+                    page.chkOptionalCompatibility.Text.Contains("Java 8/17/21/25 / XNA / .NET x86"),
+                    "Additional compatibility is an explicit visible unchecked option on the existing prerequisite page");
+                page.installationComplete = true;
+                page.chkOptionalCompatibility.Checked = true;
+                GamingRuntimeInstallSelection selected = page.GetPrerequisiteSelection().RuntimeSelection;
+                verify(!page.installationComplete && selected.InstallOptionalCompatibility && page.observedSelectionMask == 32,
+                    "Selecting additional compatibility changes the effective selection and invalidates previous completion");
+                verify(!selected.InstallMicrosoftRuntimeStack && !selected.InstallDirectXLegacy &&
+                    !selected.InstallDokany && !selected.InstallWinFsp && !selected.OpenNvidiaOfficialSource,
+                    "Additional compatibility never silently selects another group or driver");
+                page.UpdatePrerequisiteOptions();
+                verify(page.chkOptionalCompatibility.Checked && page.chkOptionalCompatibility.Enabled,
+                    "Returning to prerequisites preserves the explicit compatibility choice when offline options apply");
+                page.SetButtonsInstallingState(true);
+                verify(!page.chkOptionalCompatibility.Enabled, "Additional compatibility is locked before any worker starts");
+                page.chkOptionalCompatibility.Checked = false;
+                verify(page.chkOptionalCompatibility.Checked, "Programmatic compatibility changes are restored while busy");
+                page.SetButtonsInstallingState(false);
+                verify(page.chkOptionalCompatibility.Enabled && page.chkOptionalCompatibility.Checked,
+                    "Unlock restores the checked compatibility choice and original availability");
+
+                page.gamingReadinessCapturedAtUtc = DateTime.UtcNow;
+                page.BtnNext_Click(page, EventArgs.Empty);
+                verify(page.installerWorker == null && page.progressTitleText == "Não foi possível preparar os componentes",
+                    "Additional compatibility alone cannot bypass the low-space preflight or start an installer");
+                page.gamingReadinessProfile = null;
+                page.BtnNext_Click(page, EventArgs.Empty);
+                verify(page.installerWorker == null && page.progressTitleText == "Diagnóstico necessário",
+                    "Additional compatibility waits for fresh evidence without a synchronous scan");
+
+                page.ApplyDiagnosticRepairSelection(new GamingRuntimeInstallSelection
+                {
+                    InstallMicrosoftRuntimeStack = true,
+                    InstallOptionalCompatibility = true,
+                    AllowedComponentIds = new[] { "vc-modern-x64" }
+                });
+                verify(!page.chkOptionalCompatibility.Checked &&
+                    !page.GetPrerequisiteSelection().RuntimeSelection.InstallOptionalCompatibility &&
+                    page.restrictedRepairComponentIds.SequenceEqual(new[] { "vc-modern-x64" }),
+                    "Diagnostic repair explicitly clears optional compatibility and retains its exact repair selection");
+                page.chkOptionalCompatibility.Checked = true;
+                verify(page.restrictedRepairComponentIds == null,
+                    "A later manual compatibility choice exits restricted repair mode");
+                page.chkVCpp.Checked = false;
+                page.chkOptionalCompatibility.Checked = false;
+                verify(!HasSelectedRuntimeGroup(page.GetPrerequisiteSelection().RuntimeSelection) &&
+                    page.GetSelectedStepCount(page.GetPrerequisiteSelection()) == 0,
+                    "Deselecting optional compatibility restores the zero-work path");
+                verify(page.gamingReadinessWorker == null && page.installerWorker == null,
+                    "All optional compatibility tests finish without diagnostics, processes or extraction");
+            }
         }
 
         private static void RunOptionalDriverRegressionTests(Action<bool, string> verify)
@@ -345,6 +478,10 @@ namespace InstallerHost
 			space.RuntimeRestartRequired = false;
 			space.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
 			GamingRuntimeInstallSelection dokanyOnly = new GamingRuntimeInstallSelection { InstallDokany = true };
+			verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, dokanyOnly, true).Contains("Não foi possível consultar"),
+				"A selected driver with unreadable evidence cannot start an installer");
+			foreach (RuntimeComponentStatus missingStatus in space.MutableRuntimeStatuses)
+				missingStatus.State = GamingReadinessState.Attention;
 			verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, dokanyOnly, true) != null,
 				"Dokany-only selection fails closed when its Visual C++ dependency is not ready");
 			dokanyOnly.InstallMicrosoftRuntimeStack = true;

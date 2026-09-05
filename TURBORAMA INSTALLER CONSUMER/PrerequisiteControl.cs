@@ -27,6 +27,7 @@ namespace InstallerHost
 		private string[] restrictedRepairComponentIds;
 		private int lockedCheckedMask;
 		private int unlockedEnabledMask;
+		private int plannedStepCount;
 		private bool nvidiaAppOpened;
 		private Label progressTitleLabel;
 		private Label progressCountLabel;
@@ -160,7 +161,8 @@ namespace InstallerHost
 				return;
 			}
 
-			progressBar.Maximum = Math.Max(1, totalSteps);
+			plannedStepCount = Math.Max(0, totalSteps);
+			progressBar.Maximum = Math.Max(1, plannedStepCount);
 			progressBar.Value = 0;
 			SetButtonsInstallingState(true);
 			SetProgressHeaderSafe(restrictedRepairComponentIds != null ? "Reparando componentes…" : "Instalando componentes…",
@@ -325,6 +327,7 @@ namespace InstallerHost
 				chkDirectX.Checked = true;
 				chkDokany.Checked = false;
 				chkwinFSP.Checked = false;
+				chkOptionalCompatibility.Checked = false;
 				if (chkNvidiaApp != null)
 				{
 					chkNvidiaApp.Checked = false;
@@ -336,6 +339,9 @@ namespace InstallerHost
 			chkDirectX.Enabled = true;
 			chkDokany.Enabled = IsOfflineOptionApplicable("dokany");
 			chkwinFSP.Enabled = IsOfflineOptionApplicable("winfsp");
+			chkOptionalCompatibility.Enabled = GamingRuntimeManifest.GetComponents().Any(component =>
+				RuntimeInstallerHelper.IsOptionalCompatibilityComponent(component.Id) && component.CanInstallOffline &&
+				GamingRuntimeManifest.IsApplicableToCurrentOs(component));
 			UpdateNvidiaDriverCheckbox();
 			SetButtonsInstallingState(false);
 			UpdateProgressMaximumFromSelection();
@@ -351,6 +357,7 @@ namespace InstallerHost
 					InstallDirectXLegacy = chkDirectX.Enabled && chkDirectX.Checked,
 					InstallDokany = chkDokany.Enabled && chkDokany.Checked,
 					InstallWinFsp = chkwinFSP.Enabled && chkwinFSP.Checked,
+					InstallOptionalCompatibility = chkOptionalCompatibility.Enabled && chkOptionalCompatibility.Checked,
 					OpenNvidiaOfficialSource = chkNvidiaApp != null && chkNvidiaApp.Enabled && chkNvidiaApp.Checked,
 					AllowedComponentIds = restrictedRepairComponentIds == null
 						? null : (string[])restrictedRepairComponentIds.Clone()
@@ -393,7 +400,8 @@ namespace InstallerHost
 				(selection.RuntimeSelection.InstallDirectXLegacy ? 2 : 0) |
 				(selection.OpenNvidiaOfficialSource ? 4 : 0) |
 				(selection.RuntimeSelection.InstallDokany ? 8 : 0) |
-				(selection.RuntimeSelection.InstallWinFsp ? 16 : 0);
+				(selection.RuntimeSelection.InstallWinFsp ? 16 : 0) |
+				(selection.RuntimeSelection.InstallOptionalCompatibility ? 32 : 0);
 			if (observedSelectionMask.HasValue && observedSelectionMask.Value != selectionMask)
 			{
 				bool previouslyComplete = installationComplete;
@@ -403,7 +411,8 @@ namespace InstallerHost
 			}
 			observedSelectionMask = selectionMask;
 			int selected = GetSelectedStepCount(selection);
-			progressBar.Maximum = Math.Max(1, selected);
+			plannedStepCount = Math.Max(0, selected);
+			progressBar.Maximum = Math.Max(1, plannedStepCount);
 			progressBar.Value = 0;
 			UpdateProgressVisualsSafe();
 		}
@@ -419,7 +428,7 @@ namespace InstallerHost
 				Invoke(new MethodInvoker(UpdateProgressBarSafe));
 				return;
 			}
-			if (progressBar.Value < progressBar.Maximum)
+			if (progressBar.Value < plannedStepCount)
 			{
 				progressBar.Value++;
 			}
@@ -437,8 +446,10 @@ namespace InstallerHost
 				Invoke(new Action<int>(SetProgressMaximumSafe), maximum);
 				return;
 			}
-			progressBar.Maximum = Math.Max(1, maximum);
-			progressBar.Value = Math.Min(progressBar.Value, progressBar.Maximum);
+			plannedStepCount = Math.Max(0, maximum);
+			progressBar.Value = Math.Min(progressBar.Value, plannedStepCount);
+			// WinForms needs a nonzero rendering range; this is not the work count.
+			progressBar.Maximum = Math.Max(1, plannedStepCount);
 			UpdateProgressVisualsSafe();
 		}
 
@@ -452,7 +463,7 @@ namespace InstallerHost
 		private void SetSelectionLocked(bool locked)
 		{
 			if (selectionLocked == locked) return;
-			CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp, chkDokany, chkwinFSP };
+			CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp, chkDokany, chkwinFSP, chkOptionalCompatibility };
 			if (locked)
 			{
 				InvalidateGamingReadinessScan();
@@ -480,7 +491,7 @@ namespace InstallerHost
 			restoringLockedSelection = true;
 			try
 			{
-				CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp, chkDokany, chkwinFSP };
+				CheckBox[] options = { chkVCpp, chkDirectX, chkNvidiaApp, chkDokany, chkwinFSP, chkOptionalCompatibility };
 				for (int index = 0; index < options.Length; index++)
 					options[index].Checked = (lockedCheckedMask & (1 << index)) != 0;
 			}
@@ -497,7 +508,7 @@ namespace InstallerHost
 		private static bool HasSelectedRuntimeGroup(GamingRuntimeInstallSelection selection)
 		{
 			return selection != null && (selection.InstallMicrosoftRuntimeStack || selection.InstallDirectXLegacy ||
-				selection.InstallDokany || selection.InstallWinFsp);
+				selection.InstallDokany || selection.InstallWinFsp || selection.InstallOptionalCompatibility);
 		}
 
 		private static bool IsOfflineOptionApplicable(string componentId)
@@ -651,6 +662,7 @@ namespace InstallerHost
 				chkDirectX.Checked = repairSelection.InstallDirectXLegacy;
 				chkDokany.Checked = false;
 				chkwinFSP.Checked = false;
+				chkOptionalCompatibility.Checked = false;
 				if (chkNvidiaApp != null) chkNvidiaApp.Checked = false;
 				restrictedRepairComponentIds = repairSelection.AllowedComponentIds == null
 					? new string[0] : (string[])repairSelection.AllowedComponentIds.Clone();
@@ -762,9 +774,9 @@ namespace InstallerHost
 				return;
 			}
 
-			int maximum = Math.Max(1, progressBar.Maximum);
+			int maximum = Math.Max(0, plannedStepCount);
 			int value = Math.Max(0, Math.Min(progressBar.Value, maximum));
-			int percent = (int)Math.Round((double)value * 100.0 / maximum);
+			int percent = maximum == 0 ? 0 : (int)Math.Round((double)value * 100.0 / maximum);
 			if (progressCountLabel != null)
 			{
 				progressCountLabel.Text = string.Format("Processadas: {0} de {1}", value, maximum);
@@ -777,6 +789,8 @@ namespace InstallerHost
 			{
 				progressHintLabel.Text = prerequisiteRestartRequired
 					? "Pausado para reinicialização; as etapas restantes não foram executadas."
+					: maximum == 0
+					? "O plano atual contém 0 etapas para processar."
 					: value >= maximum
 					? "As etapas selecionadas foram processadas; confira o diagnóstico."
 					: "Hash, tamanho, editor e revogação são verificados antes da execução.";

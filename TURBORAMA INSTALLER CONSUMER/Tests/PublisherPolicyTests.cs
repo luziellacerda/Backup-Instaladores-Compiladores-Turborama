@@ -20,6 +20,15 @@ namespace InstallerHost
 				passed++;
 				Console.WriteLine("PASS: " + name);
 			};
+			const string eclipseSubject = "CN=Eclipse Foundation, O=Eclipse Foundation, L=Bruxelles, C=BE";
+			foreach (int major in new[] { 8, 17, 21, 25 })
+			{
+				string payload = "temurin-jre-" + major + "-x64.msi";
+				verify(Accepts(payload, payload, eclipseSubject, Thumbprint, PublicKeyHash), "Temurin " + major + " binds its exact publisher to its MSI name");
+				verify(!Accepts(payload, payload, MicrosoftSubject, Thumbprint, PublicKeyHash), "Microsoft cannot replace a Temurin " + major + " payload");
+			}
+			verify(!Accepts("vc_redist.x64.exe", "vc_redist.x64.exe", eclipseSubject, Thumbprint, PublicKeyHash),
+				"Eclipse signer cannot replace a Microsoft package");
 
 			verify(Accepts("DokanSetup.exe", "DokanSetup.exe", DokanySubject, Thumbprint, PublicKeyHash),
 				"Dokany accepts only its exact top-level signer subject");

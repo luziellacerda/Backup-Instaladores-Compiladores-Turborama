@@ -5,6 +5,66 @@
   "policy": "Every embedded payload is immutable. Update this file only after an explicit source, signature and hash review.",
   "payloads": [
     {
+      "name": "temurin-jre-8-x64.msi",
+      "length": 32010240,
+      "sha256": "087A67240CD659A35DD894EE1201EC1F989E244CBE29500F4FC0F00443850D09",
+      "fileType": "Msi",
+      "installTier": "Optional",
+      "productVersion": "8.0.504.1",
+      "productCode": "{5C58A2D0-68CC-4068-AB4D-D6C19A7C03B8}",
+      "signerSubject": "CN=Eclipse Foundation, O=Eclipse Foundation, L=Bruxelles, C=BE",
+      "signerThumbprint": "F621CFCD35923BF836B2C2AED71EE689262AFE5D",
+      "certificatePublicKeySha256": "A231D08AFE4DCAAA06E1782DDA3877651C23B7B3A467C7AB3FA24610C099B563",
+      "sourceUrls": [
+        "https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u504-b01/OpenJDK8U-jre_x64_windows_hotspot_8u504b01.msi"
+      ]
+    },
+    {
+      "name": "temurin-jre-17-x64.msi",
+      "length": 31633408,
+      "sha256": "FD45E1710B0FE80C08A5141109CC0128E45CEFE8C15C3639CE13C564DF634031",
+      "fileType": "Msi",
+      "installTier": "Optional",
+      "productVersion": "17.0.20.101",
+      "productCode": "{869662BC-3DAD-4105-A2E0-89F14BA9DACB}",
+      "signerSubject": "CN=Eclipse Foundation, O=Eclipse Foundation, L=Bruxelles, C=BE",
+      "signerThumbprint": "F621CFCD35923BF836B2C2AED71EE689262AFE5D",
+      "certificatePublicKeySha256": "A231D08AFE4DCAAA06E1782DDA3877651C23B7B3A467C7AB3FA24610C099B563",
+      "sourceUrls": [
+        "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jre_x64_windows_hotspot_17.0.20.1_1.msi"
+      ]
+    },
+    {
+      "name": "temurin-jre-21-x64.msi",
+      "length": 34963456,
+      "sha256": "536EEB1DC3F743E5932A92E3549430FC75392C5D379101C1456A1C201AA6E66B",
+      "fileType": "Msi",
+      "installTier": "Optional",
+      "productVersion": "21.0.12.101",
+      "productCode": "{A9318AC7-1D29-4AE1-84DB-06C4344D6CE5}",
+      "signerSubject": "CN=Eclipse Foundation, O=Eclipse Foundation, L=Bruxelles, C=BE",
+      "signerThumbprint": "F621CFCD35923BF836B2C2AED71EE689262AFE5D",
+      "certificatePublicKeySha256": "A231D08AFE4DCAAA06E1782DDA3877651C23B7B3A467C7AB3FA24610C099B563",
+      "sourceUrls": [
+        "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jre_x64_windows_hotspot_21.0.12.1_1.msi"
+      ]
+    },
+    {
+      "name": "temurin-jre-25-x64.msi",
+      "length": 42696704,
+      "sha256": "0B3B2550B36B8997BE76C70F15B6AFD29A0631622EA134C973A6C8180859A56B",
+      "fileType": "Msi",
+      "installTier": "Optional",
+      "productVersion": "25.0.4.101",
+      "productCode": "{FDF4FB92-0A93-49CA-A256-D93B0976819A}",
+      "signerSubject": "CN=Eclipse Foundation, O=Eclipse Foundation, L=Bruxelles, C=BE",
+      "signerThumbprint": "F621CFCD35923BF836B2C2AED71EE689262AFE5D",
+      "certificatePublicKeySha256": "A231D08AFE4DCAAA06E1782DDA3877651C23B7B3A467C7AB3FA24610C099B563",
+      "sourceUrls": [
+        "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jre_x64_windows_hotspot_25.0.4.1_1.msi"
+      ]
+    },
+    {
       "name": "vc_redist.x64.exe",
       "length": 18731856,
       "sha256": "843068991DAAA1F73AD9F6239BCE4D0F6A07A51F18C37EA2A867E9BECA71295C",

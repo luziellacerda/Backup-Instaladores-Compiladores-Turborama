@@ -280,6 +280,11 @@ namespace InstallerHost
 				}
 			}
 
+			report.AppendLine();
+			report.AppendLine("REGISTRO DESTA SESSÃO (últimos eventos)");
+			report.AppendLine("Versão do instalador: " + typeof(GamingReadinessProfile).Assembly.GetName().Version +
+				" · Processo: " + (Environment.Is64BitProcess ? "x64" : "x86"));
+			foreach (string entry in Logger.GetRecentEntries()) report.AppendLine(entry);
 			return report.ToString();
 		}
 
@@ -321,6 +326,7 @@ namespace InstallerHost
 		public bool InstallDirectXLegacy { get; set; }
 		public bool InstallDokany { get; set; }
 		public bool InstallWinFsp { get; set; }
+		public bool InstallOptionalCompatibility { get; set; }
 		public bool OpenNvidiaOfficialSource { get; set; }
 		public string[] AllowedComponentIds { get; set; }
 
@@ -332,6 +338,7 @@ namespace InstallerHost
 				InstallDirectXLegacy = true,
 				InstallDokany = false,
 				InstallWinFsp = false,
+				InstallOptionalCompatibility = false,
 				OpenNvidiaOfficialSource = false
 			};
 		}

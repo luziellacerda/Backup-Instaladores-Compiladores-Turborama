@@ -41,6 +41,41 @@ namespace InstallerHost
 				".NET without a patch field is unknown");
 			verify(Evaluate("dotnet-desktop-10-x64", "10.0.12", "10.0.11.50000") == RuntimeVersionComparison.Current,
 				".NET 10 accepts a newer runtime patch");
+			verify(Evaluate("java-21-x64", "21.0.12.1", "21.0.12.1") == RuntimeVersionComparison.Current,
+				"Java accepts its equal four-part MSI version");
+			verify(Evaluate("java-17-x64", "17.0.20.1", "17.0.21.0") == RuntimeVersionComparison.Outdated,
+				"An older Java patch remains eligible for explicitly selected compatibility installation");
+			verify(Evaluate("java-8-x64", "21.0.12.1", "8.0.504.1") == RuntimeVersionComparison.Unknown,
+				"Newer Java family never replaces the Java 8 requirement");
+			verify(Evaluate("java-21-x64", "21.0.12", "21.0.12.1") == RuntimeVersionComparison.Unknown,
+				"Incomplete Java build evidence does not report success");
+			verify(RuntimeInstallerHelper.GetJavaInstallerArguments(@"C:\Program Files", "21.0.12.101") ==
+				"/qn /norestart ALLUSERS=1 ADDLOCAL=FeatureMain INSTALLDIR=\"C:\\Program Files\\Eclipse Adoptium\\jre-21.0.12.101-hotspot\"",
+				"Optional Java MSI supplies machine-wide version-specific INSTALLDIR and excludes global environment/association features");
+			bool rejectedJavaPath = false;
+			try { RuntimeInstallerHelper.GetJavaInstallerArguments("relative", "21.0.12.101"); }
+			catch (System.IO.InvalidDataException) { rejectedJavaPath = true; }
+			verify(rejectedJavaPath, "Java installation never falls back to an untrusted relative path");
+			verify(RuntimeInstallerHelper.GetJavaMaintenanceArguments(@"C:\Program Files", "21.0.12.101", "21.0.12.101", @"D:\Java Custom\jre21", true) ==
+				"/qn /norestart ALLUSERS=1 ADDLOCAL=FeatureMain INSTALLDIR=\"D:\\Java Custom\\jre21\" REINSTALL=FeatureMain REINSTALLMODE=am",
+				"Repair of the same Java MSI restores FeatureMain files at the registered location, not a no-op install");
+			verify(!RuntimeInstallerHelper.GetJavaMaintenanceArguments(@"C:\Program Files", "21.0.12.101", "21.0.11.9", @"D:\Old Java", false).Contains("REINSTALL="),
+				"Java update/new installation never uses maintenance-only arguments");
+			bool rejectedJavaDowngrade = false;
+			try { RuntimeInstallerHelper.GetJavaMaintenanceArguments(@"C:\Program Files", "21.0.12.101", "21.0.13.1", @"D:\Newer Java", false); }
+			catch (InvalidOperationException) { rejectedJavaDowngrade = true; }
+			verify(rejectedJavaDowngrade, "A newer incomplete Java installation cannot be silently downgraded by an older bundled MSI");
+			verify(!RuntimeInstallerHelper.GetJavaMaintenanceArguments(@"C:\Program Files", "21.0.12.101", "21.0.12.101", @"D:\Stale Java", false).Contains("REINSTALL="),
+				"Orphan Java registry key without installed MSI triggers installation, never a no-op REINSTALL");
+			GamingReadinessProfile unreadableJava = new GamingReadinessProfile { SystemDriveFreeBytes = 10L * 1024 * 1024 * 1024 };
+			unreadableJava.MutableRuntimeStatuses.Add(new RuntimeComponentStatus
+			{
+				Component = GamingRuntimeManifest.FindById("java-21-x64"), State = GamingReadinessState.Unknown,
+				Detail = "Registry query denied", BundleAvailable = true
+			});
+			verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(unreadableJava,
+				new GamingRuntimeInstallSelection { InstallOptionalCompatibility = true }, true).Contains("Registry query denied"),
+				"Unreadable selected runtime state cannot be converted into a blind installation attempt");
 
 			const string dokanyRequired = "2.3.1.1000";
 			verify(Evaluate("dokany", "2.3.1.1000", dokanyRequired) == RuntimeVersionComparison.Current,
@@ -104,8 +139,8 @@ namespace InstallerHost
 				string.Equals(required, winFspRequired, StringComparison.Ordinal) && !winFsp.IncludedByDefault &&
 				winFsp.DisplayName.IndexOf("Beta", StringComparison.OrdinalIgnoreCase) >= 0,
 				"WinFsp lock remains opt-in and visibly identifies the beta");
-			verify(GamingRuntimeManifest.GetComponents().Where(RuntimeVersionPolicy.RequiresMinimumVersion).Count() == 8,
-				"Only VC, .NET Desktop, Dokany and WinFsp offline payloads are freshness-managed");
+			verify(GamingRuntimeManifest.GetComponents().Where(RuntimeVersionPolicy.RequiresMinimumVersion).Count() == 12,
+				"VC, .NET Desktop, four Java LTS families, Dokany and WinFsp offline payloads are freshness-managed");
 
 			return passed;
 		}

@@ -1,6 +1,9 @@
 #Requires -Version 5.1
 [CmdletBinding()]
-param([string]$MSBuildPath = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe')
+param(
+    [string]$MSBuildPath = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
+    [string]$RequireRuntime10X64Version = ''
+)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $heldInputStreams = New-Object System.Collections.Generic.List[System.IO.FileStream]
@@ -26,7 +29,7 @@ try {
     $compileInputs = @($project.SelectNodes('//*[local-name()="Compile"]') | ForEach-Object { $_.GetAttribute('Include') })
     $testInputs = @(Get-ChildItem -LiteralPath 'Tests' -Filter '*.cs' -File | ForEach-Object { 'Tests\' + $_.Name })
     $artInputs = @($project.SelectNodes('//*[local-name()="EmbeddedResource"]') | ForEach-Object { $_.GetAttribute('Include') } | Where-Object { $_ -notlike 'resources\prerequisites\*' })
-    $inputs = @($compileInputs + $testInputs + $artInputs + @('InstallerHost.csproj','app.manifest','prerequisites.lock.json','resources\Builder.ico','Build-Consumer.ps1','Verify-ConsumerBuild.ps1','Test-ConsumerUi.ps1') | Sort-Object -Unique)
+    $inputs = @($compileInputs + $testInputs + $artInputs + @('InstallerHost.csproj','app.manifest','prerequisites.lock.json','resources\Builder.ico','Build-Consumer.ps1','Verify-ConsumerBuild.ps1','Test-ConsumerUi.ps1','Restore-ConsumerPayloads.ps1','Restore-ThirdPartySources.ps1','third-party-sources.lock.json','THIRD-PARTY-NOTICES.md') | Sort-Object -Unique)
     $projectRoot = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\', '/')
     $projectPrefix = $projectRoot + [System.IO.Path]::DirectorySeparatorChar
     foreach ($inputPath in $inputs) {
@@ -57,6 +60,13 @@ try {
     }
     $sourceHashes = @{}
     foreach ($inputPath in $inputs) { $sourceHashes[$inputPath] = (Get-FileHash -LiteralPath $inputPath -Algorithm SHA256).Hash }
+    & .\Restore-ThirdPartySources.ps1 -VerifyOnly
+    $sourceCatalog = Get-Content -LiteralPath 'third-party-sources.lock.json' -Raw | ConvertFrom-Json
+    foreach ($sourceArchive in $sourceCatalog.sources) {
+        $sourceArchivePath = Join-Path $PSScriptRoot ('resources\third-party-sources\' + $sourceArchive.name)
+        $heldInputStreams.Add([System.IO.File]::Open($sourceArchivePath, [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)) | Out-Null
+    }
     foreach ($payload in $catalog.payloads) {
         $path = Join-Path 'resources\prerequisites' $payload.name
         if ((Get-Item -LiteralPath $path).Length -ne $payload.length -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $payload.sha256) { throw ('Payload difere do lock: ' + $payload.name) }
@@ -65,7 +75,7 @@ try {
             if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Thumbprint -ne $payload.signerThumbprint) { throw ('Assinatura inválida: ' + $payload.name) }
         }
     }
-    & .\Test-ConsumerUi.ps1 -MSBuildPath $MSBuildPath
+    & .\Test-ConsumerUi.ps1 -MSBuildPath $MSBuildPath -RequireRuntime10X64Version $RequireRuntime10X64Version
     if ($LASTEXITCODE -ne 0) { throw 'Testes internos falharam.' }
     & $MSBuildPath InstallerHost.csproj /t:Rebuild /p:Configuration=Release /p:IncludePrerequisitePayloads=true /nologo /v:minimal
     if ($LASTEXITCODE -ne 0) { throw 'Compilação do instalador falhou.' }
@@ -79,6 +89,18 @@ try {
         [System.IO.FileShare]::Read)) | Out-Null
     & .\Verify-ConsumerBuild.ps1
     if ($LASTEXITCODE -ne 0) { throw 'Verificação do executável falhou.' }
+    foreach ($artifactArch in @('x86','x64')) {
+        if ($artifactArch -eq 'x64' -and -not [Environment]::Is64BitOperatingSystem) { continue }
+        $framework = if ($artifactArch -eq 'x64') { 'Framework64' } else { 'Framework' }
+        $probeBits = if ($artifactArch -eq 'x64') { 64 } else { 32 }
+        $probeCompiler = Join-Path $env:WINDIR ('Microsoft.NET\' + $framework + '\v4.0.30319\csc.exe')
+        $probeExe = Join-Path $PSScriptRoot ('TestResults\executables\ConsumerArtifactProbe.' + $artifactArch + '.exe')
+        & $probeCompiler /nologo /target:exe /warnaserror+ ('/platform:' + $artifactArch) ('/out:' + $probeExe) Tests\ConsumerArtifactProbe.cs
+        if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar teste do EXE final.' }
+        $requiredRuntime = if ([string]::IsNullOrWhiteSpace($RequireRuntime10X64Version)) { '-' } else { $RequireRuntime10X64Version }
+        & $probeExe $builtExePath $probeBits $requiredRuntime
+        if ($LASTEXITCODE -ne 0) { throw ('Regressão no EXE final (' + $artifactArch + ').') }
+    }
     foreach ($inputPath in $inputs) {
         if ((Get-FileHash -LiteralPath $inputPath -Algorithm SHA256).Hash -ne $sourceHashes[$inputPath]) { throw ('Fonte mudou durante a compilação: ' + $inputPath) }
     }
@@ -99,6 +121,7 @@ try {
         internalTestsPassed = $true; realWindowQaPassed = $false; cleanWindowsInstallPassed = $false
         productPackageIncluded = $false; productionApproved = $false
         containsPrereleaseComponents = $true; prereleaseComponents = @('WinFsp 2026 Beta4 (2.2.26215), optional and unchecked')
+        correspondingSourcesVerified = $true; correspondingSources = $sourceCatalog.sources
         warning = 'Candidato interno para testes, com WinFsp Beta opcional; confirmar inclusão antes da entrega. Componentes reais incorporados; requer partes do produto e sidecar para instalar TurboRama. Não aprovado para produção.'
     }
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath 'bin\Release\InstallerHost-build-manifest.json' -Encoding UTF8
