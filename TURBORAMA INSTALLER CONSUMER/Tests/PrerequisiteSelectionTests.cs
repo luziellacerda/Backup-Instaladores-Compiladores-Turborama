@@ -81,6 +81,31 @@ namespace InstallerHost
                     "All-unchecked selection keeps the original zero-step path");
                 verify(page.observedSelectionMask == 0, "All-unchecked selection is tracked without phantom actions");
 
+				page.installationComplete = true;
+				page.ApplyDiagnosticRepairSelection(new GamingRuntimeInstallSelection
+				{
+					InstallMicrosoftRuntimeStack = true,
+					InstallDirectXLegacy = true,
+					InstallDokany = true,
+					InstallWinFsp = true,
+					OpenNvidiaOfficialSource = true,
+					AllowedComponentIds = new[] { "vc-modern-x64", "directx-june-2010" }
+				});
+				GamingRuntimeInstallSelection repairSelection = page.GetPrerequisiteSelection().RuntimeSelection;
+				verify(repairSelection.InstallMicrosoftRuntimeStack && repairSelection.InstallDirectXLegacy &&
+					!repairSelection.InstallDokany && !repairSelection.InstallWinFsp &&
+					!repairSelection.OpenNvidiaOfficialSource &&
+					repairSelection.AllowedComponentIds.OrderBy(id => id).SequenceEqual(
+						new[] { "directx-june-2010", "vc-modern-x64" }),
+					"Diagnostic repair applies only supported runtime groups and rejects optional drivers and external sources");
+				verify(!page.installationComplete && page.progressTitleText == "Reparo de compatibilidade selecionado",
+					"Diagnostic repair invalidates prior completion and explains the preflight validation");
+				page.chkVCpp.Checked = false;
+				verify(page.restrictedRepairComponentIds == null,
+					"A later manual checkbox change leaves repair mode and restores normal explicit group selection");
+				page.chkDirectX.Checked = false;
+				page.UpdateProgressMaximumFromSelection();
+
                 page.installationComplete = true;
                 page.UpdateProgressMaximumFromSelection();
                 verify(page.installationComplete, "Refreshing the same selection preserves completion");

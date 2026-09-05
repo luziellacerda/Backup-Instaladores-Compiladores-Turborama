@@ -42,6 +42,7 @@
     <Compile Include="DownloadDisplayMask.cs" />
     <Compile Include="GamingReadinessDialog.cs" />
     <Compile Include="GamingReadinessModels.cs" />
+	<Compile Include="GamingReadinessRepairPlanner.cs" />
     <Compile Include="GamingRuntimeManifest.cs" />
     <Compile Include="InstallerPackageSecurity.cs" />
     <Compile Include="LimitedUserImpersonation.cs" />

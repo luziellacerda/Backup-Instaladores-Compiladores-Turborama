@@ -132,11 +132,11 @@ namespace InstallerHost
             contentStack.Controls.Add(scope);
             Ui.FillStackWidth(contentStack);
 
-            chkVCpp.CheckedChanged += delegate { UpdateProgressMaximumFromSelection(); };
-            chkDirectX.CheckedChanged += delegate { UpdateProgressMaximumFromSelection(); };
-            chkNvidiaApp.CheckedChanged += delegate { UpdateProgressMaximumFromSelection(); };
-            chkDokany.CheckedChanged += delegate { UpdateProgressMaximumFromSelection(); };
-            chkwinFSP.CheckedChanged += delegate { UpdateProgressMaximumFromSelection(); };
+            chkVCpp.CheckedChanged += delegate { PrerequisiteOptionChanged(); };
+            chkDirectX.CheckedChanged += delegate { PrerequisiteOptionChanged(); };
+            chkNvidiaApp.CheckedChanged += delegate { PrerequisiteOptionChanged(); };
+            chkDokany.CheckedChanged += delegate { PrerequisiteOptionChanged(); };
+            chkwinFSP.CheckedChanged += delegate { PrerequisiteOptionChanged(); };
             ResumeLayout(true);
         }
 

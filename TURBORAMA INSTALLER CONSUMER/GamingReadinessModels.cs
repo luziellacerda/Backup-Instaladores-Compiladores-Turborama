@@ -321,6 +321,7 @@ namespace InstallerHost
 		public bool InstallDokany { get; set; }
 		public bool InstallWinFsp { get; set; }
 		public bool OpenNvidiaOfficialSource { get; set; }
+		public string[] AllowedComponentIds { get; set; }
 
 		public static GamingRuntimeInstallSelection RecommendedDefaults()
 		{

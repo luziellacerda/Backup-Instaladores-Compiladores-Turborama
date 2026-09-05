@@ -50,6 +50,12 @@ namespace InstallerHost
                     Detail = "Texto sintético longo para conferir leitura, tooltip e redimensionamento sem sobrepor controles.",
                     BundleAvailable = false
                 });
+			RuntimeComponentStatus repairableVc = profile.MutableRuntimeStatuses.Single(item => item.Component.Id == "vc-modern-x64");
+			repairableVc.State = GamingReadinessState.Attention;
+			repairableVc.BundleAvailable = true;
+			RuntimeComponentStatus repairableDirectX = profile.MutableRuntimeStatuses.Single(item => item.Component.Id == "directx-june-2010");
+			repairableDirectX.State = GamingReadinessState.Attention;
+			repairableDirectX.BundleAvailable = true;
             Directory.CreateDirectory(outputDirectory);
             using (GamingReadinessDialog dialog = new GamingReadinessDialog(profile))
             {
@@ -67,6 +73,15 @@ namespace InstallerHost
                 verify(report.ReadOnly && report.Text == profile.BuildDetailedReport(), "Technical report content is unchanged and read-only");
                 Button close = Find<Button>(dialog, "CloseDiagnostic");
                 Button copy = Find<Button>(dialog, "CopyOfficialSource");
+				Button repair = Find<Button>(dialog, "RepairReadiness");
+				verify(repair.Enabled && repair.Text == "REPARAR 2 PROBLEMAS",
+					"Repair action exposes the exact number of safely repairable bundled dependencies");
+				verify(dialog.RepairSelection.InstallMicrosoftRuntimeStack && dialog.RepairSelection.InstallDirectXLegacy &&
+					!dialog.RepairSelection.InstallDokany && !dialog.RepairSelection.InstallWinFsp &&
+					!dialog.RepairSelection.OpenNvidiaOfficialSource &&
+					dialog.RepairSelection.AllowedComponentIds.OrderBy(id => id).SequenceEqual(
+						new[] { "directx-june-2010", "vc-modern-x64" }),
+					"Repair selection includes supported runtimes only and never opts into drivers or external sources");
                 verify(ReferenceEquals(dialog.AcceptButton, close) && ReferenceEquals(dialog.CancelButton, close),
                     "Enter and Escape preserve the original close action");
 
@@ -87,6 +102,8 @@ namespace InstallerHost
                         !ScreenBounds(Find<Label>(dialog, "DiagnosticLegal")).IntersectsWith(ScreenBounds(close)),
                         "Legal text never overlaps footer actions at " + size.Width);
                     verify(!copy.Bounds.IntersectsWith(close.Bounds), "Footer actions do not overlap at " + size.Width);
+					verify(!copy.Bounds.IntersectsWith(repair.Bounds) && !repair.Bounds.IntersectsWith(close.Bounds),
+						"Repair, official source and close actions do not overlap at " + size.Width);
                     for (int index = 0; index < tabs.TabCount; index++)
                     {
                         tabs.SelectedIndex = index;

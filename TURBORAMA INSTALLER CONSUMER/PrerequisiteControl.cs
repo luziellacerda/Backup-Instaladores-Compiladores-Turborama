@@ -23,6 +23,8 @@ namespace InstallerHost
 		private int? observedSelectionMask;
 		private bool selectionLocked;
 		private bool restoringLockedSelection;
+		private bool applyingDiagnosticRepairSelection;
+		private string[] restrictedRepairComponentIds;
 		private int lockedCheckedMask;
 		private int unlockedEnabledMask;
 		private bool nvidiaAppOpened;
@@ -334,7 +336,9 @@ namespace InstallerHost
 					InstallDirectXLegacy = chkDirectX.Enabled && chkDirectX.Checked,
 					InstallDokany = chkDokany.Enabled && chkDokany.Checked,
 					InstallWinFsp = chkwinFSP.Enabled && chkwinFSP.Checked,
-					OpenNvidiaOfficialSource = chkNvidiaApp != null && chkNvidiaApp.Enabled && chkNvidiaApp.Checked
+					OpenNvidiaOfficialSource = chkNvidiaApp != null && chkNvidiaApp.Enabled && chkNvidiaApp.Checked,
+					AllowedComponentIds = restrictedRepairComponentIds == null
+						? null : (string[])restrictedRepairComponentIds.Clone()
 				},
 				OpenNvidiaOfficialSource = chkNvidiaApp != null && chkNvidiaApp.Enabled && chkNvidiaApp.Checked
 			};
@@ -610,8 +614,38 @@ namespace InstallerHost
 			}
 			using (GamingReadinessDialog dialog = new GamingReadinessDialog(gamingReadinessProfile))
 			{
-				dialog.ShowDialog(FindForm());
+				DialogResult result = dialog.ShowDialog(FindForm());
+				if (result != DialogResult.Retry) return;
+				ApplyDiagnosticRepairSelection(dialog.RepairSelection);
 			}
+			BtnNext_Click(btnNext, EventArgs.Empty);
+		}
+
+		private void ApplyDiagnosticRepairSelection(GamingRuntimeInstallSelection repairSelection)
+		{
+			if (repairSelection == null || IsInstallationRunning()) return;
+			applyingDiagnosticRepairSelection = true;
+			try
+			{
+				chkVCpp.Checked = repairSelection.InstallMicrosoftRuntimeStack;
+				chkDirectX.Checked = repairSelection.InstallDirectXLegacy;
+				chkDokany.Checked = false;
+				chkwinFSP.Checked = false;
+				if (chkNvidiaApp != null) chkNvidiaApp.Checked = false;
+				restrictedRepairComponentIds = repairSelection.AllowedComponentIds == null
+					? new string[0] : (string[])repairSelection.AllowedComponentIds.Clone();
+			}
+			finally { applyingDiagnosticRepairSelection = false; }
+			installationComplete = false;
+			SetProgressHeaderSafe("Reparo de compatibilidade selecionado",
+				"Validando espaço, reinicialização pendente e integridade dos pacotes antes de iniciar.");
+			UpdateProgressMaximumFromSelection();
+		}
+
+		private void PrerequisiteOptionChanged()
+		{
+			if (!applyingDiagnosticRepairSelection) restrictedRepairComponentIds = null;
+			UpdateProgressMaximumFromSelection();
 		}
 
 		private static string GetGamingReadinessStateText(GamingReadinessState state)

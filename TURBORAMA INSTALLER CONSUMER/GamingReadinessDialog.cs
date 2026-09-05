@@ -9,6 +9,7 @@ namespace InstallerHost
 	internal sealed class GamingReadinessDialog : Form
 	{
 		private readonly GamingReadinessProfile profile;
+		private readonly GamingReadinessRepairPlan repairPlan;
 		private readonly ListView recommendationsList;
 		private readonly TabControl tabs;
 		protected override void OnHandleCreated(EventArgs e)
@@ -21,6 +22,7 @@ namespace InstallerHost
 		{
 			if (readinessProfile == null) throw new ArgumentNullException("readinessProfile");
 			profile = readinessProfile;
+			repairPlan = GamingReadinessRepairPlanner.Create(profile);
 			Name = "GamingReadinessDialog";
 			Text = "TurboRama — Diagnóstico de prontidão";
 			StartPosition = FormStartPosition.CenterParent;
@@ -103,18 +105,56 @@ namespace InstallerHost
 				Dock = DockStyle.Top, Margin = new Padding(0, 8, 0, 0), Padding = Padding.Empty
 			};
 			Button officialButton = ConsumerLayout.Action("CopyOfficialSource", "COPIAR LINK OFICIAL");
-			officialButton.Width = 230;
+			officialButton.Width = 200;
 			officialButton.Margin = new Padding(0, 0, 10, 0);
 			officialButton.Click += OpenSelectedOfficialSource;
+			Button repairButton = ConsumerLayout.Action("RepairReadiness", repairPlan.CanRepair
+				? "REPARAR " + repairPlan.RepairableComponentCount + " PROBLEMAS"
+				: "SEM REPARO AUTOMÁTICO", true);
+			repairButton.Width = 250;
+			repairButton.Margin = new Padding(0, 0, 10, 0);
+			repairButton.Enabled = repairPlan.CanRepair;
+			repairButton.AccessibleDescription = repairPlan.CanRepair
+				? "Prepara a correção das dependências oficiais incorporadas que estão ausentes ou precisam de reparo."
+				: "Nenhuma dependência compatível com reparo automático foi detectada.";
+			repairButton.Click += ConfirmRepair;
 			Button closeButton = ConsumerLayout.Action("CloseDiagnostic", "FECHAR");
 			closeButton.Margin = Padding.Empty;
 			closeButton.DialogResult = DialogResult.OK;
 			actions.Controls.Add(closeButton);
+			actions.Controls.Add(repairButton);
 			actions.Controls.Add(officialButton);
 			Ui.AddRow(footer, actions);
 			layout.Controls.Add(footer, 0, 2);
 			AcceptButton = closeButton;
 			CancelButton = closeButton;
+		}
+
+		internal GamingRuntimeInstallSelection RepairSelection
+		{
+			get { return repairPlan.Selection; }
+		}
+
+		private void ConfirmRepair(object sender, EventArgs e)
+		{
+			if (!repairPlan.CanRepair) return;
+
+			string manualNotice = repairPlan.ManualActionCount > 0
+				? Environment.NewLine + Environment.NewLine + repairPlan.ManualActionCount +
+					" outra(s) pendência(s) exigem orientação manual e não serão alteradas."
+				: string.Empty;
+			DialogResult confirmation = MessageBox.Show(this,
+				"O TurboRama encontrou " + repairPlan.RepairableComponentCount +
+				" dependência(s) que podem ser reparadas com os pacotes oficiais incorporados e verificados." +
+				Environment.NewLine + Environment.NewLine +
+				"O reparo não altera BIOS, virtualização, memória, espaço em disco, Windows Update ou drivers de vídeo." +
+				manualNotice + Environment.NewLine + Environment.NewLine +
+				"Deseja iniciar o reparo seguro agora?",
+				"Reparar problemas de compatibilidade", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+			if (confirmation != DialogResult.Yes) return;
+
+			DialogResult = DialogResult.Retry;
+			Close();
 		}
 
 		private TabPage BuildHardwarePage()

@@ -390,6 +390,11 @@ namespace InstallerHost
 			{
 				return false;
 			}
+			if (selection.AllowedComponentIds != null &&
+				!selection.AllowedComponentIds.Any(id => string.Equals(id, component.Id, StringComparison.OrdinalIgnoreCase)))
+			{
+				return false;
+			}
 
 			if (string.Equals(component.Id, "directx-june-2010", StringComparison.OrdinalIgnoreCase))
 			{
