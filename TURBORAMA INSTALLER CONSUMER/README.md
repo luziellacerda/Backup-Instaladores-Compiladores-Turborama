@@ -19,6 +19,8 @@ Uma instalação nova sugere a primeira pasta vazia entre `TurboRama`, `TurboRam
 
 Desde 10.1.13, a extração também trata o token de identificação insuficiente que algumas execuções elevadas herdam no Windows. Quando o token UAC vinculado não pode representar o usuário, o instalador cria um token LUA do mesmo usuário, remove privilégios administrativos, reduz a integridade para Medium e confirma essas condições antes de gravar. Isso corrige o erro Win32 1346 ao usar **Executar como administrador** sem permitir que a extração do produto rode elevada. O teste automatizado reproduz esse cenário em uma pasta temporária protegida.
 
+Desde 10.1.14, a detecção do WinFsp aceita o identificador textual de compilação acrescentado à versão da DLL e usa os campos numéricos assinados do recurso `VERSIONINFO` para a comparação. Registro, diretório aprovado e binário ainda precisam concordar. Assim, uma instalação 2025 legítima é classificada como desatualizada e pode receber a atualização explicitamente selecionada, em vez de bloquear todo o plano como versão desconhecida.
+
 ## Verificação e compilação
 
 1. Windows 10/11, Visual Studio 2022 com MSBuild e targeting pack .NET Framework 4.7.2.

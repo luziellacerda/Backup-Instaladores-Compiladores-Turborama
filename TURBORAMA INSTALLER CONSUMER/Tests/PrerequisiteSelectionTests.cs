@@ -438,6 +438,19 @@ namespace InstallerHost
                 (item.Component.Id == "dokany" || item.Component.Id == "winfsp") &&
                 item.Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle),
                 "The recommended stack never schedules optional drivers");
+
+			GamingReadinessProfile outdatedWinFsp = CreateSelectionTestProfile(GamingReadinessState.Ready);
+			outdatedWinFsp.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
+			RuntimeComponentStatus outdatedWinFspStatus = outdatedWinFsp.MutableRuntimeStatuses.Single(item =>
+				item.Component.Id == "winfsp");
+			outdatedWinFspStatus.State = GamingReadinessState.Attention;
+			outdatedWinFspStatus.DetectedVersion = "2.1.25156";
+			outdatedWinFspStatus.BundleAvailable = true;
+			GamingRuntimeInstallSelection updateWinFsp = new GamingRuntimeInstallSelection { InstallWinFsp = true };
+			verify(RuntimeInstallerHelper.BuildInstallationPlan(outdatedWinFsp, updateWinFsp)
+				.Single(item => item.Component.Id == "winfsp").Disposition == RuntimeInstallDisposition.InstallFromVerifiedBundle &&
+				RuntimeInstallerHelper.GetInstallationPreflightBlockReason(outdatedWinFsp, updateWinFsp, true) == null,
+				"A confirmed outdated WinFsp remains eligible for its explicitly selected verified update");
             missing.MutableRuntimeStatuses.Single(item => item.Component.Id == "dokany").BundleAvailable = false;
             verify(RuntimeInstallerHelper.BuildInstallationPlan(missing, new GamingRuntimeInstallSelection { InstallDokany = true })
                 .Single(item => item.Component.Id == "dokany").Disposition == RuntimeInstallDisposition.MissingBundle,

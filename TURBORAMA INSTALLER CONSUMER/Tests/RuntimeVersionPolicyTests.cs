@@ -94,6 +94,18 @@ namespace InstallerHost
 				"WinFsp accepts a newer version and ignores a packaging revision");
 			verify(Evaluate("winfsp", "2.1.25156", winFspRequired) == RuntimeVersionComparison.Outdated,
 				"WinFsp rejects the vulnerable 2025 stable line");
+			string comparableWinFspVersion;
+			verify(PrerequisiteDetector.TryGetComparableFileVersion(
+				"2.1.25156.ddca7bd", 2, 1, 25156, 0, out comparableWinFspVersion) &&
+				string.Equals(comparableWinFspVersion, "2.1.25156.0", StringComparison.Ordinal) &&
+				Evaluate("winfsp", comparableWinFspVersion, winFspRequired) == RuntimeVersionComparison.Outdated,
+				"WinFsp compares signed numeric VERSIONINFO fields when display text has a source suffix");
+			verify(!PrerequisiteDetector.TryGetComparableFileVersion(
+				string.Empty, 2, 1, 25156, 0, out comparableWinFspVersion),
+				"Missing file-version evidence is never reconstructed from numeric fields alone");
+			verify(!PrerequisiteDetector.TryGetComparableFileVersion(
+				"unavailable", 0, 0, 0, 0, out comparableWinFspVersion),
+				"Invalid empty VERSIONINFO fields remain unknown");
 			verify(Evaluate("winfsp", string.Empty, winFspRequired) == RuntimeVersionComparison.Unknown,
 				"WinFsp partial evidence is never treated as current");
 			verify(RuntimeVersionPolicy.HaveSameVersionFields("2.2.26215", "2.2.26215.0", 3),

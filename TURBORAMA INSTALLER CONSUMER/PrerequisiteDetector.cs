@@ -615,19 +615,54 @@ namespace InstallerHost
 				{
 					return false;
 				}
-				string detected = (FileVersionInfo.GetVersionInfo(path).FileVersion ?? string.Empty).Trim();
-				Version parsed;
-				if (!Version.TryParse(detected, out parsed) || parsed.Build < 0)
-				{
-					return false;
-				}
-				version = detected;
-				return true;
+				FileVersionInfo information = FileVersionInfo.GetVersionInfo(path);
+				return TryGetComparableFileVersion(
+					information.FileVersion,
+					information.FileMajorPart,
+					information.FileMinorPart,
+					information.FileBuildPart,
+					information.FilePrivatePart,
+					out version);
 			}
 			catch
 			{
 				return false;
 			}
+		}
+
+		internal static bool TryGetComparableFileVersion(
+			string displayVersion,
+			int major,
+			int minor,
+			int build,
+			int revision,
+			out string version)
+		{
+			version = string.Empty;
+			string detected = (displayVersion ?? string.Empty).Trim();
+			if (detected.Length == 0)
+			{
+				return false;
+			}
+
+			Version parsed;
+			if (Version.TryParse(detected, out parsed) && parsed.Build >= 0)
+			{
+				version = detected;
+				return true;
+			}
+
+			// Some signed runtimes append a source-control identifier to the display
+			// string (for example WinFsp 2.1.25156.ddca7bd). The fixed numeric
+			// VERSIONINFO fields remain authoritative and comparable.
+			if (major < 0 || minor < 0 || build < 0 || revision < 0 ||
+				(major == 0 && minor == 0 && build == 0 && revision == 0))
+			{
+				return false;
+			}
+
+			version = new Version(major, minor, build, revision).ToString();
+			return true;
 		}
 
 		private static string GetNativeSystemDirectoryForRead()
