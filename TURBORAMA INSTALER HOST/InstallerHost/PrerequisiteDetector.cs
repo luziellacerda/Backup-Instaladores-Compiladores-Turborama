@@ -6,7 +6,7 @@ using Microsoft.Win32;
 
 namespace InstallerHost
 {
-	public static class PrerequisiteDetector
+	public static partial class PrerequisiteDetector
 	{
 		public static bool IsDotNet35Installed()
 		{
@@ -55,9 +55,15 @@ namespace InstallerHost
 
 			foreach (string path in paths)
 			{
-				if (Directory.Exists(path) && Directory.GetFiles(path, "msedgewebview2.exe", SearchOption.AllDirectories).Length > 0)
+				try
 				{
-					return true;
+					if (Directory.Exists(path) && Directory.GetFiles(path, "msedgewebview2.exe", SearchOption.AllDirectories).Length > 0)
+					{
+						return true;
+					}
+				}
+				catch
+				{
 				}
 			}
 
@@ -210,15 +216,23 @@ namespace InstallerHost
 		{
 			foreach (RegistryView registryView in GetRegistryViews())
 			{
-				using (RegistryKey registryKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, registryView))
+				try
 				{
-					using (RegistryKey registryKey2 = registryKey.OpenSubKey(path, RegistryKeyPermissionCheck.ReadSubTree))
+					using (RegistryKey registryKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, registryView))
 					{
-						if (((int?)((registryKey2 != null) ? registryKey2.GetValue("Installed") : null)).GetValueOrDefault() == 1)
+						using (RegistryKey registryKey2 = registryKey.OpenSubKey(path, RegistryKeyPermissionCheck.ReadSubTree))
 						{
-							return true;
+							object installedValue = registryKey2 == null ? null : registryKey2.GetValue("Installed");
+							int installed;
+							if (installedValue != null && int.TryParse(installedValue.ToString(), out installed) && installed == 1)
+							{
+								return true;
+							}
 						}
 					}
+				}
+				catch
+				{
 				}
 			}
 
@@ -394,42 +408,33 @@ namespace InstallerHost
 
 		public static bool IsDirectXJun2010Installed()
 		{
-			string[] dllNames = new string[] { "d3dx9_43.dll", "XInput1_3.dll" };
-			foreach (string folder in GetSystemDllSearchFolders())
+			string[] dllNames = new string[] { "d3dx9_43.dll", "XInput1_3.dll", "D3DCompiler_43.dll" };
+			List<string> folders = GetSystemDllSearchFolders().ToList();
+			if (folders.Count == 0)
 			{
-				foreach (string dllName in dllNames)
+				return false;
+			}
+
+			// A chave HKLM\Microsoft\DirectX existe em instalações limpas do Windows e
+			// não prova que o pacote legado June 2010 esteja presente. Confirme os DLLs.
+			foreach (string dllName in dllNames)
+			{
+				bool found = false;
+				foreach (string folder in folders)
 				{
 					if (File.Exists(Path.Combine(folder, dllName)))
 					{
-						return true;
+						found = true;
+						break;
 					}
+				}
+				if (!found)
+				{
+					return false;
 				}
 			}
 
-			foreach (RegistryView view in GetRegistryViews())
-			{
-				try
-				{
-					using (RegistryKey registryKey = OpenLocalMachineSubKey(view, @"SOFTWARE\Microsoft\DirectX"))
-					{
-						if (registryKey == null)
-						{
-							continue;
-						}
-
-						object value = registryKey.GetValue("Version");
-						if (!string.IsNullOrEmpty((value != null) ? value.ToString() : null))
-						{
-							return true;
-						}
-					}
-				}
-				catch
-				{
-				}
-			}
-
-			return false;
+			return true;
 		}
 
 		public static bool IsDokanyInstalled()
@@ -503,8 +508,10 @@ namespace InstallerHost
 
 		private static RegistryKey OpenLocalMachineSubKey(RegistryView view, string subKeyPath)
 		{
-			RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
-			return baseKey.OpenSubKey(subKeyPath, RegistryKeyPermissionCheck.ReadSubTree);
+			using (RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+			{
+				return baseKey.OpenSubKey(subKeyPath, RegistryKeyPermissionCheck.ReadSubTree);
+			}
 		}
 
 		private static string GetSystemDirectoryForArchitecture(string arch)

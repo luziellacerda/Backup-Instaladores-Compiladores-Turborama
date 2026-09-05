@@ -1,7 +1,5 @@
 using System;
 using System.Globalization;
-using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -35,25 +33,6 @@ namespace InstallerHost
 					return;
 				}
 
-			AppDomain.CurrentDomain.AssemblyResolve += delegate(object sender, ResolveEventArgs resolveArgs)
-			{
-				if (new AssemblyName(resolveArgs.Name).Name == "ICSharpCode.SharpZipLib")
-				{
-					Assembly executingAssembly = Assembly.GetExecutingAssembly();
-					string text = "InstallerHost.resources.ICSharpCode.SharpZipLib.dll";
-					using (Stream manifestResourceStream = executingAssembly.GetManifestResourceStream(text))
-					{
-						if (manifestResourceStream == null)
-						{
-							return null;
-						}
-						byte[] array = new byte[manifestResourceStream.Length];
-						manifestResourceStream.Read(array, 0, array.Length);
-						return Assembly.Load(array);
-					}
-				}
-				return null;
-			};
 			CultureInfo cultureInfo = CultureInfo.CurrentUICulture;
 			for (int i = 0; i < args.Length - 1; i++)
 			{

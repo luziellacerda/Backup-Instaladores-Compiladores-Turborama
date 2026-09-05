@@ -8,7 +8,6 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Windows.Forms;
 using Allegoria.Controls;
-using ICSharpCode.SharpZipLib.Zip;
 using InstallerHost.Properties;
 
 namespace InstallerHost
@@ -68,35 +67,20 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 				MessageBox.Show("Selecione uma pasta de instalação válida.");
 				return;
 			}
-			string text = this.txtFolder.Text;
-			if (Directory.Exists(text))
+			// Capture and canonicalize on the UI thread. BackgroundWorker must never
+			// read a WinForms control directly, and elevated extraction never
+			// overwrites an existing file/directory tree.
+			string destinationFolder;
+			try
 			{
-				if (Directory.EnumerateFileSystemEntries(text).Any<string>())
-				{
-					Logger.Log("[WARNING] Installation folder not empty.");
-					DialogResult overwrite = MessageBox.Show(
-						"A pasta de instalacao nao esta vazia:" + Environment.NewLine + text + Environment.NewLine + Environment.NewLine +
-						"Continuar pode sobrescrever ficheiros. Deseja continuar?",
-						"Pasta nao vazia",
-						MessageBoxButtons.YesNo,
-						MessageBoxIcon.Warning);
-					if (overwrite != DialogResult.Yes)
-						return;
-				}
+				destinationFolder = SecureExtractionGuard.ValidateDestinationSelection(this.txtFolder.Text);
 			}
-			else
+			catch (Exception ex)
 			{
-				try
-				{
-					Logger.Log("[INFO] Creating installation folder.");
-					Directory.CreateDirectory(text);
-				}
-				catch (Exception ex)
-				{
-					Logger.Log("[WARNING] Unable to create installation folder.");
-					MessageBox.Show("Falha ao criar a pasta de instalação: " + ex.Message);
-					return;
-				}
+				Logger.Log("[WARNING] Unsafe or non-empty installation folder: " + ex.Message);
+				MessageBox.Show(this, "Selecione uma pasta local vazia e segura: " + ex.Message,
+					"Destino não aceito", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				return;
 			}
 			this.txtInfo.Visible = false;
 			this.progressBar.Visible = true;
@@ -111,14 +95,21 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			{
 				try
 				{
-					string text2 = this.txtFolder.Text;
 					using (Stream installerZipStream = this.GetInstallerZipStream())
+					using (SecureExtractionGuard extractionGuard = SecureExtractionGuard.Create(destinationFolder))
 					{
-						this.ExtractZipStreamToFolder(installerZipStream, text2);
+						SecureProductExtractor.Extract(installerZipStream, extractionGuard, delegate(int progress)
+						{
+							BackgroundWorker activeWorker = this.worker;
+							if (activeWorker != null)
+							{
+								activeWorker.ReportProgress(progress);
+							}
+						});
+						this.ValidateExtractedInstallation(destinationFolder);
+						this.EnsureTurboRamaExecutable(destinationFolder);
 					}
-					this.ValidateExtractedInstallation(text2);
-					this.EnsureTurboRamaExecutable(text2);
-					this.CreateTurboRamaShortcuts(text2);
+					this.CreateTurboRamaShortcuts(destinationFolder);
 				}
 				catch (Exception ex2)
 				{
@@ -155,7 +146,7 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 					return;
 				}
 				Logger.Log("Installation successful, showing finish screen.");
-				this.mainForm.ShowFinish(this.txtFolder.Text);
+				this.mainForm.ShowFinish(destinationFolder);
 			};
 			this.worker.RunWorkerAsync();
 		}
@@ -172,15 +163,15 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 		// Token: 0x0600001F RID: 31 RVA: 0x000038B0 File Offset: 0x00001AB0
 		private Stream GetInstallerZipStream()
 		{
-			Stream splitStream = this.TryGetSplitPackageStream();
-			if (splitStream != null)
-			{
-				return splitStream;
-			}
-
 			try
 			{
-				return this.GetEmbeddedZipStream();
+				VerifiedProductPackageStream verifiedPackage =
+					ProductPackageSecurity.OpenVerifiedPackage(Application.ExecutablePath);
+				Logger.Log(
+					"Using SHA-256 verified split product package with " +
+					verifiedPackage.PartPaths.Length + " locked part(s); logical archive: " +
+					verifiedPackage.LogicalArchiveName);
+				return verifiedPackage;
 			}
 			catch (Exception ex)
 			{
@@ -193,144 +184,13 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 					"  " + setupName + Environment.NewLine +
 					"  " + setupName + ".pkg.001" + Environment.NewLine +
 					"  " + setupName + ".pkg.002 (se existir)" + Environment.NewLine +
-					"  ..." + Environment.NewLine + Environment.NewLine +
+					"  ..." + Environment.NewLine +
+					"  " + setupName + ".sha256.txt" + Environment.NewLine + Environment.NewLine +
+					"O sidecar deve conter os hashes SHA-256 do próprio setup, de cada parte e do ZIP lógico." + Environment.NewLine +
+					"O formato legado sem sidecar não é aceito por segurança." + Environment.NewLine + Environment.NewLine +
 					"Pasta atual: " + setupFolder + Environment.NewLine + Environment.NewLine +
 					"Detalhe técnico: " + ex.Message,
 					ex);
-			}
-		}
-
-		private Stream TryGetSplitPackageStream()
-		{
-			string exePath = Application.ExecutablePath;
-			string folder = Path.GetDirectoryName(exePath);
-			string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(exePath);
-
-			string[] packageBases = new string[]
-			{
-				exePath,
-				Path.Combine(folder, fileNameWithoutExtension)
-			};
-
-			foreach (string packageBase in packageBases)
-			{
-				List<string> parts = new List<string>();
-
-				for (int i = 1; i <= 999; i++)
-				{
-					string partPath = packageBase + ".pkg." + i.ToString("000");
-
-					if (!File.Exists(partPath))
-					{
-						break;
-					}
-
-					parts.Add(partPath);
-				}
-
-				if (parts.Count > 0)
-				{
-					Logger.Log("Using split installer package with " + parts.Count + " part(s). Base: " + packageBase);
-					return new InstallControl.MultiPartFileStream(parts);
-				}
-			}
-
-			return null;
-		}
-
-		private Stream GetEmbeddedZipStream()
-		{
-			FileStream fileStream = new FileStream(Application.ExecutablePath, FileMode.Open, FileAccess.Read);
-			if (fileStream.Length < 8L)
-			{
-				throw new Exception("Invalid installer: file too small.");
-			}
-			fileStream.Seek(-8L, SeekOrigin.End);
-			byte[] array = new byte[8];
-			if (fileStream.Read(array, 0, 8) != 8)
-			{
-				throw new Exception("Failed to read zip length footer.");
-			}
-			long num = BitConverter.ToInt64(array, 0);
-			long num2 = fileStream.Length - num - 8L;
-			if (num <= 0L || num2 < 0L)
-			{
-				throw new Exception("Invalid ZIP length in installer footer.");
-			}
-			fileStream.Seek(num2, SeekOrigin.Begin);
-			return new InstallControl.SubStream(fileStream, num2, num);
-		}
-
-		// Token: 0x06000020 RID: 32 RVA: 0x00003940 File Offset: 0x00001B40
-		private void ExtractZipStreamToFolder(Stream fs, string destinationFolder)
-		{
-			string destinationRoot = Path.GetFullPath(destinationFolder);
-			if (!destinationRoot.EndsWith(Path.DirectorySeparatorChar.ToString()))
-			{
-				destinationRoot += Path.DirectorySeparatorChar;
-			}
-
-			using (ZipFile zipFile = new ZipFile(fs))
-			{
-				zipFile.IsStreamOwner = true;
-				zipFile.UseZip64 = ICSharpCode.SharpZipLib.Zip.UseZip64.On;
-				long num = (from ZipEntry e in zipFile
-					where e.IsFile && e.Size > 0L
-					select e).Sum<ZipEntry>((ZipEntry e) => e.Size);
-				long num2 = 0L;
-				int num3 = -1;
-				foreach (object obj in zipFile)
-				{
-					ZipEntry zipEntry = (ZipEntry)obj;
-					string safeName = zipEntry.Name.Replace('/', Path.DirectorySeparatorChar);
-					string text = Path.GetFullPath(Path.Combine(destinationRoot, safeName));
-					if (!text.StartsWith(destinationRoot, StringComparison.OrdinalIgnoreCase))
-					{
-						throw new IOException("Unsafe ZIP entry path: " + zipEntry.Name);
-					}
-
-					if (zipEntry.IsDirectory)
-					{
-						Directory.CreateDirectory(text);
-					}
-					else
-					{
-						string directoryName = Path.GetDirectoryName(text);
-						if (!string.IsNullOrEmpty(directoryName))
-						{
-							Directory.CreateDirectory(directoryName);
-						}
-						using (Stream inputStream = zipFile.GetInputStream(zipEntry))
-						{
-							using (FileStream fileStream = File.Create(text))
-							{
-								byte[] array = new byte[8192];
-								int num4;
-								while ((num4 = inputStream.Read(array, 0, array.Length)) > 0)
-								{
-									fileStream.Write(array, 0, num4);
-									num2 += (long)num4;
-									if (num > 0L)
-									{
-										// Clamp 0-100 — evita crash da ProgressBar em ZIP com Size inconsistente
-										int num5 = (int)(num2 * 100L / num);
-										if (num5 < 0) num5 = 0;
-										if (num5 > 100) num5 = 100;
-										if (num5 != num3)
-										{
-											BackgroundWorker backgroundWorker = this.worker;
-											if (backgroundWorker != null)
-											{
-												backgroundWorker.ReportProgress(num5);
-											}
-											num3 = num5;
-										}
-									}
-								}
-							}
-						}
-					}
-				}
 			}
 		}
 
@@ -571,362 +431,6 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
 		}
 
-		private class MultiPartFileStream : Stream
-		{
-			private readonly List<string> _partPaths;
-			private readonly long[] _partLengths;
-			private readonly long _length;
-			private long _position;
-			private int _currentPartIndex = -1;
-			private FileStream _currentStream;
-
-			public MultiPartFileStream(List<string> partPaths)
-			{
-				if (partPaths == null || partPaths.Count == 0)
-				{
-					throw new ArgumentException("No split package parts found.", "partPaths");
-				}
-
-				this._partPaths = new List<string>(partPaths);
-				this._partLengths = new long[this._partPaths.Count];
-
-				long total = 0L;
-				for (int i = 0; i < this._partPaths.Count; i++)
-				{
-					FileInfo fileInfo = new FileInfo(this._partPaths[i]);
-					if (!fileInfo.Exists)
-					{
-						throw new FileNotFoundException("Split package part not found.", this._partPaths[i]);
-					}
-
-					this._partLengths[i] = fileInfo.Length;
-					total += fileInfo.Length;
-				}
-
-				this._length = total;
-				this._position = 0L;
-			}
-
-			public override bool CanRead
-			{
-				get { return true; }
-			}
-
-			public override bool CanSeek
-			{
-				get { return true; }
-			}
-
-			public override bool CanWrite
-			{
-				get { return false; }
-			}
-
-			public override long Length
-			{
-				get { return this._length; }
-			}
-
-			public override long Position
-			{
-				get { return this._position; }
-				set { this.Seek(value, SeekOrigin.Begin); }
-			}
-
-			public override int Read(byte[] buffer, int offset, int count)
-			{
-				if (buffer == null)
-				{
-					throw new ArgumentNullException("buffer");
-				}
-				if (offset < 0 || count < 0 || offset + count > buffer.Length)
-				{
-					throw new ArgumentOutOfRangeException("offset");
-				}
-
-				if (count == 0 || this._position >= this._length)
-				{
-					return 0;
-				}
-
-				int totalRead = 0;
-
-				while (count > 0 && this._position < this._length)
-				{
-					long partStart;
-					int partIndex = this.GetPartIndexForPosition(this._position, out partStart);
-					if (partIndex < 0)
-					{
-						break;
-					}
-
-					this.OpenPart(partIndex);
-
-					long positionInsidePart = this._position - partStart;
-					long remainingInPart = this._partLengths[partIndex] - positionInsidePart;
-					if (remainingInPart <= 0L)
-					{
-						this._position = partStart + this._partLengths[partIndex];
-						continue;
-					}
-
-					this._currentStream.Position = positionInsidePart;
-					int bytesToRead = (int)Math.Min((long)count, remainingInPart);
-					int bytesRead = this._currentStream.Read(buffer, offset, bytesToRead);
-
-					if (bytesRead <= 0)
-					{
-						break;
-					}
-
-					this._position += bytesRead;
-					offset += bytesRead;
-					count -= bytesRead;
-					totalRead += bytesRead;
-				}
-
-				return totalRead;
-			}
-
-			public override long Seek(long offset, SeekOrigin origin)
-			{
-				long newPosition;
-
-				if (origin == SeekOrigin.Begin)
-				{
-					newPosition = offset;
-				}
-				else if (origin == SeekOrigin.Current)
-				{
-					newPosition = this._position + offset;
-				}
-				else if (origin == SeekOrigin.End)
-				{
-					newPosition = this._length + offset;
-				}
-				else
-				{
-					throw new ArgumentOutOfRangeException("origin");
-				}
-
-				if (newPosition < 0L || newPosition > this._length)
-				{
-					throw new IOException("Seek outside split package stream.");
-				}
-
-				this._position = newPosition;
-				return this._position;
-			}
-
-			public override void Flush()
-			{
-			}
-
-			public override void SetLength(long value)
-			{
-				throw new NotSupportedException();
-			}
-
-			public override void Write(byte[] buffer, int offset, int count)
-			{
-				throw new NotSupportedException();
-			}
-
-			protected override void Dispose(bool disposing)
-			{
-				if (disposing)
-				{
-					this.CloseCurrentStream();
-				}
-
-				base.Dispose(disposing);
-			}
-
-			private int GetPartIndexForPosition(long position, out long partStart)
-			{
-				partStart = 0L;
-
-				for (int i = 0; i < this._partLengths.Length; i++)
-				{
-					long partEnd = partStart + this._partLengths[i];
-					if (position < partEnd)
-					{
-						return i;
-					}
-
-					partStart = partEnd;
-				}
-
-				return -1;
-			}
-
-			private void OpenPart(int partIndex)
-			{
-				if (this._currentPartIndex == partIndex && this._currentStream != null)
-				{
-					return;
-				}
-
-				this.CloseCurrentStream();
-				this._currentStream = new FileStream(this._partPaths[partIndex], FileMode.Open, FileAccess.Read, FileShare.Read);
-				this._currentPartIndex = partIndex;
-			}
-
-			private void CloseCurrentStream()
-			{
-				if (this._currentStream != null)
-				{
-					this._currentStream.Dispose();
-					this._currentStream = null;
-				}
-
-				this._currentPartIndex = -1;
-			}
-		}
-
-		private class SubStream : Stream
-		{
-			// Token: 0x0600006C RID: 108 RVA: 0x00008A1E File Offset: 0x00006C1E
-			public SubStream(Stream baseStream, long start, long length)
-			{
-				this._baseStream = baseStream;
-				this._start = start;
-				this._length = length;
-				this._position = 0L;
-				this._baseStream.Seek(this._start, SeekOrigin.Begin);
-			}
-
-			// Token: 0x17000010 RID: 16
-			// (get) Token: 0x0600006D RID: 109 RVA: 0x00008A56 File Offset: 0x00006C56
-			public override bool CanRead
-			{
-				get
-				{
-					return this._baseStream.CanRead;
-				}
-			}
-
-			// Token: 0x17000011 RID: 17
-			// (get) Token: 0x0600006E RID: 110 RVA: 0x00008A63 File Offset: 0x00006C63
-			public override bool CanSeek
-			{
-				get
-				{
-					return this._baseStream.CanSeek;
-				}
-			}
-
-			// Token: 0x17000012 RID: 18
-			// (get) Token: 0x0600006F RID: 111 RVA: 0x00008A70 File Offset: 0x00006C70
-			public override bool CanWrite
-			{
-				get
-				{
-					return false;
-				}
-			}
-
-			// Token: 0x17000013 RID: 19
-			// (get) Token: 0x06000070 RID: 112 RVA: 0x00008A73 File Offset: 0x00006C73
-			public override long Length
-			{
-				get
-				{
-					return this._length;
-				}
-			}
-
-			// Token: 0x17000014 RID: 20
-			// (get) Token: 0x06000071 RID: 113 RVA: 0x00008A7B File Offset: 0x00006C7B
-			// (set) Token: 0x06000072 RID: 114 RVA: 0x00008A83 File Offset: 0x00006C83
-			public override long Position
-			{
-				get
-				{
-					return this._position;
-				}
-				set
-				{
-					this.Seek(value, SeekOrigin.Begin);
-				}
-			}
-
-			// Token: 0x06000073 RID: 115 RVA: 0x00008A90 File Offset: 0x00006C90
-			public override int Read(byte[] buffer, int offset, int count)
-			{
-				long num = this._length - this._position;
-				if (num <= 0L)
-				{
-					return 0;
-				}
-				if ((long)count > num)
-				{
-					count = (int)num;
-				}
-				int num2 = this._baseStream.Read(buffer, offset, count);
-				this._position += (long)num2;
-				return num2;
-			}
-
-			// Token: 0x06000074 RID: 116 RVA: 0x00008ADC File Offset: 0x00006CDC
-			public override long Seek(long offset, SeekOrigin origin)
-			{
-				long num;
-				if (origin == SeekOrigin.Begin)
-				{
-					num = offset;
-				}
-				else if (origin == SeekOrigin.Current)
-				{
-					num = this._position + offset;
-				}
-				else
-				{
-					if (origin != SeekOrigin.End)
-					{
-						throw new ArgumentOutOfRangeException("origin");
-					}
-					num = this._length + offset;
-				}
-				if (num < 0L || num > this._length)
-				{
-					throw new ArgumentOutOfRangeException("offset");
-				}
-				this._baseStream.Seek(this._start + num, SeekOrigin.Begin);
-				this._position = num;
-				return this._position;
-			}
-
-			// Token: 0x06000075 RID: 117 RVA: 0x00008B54 File Offset: 0x00006D54
-			public override void Flush()
-			{
-				throw new NotSupportedException();
-			}
-
-			// Token: 0x06000076 RID: 118 RVA: 0x00008B5B File Offset: 0x00006D5B
-			public override void SetLength(long value)
-			{
-				throw new NotSupportedException();
-			}
-
-			// Token: 0x06000077 RID: 119 RVA: 0x00008B62 File Offset: 0x00006D62
-			public override void Write(byte[] buffer, int offset, int count)
-			{
-				throw new NotSupportedException();
-			}
-
-			// Token: 0x0400005B RID: 91
-			private readonly Stream _baseStream;
-
-			// Token: 0x0400005C RID: 92
-			private readonly long _start;
-
-			// Token: 0x0400005D RID: 93
-			private readonly long _length;
-
-			// Token: 0x0400005E RID: 94
-			private long _position;
-		}
 	}
 }
 

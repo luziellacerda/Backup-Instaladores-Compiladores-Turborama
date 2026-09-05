@@ -34,17 +34,13 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="ICSharpCode.SharpZipLib">
-      <HintPath>resources\ICSharpCode\SharpZipLib.dll</HintPath>
-      <SpecificVersion>False</SpecificVersion>
-      <Private>False</Private>
-    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Management" />
+    <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Windows.Forms" />
   </ItemGroup>
   <ItemGroup>
@@ -99,10 +95,18 @@
       <DependentUpon>PrerequisiteControl.cs</DependentUpon>
     </Compile>
     <Compile Include="DownloadDisplayMask.cs" />
+    <Compile Include="GamingReadinessDialog.cs" />
+    <Compile Include="GamingReadinessModels.cs" />
     <Compile Include="GamingRuntimeManifest.cs" />
+    <Compile Include="InstallerPackageSecurity.cs" />
+    <Compile Include="ProductPackageSecurity.cs" />
+    <Compile Include="PrerequisiteIntegrityCatalog.cs" />
     <Compile Include="PrerequisiteBundle.cs" />
     <Compile Include="PrerequisiteDetector.cs" />
+    <Compile Include="PrerequisiteDetector.Gaming.cs" />
     <Compile Include="RuntimeInstallerHelper.cs" />
+    <Compile Include="SecureProductExtraction.cs" />
+    <Compile Include="SecureInstallerStaging.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="NvidiaAppInstallerHelper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -117,6 +121,7 @@
       <DesignTimeSharedInput>True</DesignTimeSharedInput>
     </Compile>
     <Compile Include="GpuDriverHelper.cs" />
+    <Compile Include="TurboramaNeonControls.cs" />
     <Compile Include="TurboramaPremiumTheme.cs" />
     <Compile Include="TurboramaPremiumUi.cs" />
     <Compile Include="Texts.cs" />
@@ -154,19 +159,41 @@
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
     </EmbeddedResource>
     <EmbeddedResource Include="resources\Builder.ico" />
-    <EmbeddedResource Include="resources\ICSharpCode\SharpZipLib.dll" />
     <EmbeddedResource Include="resources\retrobat_wizard.jpg" />
-    <EmbeddedResource Include="resources\wget.exe" />
-    <EmbeddedResource Include="resources\prerequisites\*.*" />
+    <EmbeddedResource Include="prerequisites.lock.json">
+      <LogicalName>InstallerHost.prerequisites.lock.json</LogicalName>
+    </EmbeddedResource>
+    <!-- Catálogo offline explícito: evita incorporar .partial, sobras de download
+         ou pacotes não aprovados apenas porque estão no diretório. -->
+    <EmbeddedResource Include="resources\prerequisites\vc_redist.x64.exe" />
+    <EmbeddedResource Include="resources\prerequisites\vc_redist.x86.exe" />
+    <EmbeddedResource Include="resources\prerequisites\NDP48-x86-x64-AllOS-ENU.exe" />
+    <EmbeddedResource Include="resources\prerequisites\directx_Jun2010_redist.exe" />
+    <EmbeddedResource Include="resources\prerequisites\windowsdesktop-runtime-8.0-win-x64.exe" />
+    <EmbeddedResource Include="resources\prerequisites\windowsdesktop-runtime-8.0-win-x86.exe" />
+    <EmbeddedResource Include="resources\prerequisites\windowsdesktop-runtime-10.0-win-x64.exe" />
+    <EmbeddedResource Include="resources\prerequisites\windowsdesktop-runtime-10.0-win-x86.exe" />
+    <EmbeddedResource Include="resources\prerequisites\MicrosoftEdgeWebView2RuntimeInstallerX64.exe" />
+    <EmbeddedResource Include="resources\prerequisites\vcredist2005_x64.zip" />
+    <EmbeddedResource Include="resources\prerequisites\vcredist2005_x86.zip" />
+    <EmbeddedResource Include="resources\prerequisites\vcredist2008_x64.zip" />
+    <EmbeddedResource Include="resources\prerequisites\vcredist2008_x86.zip" />
+    <EmbeddedResource Include="resources\prerequisites\vcredist2010_x64.zip" />
+    <EmbeddedResource Include="resources\prerequisites\vcredist2010_x86.zip" />
+    <EmbeddedResource Include="resources\prerequisites\vcredist2012_x64.zip" />
+    <EmbeddedResource Include="resources\prerequisites\vcredist2012_x86.zip" />
+    <EmbeddedResource Include="resources\prerequisites\vcredist2013_x64.zip" />
+    <EmbeddedResource Include="resources\prerequisites\vcredist2013_x86.zip" />
+    <EmbeddedResource Include="resources\prerequisites\xnafx40_redist.msi" />
     <EmbeddedResource Include="WelcomeControl.resx">
       <DependentUpon>WelcomeControl.cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="resources\turborama_sidebar_logo.*">
+    <Content Include="resources\sidebarlogo.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="resources\lz_footer_banner.*">
+    <Content Include="resources\lz_footer_banner.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <None Include="resources\logo_icon.png" />

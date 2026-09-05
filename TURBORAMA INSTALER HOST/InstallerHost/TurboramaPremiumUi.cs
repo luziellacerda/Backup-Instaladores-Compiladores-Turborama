@@ -3,36 +3,48 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 
 namespace InstallerHost
 {
     internal static class TurboramaPremiumUi
     {
-        public static readonly Color Background = Color.FromArgb(3, 7, 6);
-        public static readonly Color Shell = Color.FromArgb(6, 12, 9);
-        public static readonly Color PanelDark = Color.FromArgb(8, 15, 11);
-        public static readonly Color PanelMid = Color.FromArgb(13, 23, 17);
-        public static readonly Color Card = Color.FromArgb(12, 22, 16);
-        public static readonly Color CardHot = Color.FromArgb(16, 32, 22);
-        public static readonly Color Border = Color.FromArgb(52, 92, 58);
-        public static readonly Color BorderSoft = Color.FromArgb(30, 54, 36);
-        public static readonly Color Green = Color.FromArgb(112, 255, 32);
-        public static readonly Color GreenSoft = Color.FromArgb(170, 255, 120);
-        public static readonly Color GreenDeep = Color.FromArgb(26, 105, 26);
-        public static readonly Color Text = Color.FromArgb(242, 248, 242);
-        public static readonly Color Muted = Color.FromArgb(170, 184, 174);
-        public static readonly Color Dim = Color.FromArgb(91, 110, 96);
-        public static readonly Color Warning = Color.FromArgb(255, 190, 80);
-        public static readonly Color AccentRed = Color.FromArgb(214, 48, 49);
-        public static readonly Color AccentRedSoft = Color.FromArgb(108, 28, 30);
+        public static readonly Color Background = TurboramaPremiumTheme.Background;
+        public static readonly Color Shell = TurboramaPremiumTheme.Shell;
+        public static readonly Color PanelDark = TurboramaPremiumTheme.Surface;
+        public static readonly Color PanelMid = TurboramaPremiumTheme.SurfaceRaised;
+        public static readonly Color Card = TurboramaPremiumTheme.Surface;
+        public static readonly Color CardHot = TurboramaPremiumTheme.SurfaceRaised;
+        public static readonly Color Border = TurboramaPremiumTheme.BorderStrong;
+        public static readonly Color BorderSoft = TurboramaPremiumTheme.Border;
+        public static readonly Color Cyan = TurboramaPremiumTheme.Cyan;
+        public static readonly Color CyanSoft = TurboramaPremiumTheme.CyanSoft;
+        public static readonly Color Green = TurboramaPremiumTheme.Green;
+        public static readonly Color GreenSoft = TurboramaPremiumTheme.GreenSoft;
+        public static readonly Color GreenDeep = Color.FromArgb(18, 104, 76);
+        public static readonly Color Violet = TurboramaPremiumTheme.Violet;
+        public static readonly Color Text = TurboramaPremiumTheme.Text;
+        public static readonly Color Muted = TurboramaPremiumTheme.TextMuted;
+        public static readonly Color Dim = TurboramaPremiumTheme.Dim;
+        public static readonly Color Warning = TurboramaPremiumTheme.Warning;
+        public static readonly Color AccentRed = TurboramaPremiumTheme.Violet;
+        public static readonly Color AccentRedSoft = Color.FromArgb(83, 54, 126);
 
-        private const int WindowWidth = 980;
-        private const int WindowHeight = 620;
-        private const int SidebarWidth = 288;
-        private const int FooterHeight = 68;
+        private const int WindowWidth = 1080;
+        private const int WindowHeight = 680;
+        private const int MinimumWindowWidth = 920;
+        private const int MinimumWindowHeight = 590;
+        private const int SidebarWidth = 284;
+        private const int CompactSidebarWidth = 246;
+        private const int FooterHeight = 76;
+        private static readonly ConditionalWeakTable<UserControl, NeonDpiViewport> pendingViewports =
+            new ConditionalWeakTable<UserControl, NeonDpiViewport>();
+        private static readonly ConditionalWeakTable<UserControl, PendingLayoutState> pendingLayouts =
+            new ConditionalWeakTable<UserControl, PendingLayoutState>();
         private static Image cachedFooterBannerImage;
         private static Image cachedSidebarLogoImage;
+        private static DateTime lastPrerequisitePolishUtc = DateTime.MinValue;
 
         static TurboramaPremiumUi()
         {
@@ -59,14 +71,14 @@ namespace InstallerHost
 
             try
             {
-                StyleControl(root);
-                ApplyThemeRecursive(root);
+                TurboramaPremiumTheme.Apply(root);
 
                 // O banner horizontal da LZ deve aparecer SOMENTE na tela 03
                 // de requisitos do sistema. Welcome, licença, instalação e conclusão
                 // continuam sem esse banner de imagem no rodapé.
                 if (IsPrerequisiteScreen(root))
                 {
+                    PolishPrerequisiteScreen(root);
                     AddPrerequisiteFooterBanner(root);
                 }
 
@@ -121,16 +133,18 @@ namespace InstallerHost
 
                 PreparePremiumShell(root);
                 CreateWelcomeSidebar(root, banner);
-                Panel content = CreateContent(root, "Bem-vindo ao Sistema Turborama", "LZ Games e Informática", "Prazer, diversão e os melhores jogos em uma plataforma organizada, moderna e confiável.");
+                Panel content = CreateContent(root, "Bem-vindo ao Sistema Turborama", "LZ Games", "Prazer, diversão e os melhores jogos em uma plataforma organizada, moderna e confiável.");
 
                 PremiumPanel hero = MakeCard("__welcomeHero", 34, 118, 610, 178, CardHot, Border, 16);
+                hero.AccentColor = Cyan;
+                hero.ShowGrid = true;
                 content.Controls.Add(hero);
 
                 if (title != null)
                 {
                     title.Parent = hero;
                     title.Text = "Sistema Turborama";
-                    title.Font = new Font("Segoe UI Semibold", 20f, FontStyle.Bold);
+                    title.Font = TurboramaPremiumTheme.CreateFont(20f, FontStyle.Bold);
                     title.ForeColor = Text;
                     title.BackColor = Color.Transparent;
                     title.Location = new Point(26, 22);
@@ -141,7 +155,7 @@ namespace InstallerHost
                 {
                     desc.Parent = hero;
                     desc.Text = "A LZ Games e Informática apresenta o Sistema Turborama, desenvolvido para oferecer prazer, diversão e acesso aos melhores jogos em uma experiência premium.\r\n\r\nEste instalador irá preparar o computador e configurar os componentes recomendados para estabilidade, desempenho e compatibilidade.";
-                    desc.Font = new Font("Segoe UI", 9.7f, FontStyle.Regular);
+                    desc.Font = TurboramaPremiumTheme.CreateFont(9.7f, FontStyle.Regular);
                     desc.ForeColor = Color.FromArgb(220, 232, 222);
                     desc.BackColor = Color.Transparent;
                     desc.Location = new Point(28, 72);
@@ -153,6 +167,7 @@ namespace InstallerHost
                 AddFeatureCard(content, 454, 318, 188, 96, "PRONTO PARA JOGAR", "Tudo configurado para você aproveitar o Turborama com praticidade.");
 
                 PremiumPanel signature = MakeCard("__welcomeSignature", 34, 436, 610, 58, PanelMid, BorderSoft, 12);
+                signature.AccentColor = Violet;
                 content.Controls.Add(signature);
                 signature.Controls.Add(MakeLabel("LZ Games e Informática", 22, 11, 240, 20, Text, 9.5f, true));
                 signature.Controls.Add(MakeLabel("Tecnologia, diversão e os melhores jogos em um só sistema.", 22, 32, 500, 18, GreenSoft, 8.6f, false));
@@ -162,6 +177,7 @@ namespace InstallerHost
                 AddFooter(root, null, next, cancel);
                 StylePrimaryButton(next);
                 StyleDangerButton(cancel);
+                FinalizePremiumScreen(root);
             }
             catch
             {
@@ -201,11 +217,13 @@ namespace InstallerHost
                 }
 
                 PremiumPanel introCard = MakeCard("__licenseIntro", 34, 106, 610, 86, CardHot, Border, 14);
+                introCard.AccentColor = Violet;
                 content.Controls.Add(introCard);
                 introCard.Controls.Add(MakeLabel("LZ Games e Informática", 24, 16, 300, 22, Text, 10.2f, true));
                 introCard.Controls.Add(MakeLabel("O Sistema Turborama foi desenvolvido para entregar prazer, diversão e os melhores jogos com uma experiência moderna, organizada e confiável.", 24, 42, 540, 34, Muted, 8.7f, false));
 
                 PremiumPanel licenseCard = MakeCard("__licenseCard", 34, 210, 610, 284, Card, Border, 14);
+                licenseCard.AccentColor = Cyan;
                 content.Controls.Add(licenseCard);
                 licenseCard.Controls.Add(MakeLabel("TERMOS DO SISTEMA TURBORAMA", 22, 14, 360, 22, Text, 9.5f, true));
 
@@ -235,6 +253,7 @@ namespace InstallerHost
                 StyleSecondaryButton(back);
                 StylePrimaryButton(next);
                 StyleDangerButton(cancel);
+                FinalizePremiumScreen(root);
             }
             catch
             {
@@ -278,6 +297,7 @@ namespace InstallerHost
                 }
 
                 PremiumPanel pathCard = MakeCard("__installPathCard", 34, 112, 610, 196, CardHot, Border, 16);
+                pathCard.AccentColor = Violet;
                 content.Controls.Add(pathCard);
                 pathCard.Controls.Add(MakeLabel("PASTA DE INSTALAÇÃO", 24, 18, 350, 22, Text, 10f, true));
                 pathCard.Controls.Add(MakeLabel("Recomendamos manter a pasta padrão para melhor organização, compatibilidade e funcionamento do Sistema Turborama.", 24, 42, 530, 34, Muted, 8.7f, false));
@@ -288,7 +308,7 @@ namespace InstallerHost
                     selectFolder.Text = "Selecione a pasta de instalação:";
                     selectFolder.Location = new Point(24, 86);
                     selectFolder.Size = new Size(520, 18);
-                    selectFolder.Font = new Font("Segoe UI Semibold", 8.7f, FontStyle.Bold);
+                    selectFolder.Font = TurboramaPremiumTheme.CreateFont(8.7f, FontStyle.Bold);
                     selectFolder.ForeColor = Text;
                     selectFolder.BackColor = Color.Transparent;
                 }
@@ -316,12 +336,13 @@ namespace InstallerHost
                     hint.Text = "Espaço mínimo necessário: 3,38 GB\r\nEvite pastas com caracteres especiais ou caminhos muito longos.";
                     hint.Location = new Point(24, 150);
                     hint.Size = new Size(540, 38);
-                    hint.Font = new Font("Segoe UI", 8.7f, FontStyle.Regular);
+                    hint.Font = TurboramaPremiumTheme.CreateFont(8.7f, FontStyle.Regular);
                     hint.ForeColor = Color.FromArgb(200, 214, 202);
                     hint.BackColor = Color.Transparent;
                 }
 
                 PremiumPanel statusCard = MakeCard("__installStatusCard", 34, 330, 610, 120, PanelMid, BorderSoft, 14);
+                statusCard.AccentColor = Green;
                 content.Controls.Add(statusCard);
                 statusCard.Controls.Add(MakeLabel("STATUS DA PREPARAÇÃO", 24, 16, 380, 22, Text, 9.6f, true));
                 statusCard.Controls.Add(MakeLabel("A LZ Games e Informática irá preparar o ambiente, extrair os arquivos e validar o executável principal do Sistema Turborama.", 24, 42, 540, 32, Muted, 8.6f, false));
@@ -332,7 +353,7 @@ namespace InstallerHost
                     info.Text = "Pronto para instalar. Clique em Instalar para começar.";
                     info.Location = new Point(24, 84);
                     info.Size = new Size(540, 22);
-                    info.Font = new Font("Segoe UI Semibold", 9.2f, FontStyle.Bold);
+                    info.Font = TurboramaPremiumTheme.CreateFont(9.2f, FontStyle.Bold);
                     info.ForeColor = Green;
                     info.BackColor = Color.Transparent;
                     info.Visible = true;
@@ -345,6 +366,16 @@ namespace InstallerHost
                     progress.Size = new Size(540, 20);
                     progress.Visible = false;
                     StyleProgress(progress);
+
+                    NeonProgressMirror progressMirror = new NeonProgressMirror();
+                    progressMirror.Name = "__installNeonProgress";
+                    progressMirror.Location = progress.Location;
+                    progressMirror.Size = progress.Size;
+                    progressMirror.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
+                    progressMirror.AccessibleName = "Progresso da instalação";
+                    progressMirror.Bind(progress);
+                    statusCard.Controls.Add(progressMirror);
+                    progressMirror.BringToFront();
                 }
 
                 SetButtonText(back, "< Voltar");
@@ -354,6 +385,7 @@ namespace InstallerHost
                 StyleSecondaryButton(back);
                 StylePrimaryButton(install);
                 StyleDangerButton(cancel);
+                FinalizePremiumScreen(root);
             }
             catch
             {
@@ -387,9 +419,11 @@ namespace InstallerHost
 
                 PreparePremiumShell(root);
                 CreateSidebar(root, 5, "CONCLUSÃO", "Pronto", banner);
-                Panel content = CreateContent(root, "Instalação concluída", "Sistema Turborama pronto para uso", "Agora é só iniciar e aproveitar prazer, diversão e os melhores jogos.");
+                Panel content = CreateContent(root, "Instalação concluída", "Sistema Turborama", "Pronto para iniciar e aproveitar prazer, diversão e os melhores jogos.");
 
                 PremiumPanel finishCard = MakeCard("__finishCard", 34, 118, 610, 254, CardHot, Border, 16);
+                finishCard.AccentColor = Green;
+                finishCard.ShowGrid = true;
                 content.Controls.Add(finishCard);
 
                 Label successIcon = MakeLabel("✓", 28, 26, 54, 54, Green, 30f, true);
@@ -403,7 +437,7 @@ namespace InstallerHost
                     message.Text = "Instalação concluída com sucesso";
                     message.Location = new Point(98, 28);
                     message.Size = new Size(460, 36);
-                    message.Font = new Font("Segoe UI Semibold", 16.5f, FontStyle.Bold);
+                    message.Font = TurboramaPremiumTheme.CreateFont(16.5f, FontStyle.Bold);
                     message.ForeColor = Text;
                     message.BackColor = Color.Transparent;
                 }
@@ -414,7 +448,7 @@ namespace InstallerHost
                     desc.Text = "O Sistema Turborama, da LZ Games e Informática, está pronto para proporcionar prazer, diversão e acesso aos melhores jogos em uma experiência moderna e organizada.";
                     desc.Location = new Point(100, 76);
                     desc.Size = new Size(470, 58);
-                    desc.Font = new Font("Segoe UI", 9.4f, FontStyle.Regular);
+                    desc.Font = TurboramaPremiumTheme.CreateFont(9.4f, FontStyle.Regular);
                     desc.ForeColor = Muted;
                     desc.BackColor = Color.Transparent;
                 }
@@ -474,6 +508,7 @@ namespace InstallerHost
                     cancel.Visible = false;
                 }
                 StylePrimaryButton(finish);
+                FinalizePremiumScreen(root);
             }
             catch
             {
@@ -490,6 +525,14 @@ namespace InstallerHost
         {
             EnsureLargeHost(root);
 
+            NeonDpiViewport previousViewport = FindControl(root, "__premiumViewport") as NeonDpiViewport;
+            if (previousViewport != null)
+            {
+                PreserveDesignerControls(root, previousViewport);
+                root.Controls.Remove(previousViewport);
+                previousViewport.Dispose();
+            }
+
             Control[] existing = new Control[root.Controls.Count];
             root.Controls.CopyTo(existing, 0);
             foreach (Control control in existing)
@@ -497,10 +540,18 @@ namespace InstallerHost
                 Panel p = control as Panel;
                 if (p != null && (p.Name == "__premiumSidebar" || p.Name == "__premiumContent" || p.Name == "__premiumFooter"))
                 {
+                    PreserveDesignerControls(root, p);
                     root.Controls.Remove(p);
                     p.Dispose();
                 }
             }
+
+            pendingViewports.Remove(root);
+            NeonDpiViewport viewport = new NeonDpiViewport();
+            viewport.Name = "__premiumViewport";
+            viewport.Size = new Size(WindowWidth, WindowHeight);
+            viewport.SuspendLayout();
+            pendingViewports.Add(root, viewport);
 
             root.BackColor = Background;
             root.ForeColor = Text;
@@ -519,6 +570,36 @@ namespace InstallerHost
             }
         }
 
+        private static NeonDpiViewport GetPremiumViewport(UserControl root)
+        {
+            NeonDpiViewport viewport;
+            if (root != null && pendingViewports.TryGetValue(root, out viewport))
+            {
+                return viewport;
+            }
+
+            return root == null ? null : FindControl(root, "__premiumViewport") as NeonDpiViewport;
+        }
+
+        private static void PreserveDesignerControls(UserControl root, Control premiumContainer)
+        {
+            string[] names = new string[]
+            {
+                "lblWelcomeTitle", "lblWelcomeDesc", "lblMessage", "wizardHeader", "licenseTextBox", "chkAgree",
+                "txtInfo", "lblSelectFolder", "txtFolder", "btnBrowse", "progressBar", "lblFolderHint", "chkRunApp",
+                "linkPanel", "bannerPictureBox", "btnBack", "btnNext", "btnInstall", "btnFinish", "btnCancel"
+            };
+
+            foreach (string name in names)
+            {
+                Control preserved = FindControl(premiumContainer, name);
+                if (preserved != null && !preserved.IsDisposed)
+                {
+                    preserved.Parent = root;
+                }
+            }
+        }
+
         private static void EnsureLargeHost(UserControl root)
         {
             try
@@ -526,65 +607,106 @@ namespace InstallerHost
                 Form form = root.FindForm();
                 if (form != null)
                 {
-                    form.ClientSize = new Size(WindowWidth, WindowHeight);
-                    form.MinimumSize = new Size(WindowWidth, WindowHeight);
+                    Rectangle workArea = Screen.FromControl(form).WorkingArea;
+                    Size minimum = ClampMinimumToWorkingArea(form.MinimumSize, workArea);
+                    form.MinimumSize = minimum;
+                    Rectangle fittedBounds = FitWindowBoundsToWorkingArea(form.Bounds, minimum, workArea);
+                    if (form.WindowState == FormWindowState.Normal && form.Bounds != fittedBounds)
+                    {
+                        form.Bounds = fittedBounds;
+                    }
                     form.BackColor = Background;
                     form.ForeColor = Text;
                     form.Text = "LZ Games e Informática - Sistema Turborama";
-                    root.Size = form.ClientSize;
+                    form.MaximizeBox = true;
+                    form.SizeGripStyle = SizeGripStyle.Show;
+                    root.Dock = DockStyle.Fill;
                 }
                 else
                 {
-                    root.Size = new Size(WindowWidth, WindowHeight);
-                    root.MinimumSize = new Size(WindowWidth, WindowHeight);
+                    // A root ainda será dimensionada pelo Form host. Não converta
+                    // novamente: o próprio AutoScaleMode.Dpi já conhece a escala.
+                    root.Dock = DockStyle.Fill;
                 }
             }
             catch
             {
-                root.Size = new Size(WindowWidth, WindowHeight);
+                root.Dock = DockStyle.Fill;
             }
+        }
+
+        internal static Size ClampMinimumToWorkingArea(Size autoScaledMinimum, Rectangle workingArea)
+        {
+            int availableWidth = Math.Max(1, workingArea.Width);
+            int availableHeight = Math.Max(1, workingArea.Height);
+            int minimumWidth = Math.Min(Math.Max(1, autoScaledMinimum.Width), availableWidth);
+            int minimumHeight = Math.Min(Math.Max(1, autoScaledMinimum.Height), availableHeight);
+            return new Size(minimumWidth, minimumHeight);
+        }
+
+        internal static Rectangle FitWindowBoundsToWorkingArea(Rectangle requestedBounds, Size minimumSize, Rectangle workingArea)
+        {
+            int availableWidth = Math.Max(1, workingArea.Width);
+            int availableHeight = Math.Max(1, workingArea.Height);
+            int width = Math.Min(Math.Max(Math.Max(1, requestedBounds.Width), minimumSize.Width), availableWidth);
+            int height = Math.Min(Math.Max(Math.Max(1, requestedBounds.Height), minimumSize.Height), availableHeight);
+            int maximumLeft = workingArea.Right - width;
+            int maximumTop = workingArea.Bottom - height;
+            int left = Math.Max(workingArea.Left, Math.Min(requestedBounds.Left, maximumLeft));
+            int top = Math.Max(workingArea.Top, Math.Min(requestedBounds.Top, maximumTop));
+            return new Rectangle(left, top, width, height);
         }
 
         private static Panel CreateSidebar(UserControl root, int activeIndex, string stage, string status, PictureBox banner)
         {
-            PremiumPanel sidebar = new PremiumPanel(Color.FromArgb(4, 13, 8), Color.FromArgb(32, 68, 38), 0, false);
+            NeonDpiViewport viewport = GetPremiumViewport(root);
+            NeonSurfacePanel sidebar = new NeonSurfacePanel();
             sidebar.Name = "__premiumSidebar";
             sidebar.Left = 0;
             sidebar.Top = 0;
             sidebar.Width = SidebarWidth;
-            sidebar.Height = root.Height - FooterHeight;
+            sidebar.Height = viewport.Height - FooterHeight;
             sidebar.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom;
-            root.Controls.Add(sidebar);
+            sidebar.SurfaceColor = TurboramaPremiumTheme.BackgroundDeep;
+            sidebar.SurfaceColor2 = TurboramaPremiumTheme.Shell;
+            sidebar.BorderColor = TurboramaPremiumTheme.Border;
+            sidebar.AccentColor = Cyan;
+            sidebar.CornerRadius = 0;
+            sidebar.GlowStrength = 24;
+            sidebar.ShowAccent = true;
+            sidebar.ShowGrid = true;
+            viewport.Controls.Add(sidebar);
 
-            Label logo = MakeLabel("LZ", 24, 20, 58, 48, Green, 18.5f, true);
-            logo.TextAlign = ContentAlignment.MiddleCenter;
-            logo.BorderStyle = BorderStyle.FixedSingle;
+            NeonBrandMark logo = new NeonBrandMark();
+            logo.Name = "__brandMark";
+            logo.Location = new Point(22, 18);
+            logo.AccessibleName = "Turborama";
             sidebar.Controls.Add(logo);
 
-            Label brand1 = MakeLabel("LZ GAMES", 96, 22, 160, 24, Text, 12.5f, true);
+            Label brand1 = MakeLabel("TURBORAMA", 96, 22, 164, 24, Text, 12.2f, true);
             sidebar.Controls.Add(brand1);
-            Label brand2 = MakeLabel("INFORMÁTICA", 96, 48, 160, 20, GreenSoft, 8.8f, true);
+            Label brand2 = MakeLabel("LZ GAMES • INSTALLER", 96, 48, 166, 20, Cyan, 8.1f, true);
             sidebar.Controls.Add(brand2);
 
             Label line = new Label();
-            line.BackColor = Green;
-            line.Left = 24;
-            line.Top = 86;
-            line.Width = 218;
-            line.Height = 2;
+            line.BackColor = Cyan;
+            line.Left = 22;
+            line.Top = 88;
+            line.Width = 142;
+            line.Height = 1;
             sidebar.Controls.Add(line);
 
             Panel lineAccent = new Panel();
-            lineAccent.BackColor = AccentRed;
-            lineAccent.Left = 198;
-            lineAccent.Top = 82;
-            lineAccent.Width = 18;
-            lineAccent.Height = 4;
+            lineAccent.BackColor = Violet;
+            lineAccent.Left = 164;
+            lineAccent.Top = 86;
+            lineAccent.Width = 78;
+            lineAccent.Height = 3;
             sidebar.Controls.Add(lineAccent);
 
-            Label product = MakeLabel("SISTEMA TURBORAMA", 24, 104, 220, 24, Text, 11f, true);
+            Label product = MakeLabel("CENTRAL DE PREPARAÇÃO", 22, 104, 230, 21, Text, 9.2f, true);
             sidebar.Controls.Add(product);
-            Label slogan = MakeLabel("Prazer e diversão\\r\\ncom os melhores jogos", 24, 132, 220, 42, GreenSoft, 8.8f, false);
+            Label slogan = MakeLabel("Ambiente gamer pronto, validado e organizado.", 22, 128, 230, 34, Muted, 8.3f, false);
             sidebar.Controls.Add(slogan);
 
             Image sidebarLogo = LoadSidebarLogoImage();
@@ -601,7 +723,9 @@ namespace InstallerHost
                 banner.Anchor = AnchorStyles.None;
             }
 
-            PremiumPanel artworkBox = MakeCard("__sidebarArtwork", 24, 186, 220, 160, Color.FromArgb(3, 8, 5), Color.FromArgb(38, 72, 42), 0);
+            PremiumPanel artworkBox = MakeCard("__sidebarArtwork", 22, 174, 240, 126, PanelDark, BorderSoft, 12);
+            artworkBox.AccentColor = Violet;
+            artworkBox.ShowGrid = false;
             sidebar.Controls.Add(artworkBox);
             if (artworkImage != null)
             {
@@ -610,7 +734,7 @@ namespace InstallerHost
                 artworkPicture.Image = artworkImage;
                 artworkPicture.Dock = DockStyle.Fill;
                 artworkPicture.SizeMode = PictureBoxSizeMode.Zoom;
-                artworkPicture.BackColor = Color.Black;
+                artworkPicture.BackColor = PanelDark;
                 artworkPicture.BorderStyle = BorderStyle.None;
                 artworkPicture.Margin = new Padding(0);
                 artworkPicture.Padding = new Padding(0);
@@ -619,74 +743,88 @@ namespace InstallerHost
             }
             else
             {
-                artworkBox.Controls.Add(MakeLabel("TURBORAMA", 24, 50, 170, 28, Green, 15f, true));
-                artworkBox.Controls.Add(MakeLabel("Premium Games System", 26, 84, 170, 22, Muted, 8.5f, false));
+                artworkBox.Controls.Add(MakeLabel("TURBORAMA", 24, 36, 180, 28, Cyan, 15f, true));
+                artworkBox.Controls.Add(MakeLabel("NEXT-GEN GAME SYSTEM", 26, 70, 180, 22, Muted, 8f, false));
             }
 
-            Label stageLabel = MakeLabel(stage, 24, 360, 220, 22, Text, 9.5f, true);
-            sidebar.Controls.Add(stageLabel);
-            Label statusLabel = MakeLabel(status, 24, 384, 220, 20, Green, 8.5f, true);
-            sidebar.Controls.Add(statusLabel);
+            PremiumPanel stageCard = MakeCard("__stageCard", 22, 316, 240, 62, PanelMid, BorderSoft, 11);
+            stageCard.AccentColor = Green;
+            stageCard.GlowStrength = 20;
+            sidebar.Controls.Add(stageCard);
 
-            Panel stageAccent = new Panel();
-            stageAccent.BackColor = AccentRedSoft;
-            stageAccent.Left = 24;
-            stageAccent.Top = 409;
-            stageAccent.Width = 54;
-            stageAccent.Height = 2;
-            sidebar.Controls.Add(stageAccent);
+            NeonLedIndicator statusLed = new NeonLedIndicator();
+            statusLed.Name = "__stageLed";
+            statusLed.LedColor = Green;
+            statusLed.Location = new Point(13, 17);
+            statusLed.Size = new Size(14, 14);
+            stageCard.Controls.Add(statusLed);
+            stageCard.Controls.Add(MakeLabel(stage, 34, 9, 184, 20, Text, 8.9f, true));
+            stageCard.Controls.Add(MakeLabel(status.ToUpperInvariant(), 34, 31, 184, 18, Green, 7.6f, true));
 
-            int stepTop = 416;
-            AddStep(sidebar, 0, stepTop + 0, "01", "Boas-vindas", activeIndex);
-            AddStep(sidebar, 1, stepTop + 23, "02", "Licença", activeIndex);
-            AddStep(sidebar, 2, stepTop + 46, "03", "Requisitos", activeIndex);
-            AddStep(sidebar, 3, stepTop + 69, "04", "Instalação", activeIndex);
-            AddStep(sidebar, 4, stepTop + 92, "05", "Progresso", activeIndex);
-            AddStep(sidebar, 5, stepTop + 115, "06", "Conclusão", activeIndex);
+            NeonStepRail stepRail = new NeonStepRail();
+            stepRail.Name = "__stepRail";
+            stepRail.ActiveIndex = activeIndex;
+            stepRail.Left = 22;
+            stepRail.Top = 392;
+            stepRail.Width = 240;
+            stepRail.Height = Math.Max(154, sidebar.Height - 408);
+            stepRail.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top | AnchorStyles.Bottom;
+            stepRail.AccessibleName = "Progresso da instalação";
+            sidebar.Controls.Add(stepRail);
 
             sidebar.BringToFront();
             return sidebar;
         }
         private static Panel CreateWelcomeSidebar(UserControl root, PictureBox banner)
         {
-            PremiumPanel sidebar = new PremiumPanel(Color.FromArgb(4, 13, 8), Color.FromArgb(32, 68, 38), 0, false);
+            NeonDpiViewport viewport = GetPremiumViewport(root);
+            NeonSurfacePanel sidebar = new NeonSurfacePanel();
             sidebar.Name = "__premiumSidebar";
             sidebar.Left = 0;
             sidebar.Top = 0;
             sidebar.Width = SidebarWidth;
-            sidebar.Height = root.Height - FooterHeight;
+            sidebar.Height = viewport.Height - FooterHeight;
             sidebar.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom;
-            root.Controls.Add(sidebar);
+            sidebar.SurfaceColor = TurboramaPremiumTheme.BackgroundDeep;
+            sidebar.SurfaceColor2 = TurboramaPremiumTheme.Shell;
+            sidebar.BorderColor = TurboramaPremiumTheme.Border;
+            sidebar.AccentColor = Cyan;
+            sidebar.CornerRadius = 0;
+            sidebar.GlowStrength = 24;
+            sidebar.ShowAccent = true;
+            sidebar.ShowGrid = true;
+            viewport.Controls.Add(sidebar);
 
-            Label logo = MakeLabel("LZ", 24, 20, 58, 48, Green, 18.5f, true);
-            logo.TextAlign = ContentAlignment.MiddleCenter;
-            logo.BorderStyle = BorderStyle.FixedSingle;
+            NeonBrandMark logo = new NeonBrandMark();
+            logo.Name = "__brandMark";
+            logo.Location = new Point(22, 18);
+            logo.AccessibleName = "Turborama";
             sidebar.Controls.Add(logo);
 
-            Label brand1 = MakeLabel("LZ GAMES", 96, 22, 160, 24, Text, 12.5f, true);
+            Label brand1 = MakeLabel("TURBORAMA", 96, 22, 164, 24, Text, 12.2f, true);
             sidebar.Controls.Add(brand1);
-            Label brand2 = MakeLabel("INFORMÁTICA", 96, 48, 160, 20, GreenSoft, 8.8f, true);
+            Label brand2 = MakeLabel("LZ GAMES • INSTALLER", 96, 48, 166, 20, Cyan, 8.1f, true);
             sidebar.Controls.Add(brand2);
 
             Label line = new Label();
-            line.BackColor = Green;
-            line.Left = 24;
-            line.Top = 86;
-            line.Width = 218;
-            line.Height = 2;
+            line.BackColor = Cyan;
+            line.Left = 22;
+            line.Top = 88;
+            line.Width = 142;
+            line.Height = 1;
             sidebar.Controls.Add(line);
 
             Panel lineAccent = new Panel();
-            lineAccent.BackColor = AccentRed;
-            lineAccent.Left = 198;
-            lineAccent.Top = 82;
-            lineAccent.Width = 18;
-            lineAccent.Height = 4;
+            lineAccent.BackColor = Violet;
+            lineAccent.Left = 164;
+            lineAccent.Top = 86;
+            lineAccent.Width = 78;
+            lineAccent.Height = 3;
             sidebar.Controls.Add(lineAccent);
 
-            Label product = MakeLabel("SISTEMA TURBORAMA", 24, 104, 220, 24, Text, 11f, true);
+            Label product = MakeLabel("NEXT-GEN GAME SYSTEM", 22, 104, 230, 21, Text, 9.2f, true);
             sidebar.Controls.Add(product);
-            Label slogan = MakeLabel("Prazer e diversão\\r\\ncom os melhores jogos", 24, 132, 220, 42, GreenSoft, 8.8f, false);
+            Label slogan = MakeLabel("Emuladores, runtimes e jogos em uma experiência única.", 22, 128, 230, 38, Muted, 8.3f, false);
             sidebar.Controls.Add(slogan);
 
             Image artworkImage = LoadSidebarLogoImage();
@@ -733,6 +871,20 @@ namespace InstallerHost
                 artworkHost.Controls.Add(MakeLabel("TURBORAMA", 24, Math.Max(96, (artworkHeight / 2) - 24), 180, 28, Green, 15f, true));
                 artworkHost.Controls.Add(MakeLabel("Premium Games System", 26, Math.Max(128, (artworkHeight / 2) + 8), 180, 22, Muted, 8.5f, false));
             }
+
+            PremiumPanel welcomeStatus = MakeCard("__welcomeStatus", 22, Math.Max(188, sidebar.Height - 76), 240, 54, PanelMid, BorderSoft, 11);
+            welcomeStatus.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            welcomeStatus.AccentColor = Cyan;
+            welcomeStatus.GlowStrength = 28;
+            sidebar.Controls.Add(welcomeStatus);
+
+            NeonLedIndicator readyLed = new NeonLedIndicator();
+            readyLed.LedColor = Green;
+            readyLed.Location = new Point(13, 17);
+            readyLed.Size = new Size(14, 14);
+            welcomeStatus.Controls.Add(readyLed);
+            welcomeStatus.Controls.Add(MakeLabel("SISTEMA ONLINE", 34, 8, 170, 18, Green, 7.5f, true));
+            welcomeStatus.Controls.Add(MakeLabel("ETAPA 01  •  BOAS-VINDAS", 34, 27, 184, 18, Text, 7.8f, true));
 
             sidebar.BringToFront();
             return sidebar;
@@ -812,12 +964,14 @@ namespace InstallerHost
                 string baseDir = Application.StartupPath;
                 string[] candidates = new string[]
                 {
+                    Path.Combine(baseDir, "resources", "sidebarlogo.png"),
                     Path.Combine(baseDir, "resources", "turborama_sidebar_logo.png"),
                     Path.Combine(baseDir, "resources", "turborama_sidebar_logo.jpg"),
                     Path.Combine(baseDir, "resources", "turborama_sidebar_logo.jpeg"),
                     Path.Combine(baseDir, "turborama_sidebar_logo.png"),
                     Path.Combine(baseDir, "turborama_sidebar_logo.jpg"),
                     Path.Combine(baseDir, "turborama_sidebar_logo.jpeg"),
+                    Path.GetFullPath(Path.Combine(baseDir, "..", "..", "resources", "sidebarlogo.png")),
                     Path.GetFullPath(Path.Combine(baseDir, "..", "..", "resources", "turborama_sidebar_logo.png")),
                     Path.GetFullPath(Path.Combine(baseDir, "..", "..", "resources", "turborama_sidebar_logo.jpg")),
                     Path.GetFullPath(Path.Combine(baseDir, "..", "..", "resources", "turborama_sidebar_logo.jpeg"))
@@ -848,37 +1002,42 @@ namespace InstallerHost
 
         private static Panel CreateContent(UserControl root, string title, string subtitle, string description)
         {
-            Panel content = new Panel();
+            NeonDpiViewport viewport = GetPremiumViewport(root);
+            NeonBackdropPanel content = new NeonBackdropPanel();
             content.Name = "__premiumContent";
             content.Left = SidebarWidth;
             content.Top = 0;
-            content.Width = root.Width - SidebarWidth;
-            content.Height = root.Height - FooterHeight;
+            content.Width = viewport.Width - SidebarWidth;
+            content.Height = viewport.Height - FooterHeight;
             content.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right | AnchorStyles.Bottom;
             content.BackColor = Background;
-            root.Controls.Add(content);
+            viewport.Controls.Add(content);
 
-            Label titleLabel = MakeLabel(title, 34, 28, content.Width - 68, 38, Text, 18.5f, true);
+            Label titleLabel = MakeLabel(title, 34, 27, content.Width - 68, 38, Text, 19.5f, true);
+            titleLabel.Name = "__pageTitle";
             titleLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             content.Controls.Add(titleLabel);
 
-            Label subtitleLabel = MakeLabel(subtitle, 36, 68, content.Width - 72, 20, Green, 9.3f, true);
-            subtitleLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            Label subtitleLabel = MakeLabel(subtitle.ToUpperInvariant(), 36, 68, 150, 20, Cyan, 8.7f, true);
+            subtitleLabel.Name = "__pageSubtitle";
+            subtitleLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            subtitleLabel.AutoEllipsis = true;
             content.Controls.Add(subtitleLabel);
 
             Label underline = new Label();
-            underline.BackColor = Green;
+            underline.BackColor = Cyan;
             underline.Location = new Point(36, 96);
             underline.Size = new Size(122, 2);
             content.Controls.Add(underline);
 
             Panel underlineAccent = new Panel();
-            underlineAccent.BackColor = AccentRed;
+            underlineAccent.BackColor = Violet;
             underlineAccent.Location = new Point(158, 92);
             underlineAccent.Size = new Size(12, 4);
             content.Controls.Add(underlineAccent);
 
             Label desc = MakeLabel(description, 190, 62, content.Width - 230, 42, Muted, 8.8f, false);
+            desc.Name = "__pageDescription";
             desc.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             content.Controls.Add(desc);
 
@@ -886,43 +1045,56 @@ namespace InstallerHost
         }
         private static void AddFooter(UserControl root, Button back, Button primary, Button cancel)
         {
-            PremiumPanel footer = new PremiumPanel(Color.FromArgb(6, 12, 9), Color.FromArgb(28, 52, 32), 0, false);
+            NeonDpiViewport viewport = GetPremiumViewport(root);
+            NeonSurfacePanel footer = new NeonSurfacePanel();
             footer.Name = "__premiumFooter";
             footer.Left = 0;
-            footer.Top = root.Height - FooterHeight;
-            footer.Width = root.Width;
+            footer.Top = viewport.Height - FooterHeight;
+            footer.Width = viewport.Width;
             footer.Height = FooterHeight;
             footer.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
-            root.Controls.Add(footer);
+            footer.SurfaceColor = TurboramaPremiumTheme.Shell;
+            footer.SurfaceColor2 = TurboramaPremiumTheme.BackgroundDeep;
+            footer.BorderColor = BorderSoft;
+            footer.AccentColor = Violet;
+            footer.CornerRadius = 0;
+            footer.GlowStrength = 18;
+            footer.ShowAccent = true;
+            viewport.Controls.Add(footer);
 
             Label line = new Label();
             line.BackColor = BorderSoft;
             line.Left = 0;
             line.Top = 0;
-            line.Width = root.Width;
+            line.Width = viewport.Width;
             line.Height = 1;
             line.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
             footer.Controls.Add(line);
 
             Panel footerAccent = new Panel();
-            footerAccent.BackColor = AccentRedSoft;
+            footerAccent.BackColor = Violet;
             footerAccent.Left = 24;
             footerAccent.Top = 0;
-            footerAccent.Width = 52;
+            footerAccent.Width = 72;
             footerAccent.Height = 2;
             footer.Controls.Add(footerAccent);
 
-            Label footerText = MakeLabel("LZ Games e Informática  •  Sistema Turborama", 24, 21, 360, 24, Dim, 8.4f, false);
+            Label footerText = MakeLabel("LZ GAMES  /  TURBORAMA", 24, 17, 300, 20, Muted, 8.1f, true);
+            footerText.Name = "__footerBrand";
             footer.Controls.Add(footerText);
+            Label footerStatus = MakeLabel("●  AMBIENTE DE INSTALAÇÃO SEGURO", 24, 38, 340, 18, Green, 7.5f, true);
+            footerStatus.Name = "__footerStatus";
+            footer.Controls.Add(footerStatus);
 
-            int right = root.Width - 20;
+            int right = viewport.Width - 24;
             if (cancel != null)
             {
                 cancel.Parent = footer;
-                cancel.Size = new Size(96, 32);
-                cancel.Location = new Point(right - 96, 18);
-                right -= 108;
+                cancel.Size = new Size(104, 36);
+                cancel.Location = new Point(right - 104, 20);
+                right -= 116;
                 cancel.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+                cancel.AccessibleDescription = "Cancela e fecha o instalador";
                 StyleDangerButton(cancel);
                 cancel.Visible = true;
             }
@@ -930,10 +1102,11 @@ namespace InstallerHost
             if (primary != null)
             {
                 primary.Parent = footer;
-                primary.Size = new Size(116, 32);
-                primary.Location = new Point(right - 116, 18);
-                right -= 128;
+                primary.Size = new Size(132, 36);
+                primary.Location = new Point(right - 132, 20);
+                right -= 144;
                 primary.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+                primary.AccessibleDescription = "Continua para a próxima etapa";
                 StylePrimaryButton(primary);
                 primary.Visible = true;
             }
@@ -941,15 +1114,546 @@ namespace InstallerHost
             if (back != null)
             {
                 back.Parent = footer;
-                back.Size = new Size(96, 32);
-                back.Location = new Point(right - 96, 18);
+                back.Size = new Size(104, 36);
+                back.Location = new Point(right - 104, 20);
                 back.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+                back.AccessibleDescription = "Retorna para a etapa anterior";
                 StyleSecondaryButton(back);
                 back.Visible = true;
             }
 
             footer.BringToFront();
         }
+
+        private static void FinalizePremiumScreen(UserControl root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            NeonDpiViewport viewport = GetPremiumViewport(root);
+            if (viewport != null && viewport.Parent == null)
+            {
+                viewport.ResumeLayout(false);
+                viewport.Dock = DockStyle.Fill;
+                root.Controls.Add(viewport);
+                viewport.BringToFront();
+                viewport.CreateControl();
+                viewport.PerformAutoScale();
+                pendingViewports.Remove(root);
+            }
+
+            root.Resize -= PremiumRoot_Resize;
+            root.Resize += PremiumRoot_Resize;
+
+            TurboramaPremiumTheme.Apply(root);
+            LayoutPremiumRoot(root);
+            ConfigureKeyboardNavigation(root);
+            BringNavigationButtonsToFront(root);
+        }
+
+        private static float GetDpiScale(Control control)
+        {
+            try
+            {
+                if (control != null && control.DeviceDpi > 0)
+                {
+                    return Math.Max(1f, control.DeviceDpi / 96f);
+                }
+            }
+            catch
+            {
+            }
+            return 1f;
+        }
+
+        private static int ScaleMetric(int value, float scale)
+        {
+            return Math.Max(1, (int)Math.Round(value * scale, MidpointRounding.AwayFromZero));
+        }
+
+        private static void PremiumRoot_Resize(object sender, EventArgs e)
+        {
+            UserControl root = sender as UserControl;
+            if (root != null && !root.IsDisposed)
+            {
+                PendingLayoutState state = pendingLayouts.GetOrCreateValue(root);
+                if (state.IsPending)
+                {
+                    return;
+                }
+
+                state.IsPending = true;
+                try
+                {
+                    root.BeginInvoke(new MethodInvoker(delegate
+                    {
+                        state.IsPending = false;
+                        if (!root.IsDisposed)
+                        {
+                            LayoutPremiumRoot(root);
+                        }
+                    }));
+                }
+                catch
+                {
+                    state.IsPending = false;
+                    LayoutPremiumRoot(root);
+                }
+            }
+        }
+
+        private sealed class PendingLayoutState
+        {
+            public bool IsPending;
+        }
+
+        private static void LayoutPremiumRoot(UserControl root)
+        {
+            LayoutPremiumRoot(root, GetDpiScale(root));
+        }
+
+        internal static void LayoutPremiumRootForDpi(UserControl root, int dpi)
+        {
+            float scale = Math.Max(1f, dpi / 96f);
+            LayoutPremiumRoot(root, scale);
+        }
+
+        private static void LayoutPremiumRoot(UserControl root, float scale)
+        {
+            if (root == null || root.Width <= 0 || root.Height <= 0)
+            {
+                return;
+            }
+
+            root.SuspendLayout();
+            try
+            {
+                int sidebarWidth = root.Width < ScaleMetric(1020, scale)
+                    ? ScaleMetric(CompactSidebarWidth, scale)
+                    : ScaleMetric(SidebarWidth, scale);
+                int footerHeight = Math.Min(ScaleMetric(FooterHeight, scale), Math.Max(ScaleMetric(64, scale), root.Height / 7));
+
+                Control sidebar = FindControl(root, "__premiumSidebar");
+                Control content = FindControl(root, "__premiumContent");
+                Control footer = FindControl(root, "__premiumFooter");
+
+                if (sidebar != null)
+                {
+                    sidebar.SetBounds(0, 0, sidebarWidth, Math.Max(0, root.Height - footerHeight));
+                    LayoutSidebar(sidebar, scale);
+                }
+
+                if (content != null)
+                {
+                    content.SetBounds(sidebarWidth, 0, Math.Max(0, root.Width - sidebarWidth), Math.Max(0, root.Height - footerHeight));
+                    LayoutContent(content, scale);
+                }
+
+                if (footer != null)
+                {
+                    footer.SetBounds(0, Math.Max(0, root.Height - footerHeight), root.Width, footerHeight);
+                    LayoutFooter(footer, scale);
+                }
+            }
+            finally
+            {
+                root.ResumeLayout(false);
+            }
+        }
+
+        private static void LayoutSidebar(Control sidebar, float scale)
+        {
+            int leftMargin = ScaleMetric(22, scale);
+            int innerWidth = Math.Max(ScaleMetric(170, scale), sidebar.Width - ScaleMetric(44, scale));
+            Control artwork = FindControl(sidebar, "__sidebarArtwork");
+            Control stageCard = FindControl(sidebar, "__stageCard");
+            Control stepRail = FindControl(sidebar, "__stepRail");
+            Control welcomeArtwork = FindControl(sidebar, "__welcomeSidebarArtworkHost");
+            Control welcomeStatus = FindControl(sidebar, "__welcomeStatus");
+
+            if (artwork != null)
+            {
+                int artworkHeight = sidebar.Height < ScaleMetric(560, scale) ? ScaleMetric(104, scale) : ScaleMetric(126, scale);
+                artwork.SetBounds(leftMargin, ScaleMetric(174, scale), innerWidth, artworkHeight);
+            }
+
+            if (stageCard != null)
+            {
+                int stageTop = artwork == null ? ScaleMetric(292, scale) : artwork.Bottom + ScaleMetric(16, scale);
+                stageCard.SetBounds(leftMargin, stageTop, innerWidth, ScaleMetric(62, scale));
+                foreach (Control child in stageCard.Controls)
+                {
+                    Label label = child as Label;
+                    if (label != null)
+                    {
+                        label.Width = Math.Max(ScaleMetric(70, scale), stageCard.Width - label.Left - ScaleMetric(10, scale));
+                    }
+                }
+            }
+
+            if (stepRail != null)
+            {
+                int railTop = stageCard == null ? ScaleMetric(350, scale) : stageCard.Bottom + ScaleMetric(12, scale);
+                stepRail.SetBounds(leftMargin, railTop, innerWidth, Math.Max(ScaleMetric(96, scale), sidebar.Height - railTop - ScaleMetric(12, scale)));
+            }
+
+            if (welcomeArtwork != null)
+            {
+                int top = ScaleMetric(180, scale);
+                welcomeArtwork.SetBounds(ScaleMetric(18, scale), top, Math.Max(ScaleMetric(170, scale), sidebar.Width - ScaleMetric(36, scale)), Math.Max(ScaleMetric(160, scale), sidebar.Height - top - ScaleMetric(16, scale)));
+            }
+
+            if (welcomeStatus != null)
+            {
+                welcomeStatus.SetBounds(leftMargin, Math.Max(ScaleMetric(188, scale), sidebar.Height - ScaleMetric(76, scale)), innerWidth, ScaleMetric(54, scale));
+                welcomeStatus.BringToFront();
+            }
+        }
+
+        private static void LayoutContent(Control content, float scale)
+        {
+            int margin = ScaleMetric(34, scale);
+            int available = Math.Max(300, content.Width - (margin * 2));
+
+            Control title = FindControl(content, "__pageTitle");
+            Control subtitle = FindControl(content, "__pageSubtitle");
+            Control description = FindControl(content, "__pageDescription");
+            if (title != null) title.Width = available;
+            if (subtitle != null) subtitle.Width = Math.Min(ScaleMetric(150, scale), available);
+            if (description != null) description.Width = Math.Max(180, content.Width - description.Left - margin);
+
+            string[] fullWidthCards = new string[]
+            {
+                "__welcomeHero",
+                "__welcomeSignature",
+                "__licenseIntro",
+                "__licenseCard",
+                "__installPathCard",
+                "__installStatusCard",
+                "__finishCard"
+            };
+            foreach (string cardName in fullWidthCards)
+            {
+                Control card = FindControl(content, cardName);
+                if (card != null)
+                {
+                    card.Width = available;
+                }
+            }
+
+            LayoutFeatureCards(content, margin, available, scale);
+            LayoutLicenseCard(content, scale);
+            LayoutInstallCards(content, scale);
+            LayoutFinishCard(content, scale);
+        }
+
+        private static void LayoutFeatureCards(Control content, int left, int available, float scale)
+        {
+            Control[] cards = FindControls(content, "__feature");
+            if (cards.Length == 0)
+            {
+                return;
+            }
+
+            int gap = ScaleMetric(18, scale);
+            int width = Math.Max(ScaleMetric(120, scale), (available - (gap * (cards.Length - 1))) / cards.Length);
+            for (int index = 0; index < cards.Length; index++)
+            {
+                cards[index].Left = left + (index * (width + gap));
+                cards[index].Width = width;
+                foreach (Control child in cards[index].Controls)
+                {
+                    Label label = child as Label;
+                    if (label != null)
+                    {
+                        label.Width = Math.Max(ScaleMetric(40, scale), width - label.Left - ScaleMetric(12, scale));
+                    }
+                }
+            }
+        }
+
+        private static void LayoutLicenseCard(Control content, float scale)
+        {
+            Control card = FindControl(content, "__licenseCard");
+            if (card == null)
+            {
+                return;
+            }
+
+            Control license = FindControl(card, "licenseTextBox");
+            Control agree = FindControl(card, "chkAgree");
+            if (license != null) license.Width = Math.Max(ScaleMetric(220, scale), card.Width - ScaleMetric(44, scale));
+            if (agree != null) agree.Width = Math.Max(ScaleMetric(220, scale), card.Width - ScaleMetric(44, scale));
+        }
+
+        private static void LayoutInstallCards(Control content, float scale)
+        {
+            Control pathCard = FindControl(content, "__installPathCard");
+            if (pathCard != null)
+            {
+                Control browse = FindControl(pathCard, "btnBrowse");
+                Control folder = FindControl(pathCard, "txtFolder");
+                if (browse != null)
+                {
+                    browse.Left = Math.Max(ScaleMetric(260, scale), pathCard.Width - browse.Width - ScaleMetric(24, scale));
+                }
+                if (folder != null)
+                {
+                    int right = browse == null ? pathCard.Width - ScaleMetric(24, scale) : browse.Left - ScaleMetric(12, scale);
+                    folder.Width = Math.Max(ScaleMetric(180, scale), right - folder.Left);
+                }
+            }
+
+            Control statusCard = FindControl(content, "__installStatusCard");
+            if (statusCard != null)
+            {
+                Control info = FindControl(statusCard, "txtInfo");
+                Control progress = FindControl(statusCard, "progressBar");
+                Control progressMirror = FindControl(statusCard, "__installNeonProgress");
+                if (info != null) info.Width = Math.Max(ScaleMetric(180, scale), statusCard.Width - info.Left - ScaleMetric(24, scale));
+                if (progress != null) progress.Width = Math.Max(ScaleMetric(180, scale), statusCard.Width - progress.Left - ScaleMetric(24, scale));
+                if (progressMirror != null) progressMirror.Width = Math.Max(ScaleMetric(180, scale), statusCard.Width - progressMirror.Left - ScaleMetric(24, scale));
+            }
+        }
+
+        private static void LayoutFinishCard(Control content, float scale)
+        {
+            Control card = FindControl(content, "__finishCard");
+            if (card != null)
+            {
+                Control message = FindControl(card, "lblMessage");
+                Control description = FindControl(card, "lblWelcomeDesc");
+                Control run = FindControl(card, "chkRunApp");
+                if (message != null) message.Width = Math.Max(ScaleMetric(180, scale), card.Width - message.Left - ScaleMetric(24, scale));
+                if (description != null) description.Width = Math.Max(ScaleMetric(180, scale), card.Width - description.Left - ScaleMetric(24, scale));
+                if (run != null) run.Width = Math.Max(ScaleMetric(180, scale), card.Width - run.Left - ScaleMetric(24, scale));
+            }
+
+            Control openFolder = FindControl(content, "btnOpenInstallFolder");
+            if (openFolder != null)
+            {
+                openFolder.Left = Math.Max(ScaleMetric(34, scale), content.Width - openFolder.Width - ScaleMetric(48, scale));
+            }
+        }
+
+        private static void LayoutFooter(Control footer, float scale)
+        {
+            Button back = FindControl(footer, "btnBack") as Button;
+            Button primary = FindControl(footer, "btnNext") as Button;
+            if (primary == null) primary = FindControl(footer, "btnInstall") as Button;
+            if (primary == null) primary = FindControl(footer, "btnFinish") as Button;
+            Button cancel = FindControl(footer, "btnCancel") as Button;
+
+            int right = footer.Width - ScaleMetric(24, scale);
+            if (cancel != null && cancel.Visible)
+            {
+                int width = ScaleMetric(104, scale);
+                cancel.SetBounds(right - width, ScaleMetric(20, scale), width, ScaleMetric(36, scale));
+                right -= ScaleMetric(116, scale);
+            }
+            if (primary != null && primary.Visible)
+            {
+                int width = ScaleMetric(132, scale);
+                primary.SetBounds(right - width, ScaleMetric(20, scale), width, ScaleMetric(36, scale));
+                right -= ScaleMetric(144, scale);
+            }
+            if (back != null && back.Visible)
+            {
+                int width = ScaleMetric(104, scale);
+                back.SetBounds(right - width, ScaleMetric(20, scale), width, ScaleMetric(36, scale));
+            }
+        }
+
+        private static void ConfigureKeyboardNavigation(UserControl root)
+        {
+            Form form = root.FindForm();
+            if (form == null)
+            {
+                return;
+            }
+
+            Button primary = FindControl(root, "btnNext") as Button;
+            if (primary == null) primary = FindControl(root, "btnInstall") as Button;
+            if (primary == null) primary = FindControl(root, "btnFinish") as Button;
+            Button back = FindControl(root, "btnBack") as Button;
+            Button cancel = FindControl(root, "btnCancel") as Button;
+
+            if (back != null) back.TabIndex = 100;
+            if (primary != null) primary.TabIndex = 101;
+            if (cancel != null) cancel.TabIndex = 102;
+
+            if (primary != null && primary.Visible)
+            {
+                form.AcceptButton = primary;
+                if (string.IsNullOrEmpty(primary.AccessibleName)) primary.AccessibleName = primary.Text;
+            }
+            else
+            {
+                form.AcceptButton = null;
+            }
+            if (cancel != null && cancel.Visible)
+            {
+                form.CancelButton = cancel;
+                if (string.IsNullOrEmpty(cancel.AccessibleName)) cancel.AccessibleName = cancel.Text;
+            }
+            else
+            {
+                form.CancelButton = null;
+            }
+            form.KeyPreview = true;
+        }
+
+        private static Control[] FindControls(Control root, string name)
+        {
+            System.Collections.Generic.List<Control> result = new System.Collections.Generic.List<Control>();
+            CollectControls(root, name, result);
+            return result.ToArray();
+        }
+
+        private static void CollectControls(Control root, string name, System.Collections.Generic.List<Control> result)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            foreach (Control child in root.Controls)
+            {
+                if (child.Name == name)
+                {
+                    result.Add(child);
+                }
+                if (child.HasChildren)
+                {
+                    CollectControls(child, name, result);
+                }
+            }
+        }
+
+        private static void PolishPrerequisiteScreen(Control root)
+        {
+            if (root == null || !IsPrerequisiteScreen(root))
+            {
+                return;
+            }
+
+            Control premiumPanel = FindControl(root, "turboramaPremiumPanel");
+            if (premiumPanel == null)
+            {
+                return;
+            }
+
+            if (FindControl(premiumPanel, "__prereqNeonRail") != null)
+            {
+                return;
+            }
+
+            root.BackColor = Background;
+            root.ForeColor = Text;
+            premiumPanel.BackColor = Background;
+            premiumPanel.ForeColor = Text;
+            premiumPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            premiumPanel.SetBounds(0, 0, root.Width, Math.Max(280, root.Height - FooterHeight));
+
+            Control left = FindPrerequisiteSidebar(premiumPanel);
+            if (left != null)
+            {
+                left.BackColor = TurboramaPremiumTheme.BackgroundDeep;
+                left.ForeColor = Text;
+                left.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
+
+                Control brand = FindControl(left, "__prereqBrandMark");
+                if (brand == null)
+                {
+                    NeonBrandMark mark = new NeonBrandMark();
+                    mark.Name = "__prereqBrandMark";
+                    mark.Location = new Point(18, 14);
+                    mark.AccessibleName = "Turborama";
+                    left.Controls.Add(mark);
+                    mark.BringToFront();
+                }
+
+                NeonStepRail rail = FindControl(left, "__prereqNeonRail") as NeonStepRail;
+                if (rail == null)
+                {
+                    rail = new NeonStepRail();
+                    rail.Name = "__prereqNeonRail";
+                    rail.ActiveIndex = 2;
+                    rail.AccessibleName = "Progresso da instalação";
+                    left.Controls.Add(rail);
+                }
+                rail.SetBounds(16, 210, Math.Max(130, left.Width - 28), Math.Max(120, left.Height - 224));
+                rail.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+                rail.BringToFront();
+            }
+
+            PolishPrerequisiteTree(premiumPanel, left);
+            TurboramaPremiumTheme.Apply(root);
+            BringNavigationButtonsToFront(root);
+        }
+
+        private static Control FindPrerequisiteSidebar(Control premiumPanel)
+        {
+            foreach (Control child in premiumPanel.Controls)
+            {
+                Panel panel = child as Panel;
+                if (panel != null && panel.Left <= 2 && panel.Width <= 230 && panel.Height >= premiumPanel.Height - 12)
+                {
+                    return panel;
+                }
+            }
+            return null;
+        }
+
+        private static void PolishPrerequisiteTree(Control parent, Control sidebar)
+        {
+            foreach (Control child in parent.Controls)
+            {
+                Panel panel = child as Panel;
+                if (panel != null && panel != sidebar && !(panel is NeonSurfacePanel))
+                {
+                    bool isStripe = panel.Width <= 6 || panel.Height <= 4;
+                    if (isStripe)
+                    {
+                        panel.BackColor = panel.Enabled ? Cyan : Dim;
+                    }
+                    else if (panel.Height <= 48)
+                    {
+                        panel.BackColor = PanelMid;
+                        panel.ForeColor = Text;
+                        panel.BorderStyle = BorderStyle.None;
+                    }
+                    else if (panel.BackColor != Color.Transparent)
+                    {
+                        panel.BackColor = PanelDark;
+                    }
+                }
+
+                Label label = child as Label;
+                if (label != null)
+                {
+                    label.BackColor = Color.Transparent;
+                    if (label.ForeColor.G > 205 && label.ForeColor.R < 155)
+                    {
+                        label.ForeColor = Cyan;
+                    }
+                }
+
+                CheckBox checkBox = child as CheckBox;
+                if (checkBox != null)
+                {
+                    StyleCheckBox(checkBox);
+                }
+
+                if (child.HasChildren)
+                {
+                    PolishPrerequisiteTree(child, sidebar);
+                }
+            }
+        }
+
         private static bool IsPrerequisiteScreen(Control root)
         {
             if (root == null)
@@ -1004,7 +1708,7 @@ namespace InstallerHost
                     footerBanner.Margin = new Padding(0);
                     footerBanner.Padding = new Padding(0);
                     footerBanner.TabStop = false;
-                    footerBanner.SizeMode = PictureBoxSizeMode.StretchImage;
+                    footerBanner.SizeMode = PictureBoxSizeMode.Zoom;
                     root.Controls.Add(footerBanner);
                 }
                 else if (footerBanner.Image != null && !object.ReferenceEquals(footerBanner.Image, footerImage))
@@ -1024,18 +1728,18 @@ namespace InstallerHost
                 // ACIMA dos botões (< Back / Next / Cancel), sem cobrir a navegação.
                 // A posição é calculada pelo rodapé reservado do layout, mantendo
                 // o banner organizado e separado dos botões.
-                int bannerHeight = 112;
-                int gapAboveButtons = 8;
-                int top = root.Height - FooterHeight - gapAboveButtons - bannerHeight;
+                float dpiScale = GetDpiScale(root);
+                int bannerHeight = root.Height < ScaleMetric(640, dpiScale) ? ScaleMetric(40, dpiScale) : ScaleMetric(60, dpiScale);
+                int gapAboveButtons = ScaleMetric(8, dpiScale);
+                int top = root.Height - ScaleMetric(FooterHeight, dpiScale) - gapAboveButtons - bannerHeight;
 
-                if (top < 360)
-                {
-                    top = 360;
-                }
+                Control premiumPanel = FindControl(root, "turboramaPremiumPanel");
+                Control prerequisiteSidebar = premiumPanel == null ? null : FindPrerequisiteSidebar(premiumPanel);
+                int contentLeft = prerequisiteSidebar == null ? 0 : prerequisiteSidebar.Right;
 
-                footerBanner.Left = 0;
+                footerBanner.Left = contentLeft;
                 footerBanner.Top = top;
-                footerBanner.Width = root.Width;
+                footerBanner.Width = Math.Max(ScaleMetric(180, dpiScale), root.Width - contentLeft);
                 footerBanner.Height = bannerHeight;
                 footerBanner.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
                 footerBanner.Visible = true;
@@ -1073,6 +1777,13 @@ namespace InstallerHost
         {
             try
             {
+                DateTime now = DateTime.UtcNow;
+                if ((now - lastPrerequisitePolishUtc).TotalMilliseconds < 600d)
+                {
+                    return;
+                }
+                lastPrerequisitePolishUtc = now;
+
                 foreach (Form form in Application.OpenForms)
                 {
                     ApplyPrerequisiteBannerRecursive(form);
@@ -1095,6 +1806,7 @@ namespace InstallerHost
                 UserControl userControl = control as UserControl;
                 if (userControl != null && IsPrerequisiteScreen(userControl))
                 {
+                    PolishPrerequisiteScreen(userControl);
                     AddPrerequisiteFooterBanner(userControl);
                     return;
                 }
@@ -1130,9 +1842,15 @@ namespace InstallerHost
         private static void AddFeatureCard(Control parent, int left, int top, int width, int height, string title, string description)
         {
             PremiumPanel card = MakeCard("__feature", left, top, width, height, PanelMid, BorderSoft, 12);
+            card.AccentColor = title.IndexOf("DIVERSÃO", StringComparison.OrdinalIgnoreCase) >= 0
+                ? Violet
+                : (title.IndexOf("ORGANIZADO", StringComparison.OrdinalIgnoreCase) >= 0 ? Cyan : Green);
+            card.Interactive = true;
+            card.AccessibleName = title;
+            card.AccessibleDescription = description;
             parent.Controls.Add(card);
             Panel accent = new Panel();
-            accent.BackColor = AccentRedSoft;
+            accent.BackColor = card.AccentColor;
             accent.Left = width - 44;
             accent.Top = 0;
             accent.Width = 28;
@@ -1151,6 +1869,7 @@ namespace InstallerHost
             panel.Width = width;
             panel.Height = height;
             panel.BackColor = Color.Transparent;
+            panel.Interactive = true;
             return panel;
         }
 
@@ -1256,15 +1975,7 @@ namespace InstallerHost
             }
 
             button.Visible = true;
-            button.FlatStyle = FlatStyle.Flat;
-            button.UseVisualStyleBackColor = false;
-            button.FlatAppearance.BorderColor = Green;
-            button.FlatAppearance.BorderSize = 1;
-            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(56, 148, 36);
-            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(76, 184, 44);
-            button.BackColor = Color.FromArgb(26, 92, 24);
-            button.ForeColor = Text;
-            button.Font = new Font("Segoe UI Semibold", 9.4f, FontStyle.Bold);
+            NeonInteraction.StyleButton(button, NeonButtonKind.Primary);
             button.BringToFront();
         }
 
@@ -1276,15 +1987,7 @@ namespace InstallerHost
             }
 
             button.Visible = true;
-            button.FlatStyle = FlatStyle.Flat;
-            button.UseVisualStyleBackColor = false;
-            button.FlatAppearance.BorderColor = Green;
-            button.FlatAppearance.BorderSize = 1;
-            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(28, 58, 22);
-            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(40, 86, 24);
-            button.BackColor = Color.FromArgb(12, 21, 16);
-            button.ForeColor = Text;
-            button.Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold);
+            NeonInteraction.StyleButton(button, NeonButtonKind.Secondary);
             button.BringToFront();
         }
 
@@ -1296,15 +1999,7 @@ namespace InstallerHost
             }
 
             button.Visible = true;
-            button.FlatStyle = FlatStyle.Flat;
-            button.UseVisualStyleBackColor = false;
-            button.FlatAppearance.BorderColor = Color.FromArgb(70, 88, 74);
-            button.FlatAppearance.BorderSize = 1;
-            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(35, 42, 36);
-            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(46, 52, 47);
-            button.BackColor = Color.FromArgb(15, 19, 16);
-            button.ForeColor = Color.FromArgb(214, 222, 214);
-            button.Font = new Font("Segoe UI", 9f, FontStyle.Regular);
+            NeonInteraction.StyleButton(button, NeonButtonKind.Danger);
             button.BringToFront();
         }
 
@@ -1326,10 +2021,13 @@ namespace InstallerHost
                 return;
             }
 
-            checkBox.BackColor = PanelMid;
-            checkBox.ForeColor = Text;
-            checkBox.FlatStyle = FlatStyle.Standard;
-            checkBox.Font = new Font("Segoe UI Semibold", 8.9f, FontStyle.Bold);
+            checkBox.BackColor = Color.Transparent;
+            checkBox.ForeColor = checkBox.Enabled ? Text : Dim;
+            checkBox.FlatStyle = FlatStyle.Flat;
+            checkBox.FlatAppearance.BorderColor = Cyan;
+            checkBox.FlatAppearance.CheckedBackColor = Color.FromArgb(13, 87, 92);
+            checkBox.FlatAppearance.MouseOverBackColor = TurboramaPremiumTheme.SurfaceHover;
+            checkBox.Font = TurboramaPremiumTheme.CreateFont(8.9f, FontStyle.Bold);
         }
 
         public static void StyleTextBox(TextBox textBox)
@@ -1339,10 +2037,7 @@ namespace InstallerHost
                 return;
             }
 
-            textBox.BackColor = Color.FromArgb(8, 13, 10);
-            textBox.ForeColor = Color.FromArgb(235, 242, 235);
-            textBox.BorderStyle = BorderStyle.FixedSingle;
-            textBox.Font = new Font("Segoe UI Semibold", 9.4f, FontStyle.Bold);
+            NeonInteraction.StyleField(textBox);
         }
 
         public static void StyleRichTextBox(RichTextBox richTextBox)
@@ -1352,12 +2047,13 @@ namespace InstallerHost
                 return;
             }
 
-            richTextBox.BackColor = Color.FromArgb(7, 12, 9);
-            richTextBox.ForeColor = Color.FromArgb(232, 240, 232);
+            richTextBox.BackColor = TurboramaPremiumTheme.InputBackground;
+            richTextBox.ForeColor = Text;
             richTextBox.BorderStyle = BorderStyle.None;
-            richTextBox.Font = new Font("Segoe UI", 9f, FontStyle.Regular);
+            richTextBox.Font = TurboramaPremiumTheme.CreateFont(9f, FontStyle.Regular);
             richTextBox.ReadOnly = true;
             richTextBox.ScrollBars = RichTextBoxScrollBars.Vertical;
+            NeonInteraction.StyleField(richTextBox);
         }
 
         private static void StyleLicenseBox(Control control)
@@ -1381,15 +2077,16 @@ namespace InstallerHost
                 text.ReadOnly = true;
                 text.ScrollBars = ScrollBars.Vertical;
                 text.BorderStyle = BorderStyle.None;
-                text.BackColor = Color.FromArgb(7, 12, 9);
-                text.ForeColor = Color.FromArgb(232, 240, 232);
-                text.Font = new Font("Segoe UI", 9f, FontStyle.Regular);
+                text.BackColor = TurboramaPremiumTheme.InputBackground;
+                text.ForeColor = Text;
+                text.Font = TurboramaPremiumTheme.CreateFont(9f, FontStyle.Regular);
+                NeonInteraction.StyleField(text);
                 return;
             }
 
-            control.BackColor = Color.FromArgb(7, 12, 9);
-            control.ForeColor = Color.FromArgb(232, 240, 232);
-            control.Font = new Font("Segoe UI", 9f, FontStyle.Regular);
+            control.BackColor = TurboramaPremiumTheme.InputBackground;
+            control.ForeColor = Text;
+            control.Font = TurboramaPremiumTheme.CreateFont(9f, FontStyle.Regular);
         }
 
         public static void StyleProgress(ProgressBar progressBar)
@@ -1399,7 +2096,7 @@ namespace InstallerHost
                 return;
             }
 
-            progressBar.ForeColor = Green;
+            progressBar.ForeColor = Cyan;
             progressBar.BackColor = PanelDark;
         }
 
@@ -1414,7 +2111,7 @@ namespace InstallerHost
             label.Text = text;
             label.ForeColor = color;
             label.BackColor = Color.Transparent;
-            label.Font = new Font("Segoe UI" + (bold ? " Semibold" : string.Empty), size, bold ? FontStyle.Bold : FontStyle.Regular);
+            label.Font = TurboramaPremiumTheme.CreateFont(size, bold ? FontStyle.Bold : FontStyle.Regular);
             return label;
         }
 
@@ -1433,7 +2130,18 @@ namespace InstallerHost
                     string text = (button.Text ?? string.Empty).ToLowerInvariant();
                     if (text.Contains("back") || text.Contains("next") || text.Contains("cancel") || text.Contains("install") || text.Contains("finish") || text.Contains("voltar") || text.Contains("avancar") || text.Contains("avançar") || text.Contains("cancelar") || text.Contains("instalar") || text.Contains("concluir"))
                     {
-                        StyleButton(button);
+                        if (text.Contains("cancel") || text.Contains("cancelar"))
+                        {
+                            StyleDangerButton(button);
+                        }
+                        else if (text.Contains("next") || text.Contains("avancar") || text.Contains("avançar") || text.Contains("install") || text.Contains("instalar") || text.Contains("finish") || text.Contains("concluir"))
+                        {
+                            StylePrimaryButton(button);
+                        }
+                        else
+                        {
+                            StyleSecondaryButton(button);
+                        }
                         button.BringToFront();
                     }
                 }
@@ -1491,73 +2199,19 @@ namespace InstallerHost
                 "Mensagem: prazer e diversão com os melhores jogos.";
         }
 
-        private class PremiumPanel : Panel
+        private class PremiumPanel : NeonSurfacePanel
         {
-            private Color fill;
-            private Color border;
-            private int radius;
-            private bool drawGlow;
-
             public PremiumPanel(Color fillColor, Color borderColor, int cornerRadius, bool glow)
             {
-                this.fill = fillColor;
-                this.border = borderColor;
-                this.radius = cornerRadius;
-                this.drawGlow = glow;
-                this.DoubleBuffered = true;
-                this.ResizeRedraw = true;
+                this.SurfaceColor = fillColor;
+                this.SurfaceColor2 = NeonDrawing.Blend(fillColor, TurboramaPremiumTheme.BackgroundDeep, 0.22f);
+                this.BorderColor = borderColor;
+                this.CornerRadius = cornerRadius;
+                this.AccentColor = Cyan;
+                this.GlowStrength = glow ? 34 : 0;
+                this.ShowAccent = glow;
+                this.ShowGrid = false;
                 this.BackColor = Color.Transparent;
-            }
-
-            protected override void OnPaint(PaintEventArgs e)
-            {
-                base.OnPaint(e);
-                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-
-                Rectangle rect = new Rectangle(0, 0, this.Width - 1, this.Height - 1);
-                if (this.radius <= 0)
-                {
-                    using (SolidBrush brush = new SolidBrush(this.fill))
-                    {
-                        e.Graphics.FillRectangle(brush, rect);
-                    }
-                    using (Pen pen = new Pen(this.border))
-                    {
-                        e.Graphics.DrawRectangle(pen, rect);
-                    }
-                    return;
-                }
-
-                using (GraphicsPath path = RoundedRect(rect, this.radius))
-                {
-                    using (SolidBrush brush = new SolidBrush(this.fill))
-                    {
-                        e.Graphics.FillPath(brush, path);
-                    }
-                    if (this.drawGlow)
-                    {
-                        using (Pen glowPen = new Pen(Color.FromArgb(55, Green), 2f))
-                        {
-                            e.Graphics.DrawPath(glowPen, path);
-                        }
-                    }
-                    using (Pen pen = new Pen(this.border))
-                    {
-                        e.Graphics.DrawPath(pen, path);
-                    }
-                }
-            }
-
-            private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
-            {
-                int diameter = radius * 2;
-                GraphicsPath path = new GraphicsPath();
-                path.AddArc(bounds.Left, bounds.Top, diameter, diameter, 180, 90);
-                path.AddArc(bounds.Right - diameter, bounds.Top, diameter, diameter, 270, 90);
-                path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
-                path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
-                path.CloseFigure();
-                return path;
             }
         }
     }

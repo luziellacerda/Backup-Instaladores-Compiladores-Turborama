@@ -25,15 +25,17 @@ namespace InstallerHost
 		{
 			this.InitializeComponent();
 
-if (base.DesignMode)
+			if (base.DesignMode)
 			{
 				return;
 			}
-			this.Font = SystemFonts.MessageBoxFont;
+			this.SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+			this.Font = TurboramaPremiumTheme.CreateFont(9f, FontStyle.Regular);
 			this.BackColor = TurboramaPremiumUi.Background;
 			this.ForeColor = TurboramaPremiumUi.Text;
-			this.ClientSize = new Size(980, 620);
-			this.MinimumSize = new Size(980, 620);
+			this.MaximizeBox = true;
+			this.SizeGripStyle = SizeGripStyle.Show;
+			this.KeyPreview = true;
 			string[] array = Path.GetFileNameWithoutExtension(Assembly.GetExecutingAssembly().Location).Split(new char[] { '-' });
 			BaseForm.version = ((array.Length > 1) ? array[1] : "");
 			BaseForm.branch = ((array.Length > 2) ? array[2] : "");

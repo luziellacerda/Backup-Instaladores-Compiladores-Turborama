@@ -1,9 +1,6 @@
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Management;
-using System.Net;
-using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace InstallerHost
@@ -15,15 +12,14 @@ namespace InstallerHost
 			try
 			{
 				using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT Name, AdapterCompatibility, PNPDeviceID FROM Win32_VideoController"))
+				using (ManagementObjectCollection results = searcher.Get())
 				{
-					foreach (ManagementObject obj in searcher.Get())
+					foreach (ManagementObject obj in results)
 					{
 						string name = SafeGet(obj, "Name");
 						string adapter = SafeGet(obj, "AdapterCompatibility");
 						string pnp = SafeGet(obj, "PNPDeviceID");
-
 						string text = (name + " " + adapter + " " + pnp).ToLowerInvariant();
-
 						if (text.Contains("nvidia") || text.Contains("ven_10de"))
 						{
 							Logger.Log("NVIDIA GPU detected: " + name);
@@ -36,41 +32,30 @@ namespace InstallerHost
 			{
 				Logger.Log("Failed to detect NVIDIA GPU: " + ex.ToString());
 			}
-
 			return false;
 		}
 
+		// Nome preservado por compatibilidade com a interface existente. A operação é
+		// deliberadamente manual: drivers dependem do modelo exato, do Windows e do OEM.
 		public static void InstallOrOpenNvidiaApp()
 		{
 			if (!HasNvidiaGpu())
 			{
 				MessageBox.Show(
-					"NVIDIA GPU was not detected on this computer.",
-					"NVIDIA App",
+					"Nenhuma GPU NVIDIA foi detectada neste computador.",
+					"Driver NVIDIA",
 					MessageBoxButtons.OK,
-					MessageBoxIcon.Information
-				);
+					MessageBoxIcon.Information);
 				return;
 			}
 
-			try
-			{
-				DownloadAndRunNvidiaAppInstaller();
-			}
-			catch (Exception ex)
-			{
-				Logger.Log("NVIDIA App installer auto-download failed: " + ex.ToString());
-
-				MessageBox.Show(
-					"Could not automatically download the NVIDIA App installer." + Environment.NewLine + Environment.NewLine +
-					"The official NVIDIA App page will be opened instead.",
-					"NVIDIA App",
-					MessageBoxButtons.OK,
-					MessageBoxIcon.Information
-				);
-
-				OpenUrl("https://www.nvidia.com/pt-br/software/nvidia-app/");
-			}
+			MessageBox.Show(
+				"A página oficial da NVIDIA será aberta." + Environment.NewLine + Environment.NewLine +
+				"O TurboRama não baixa nem executa drivers automaticamente, pois o pacote correto depende do modelo da GPU e do Windows.",
+				"Driver NVIDIA",
+				MessageBoxButtons.OK,
+				MessageBoxIcon.Information);
+			OpenOfficialUrl("https://www.nvidia.com/Download/index.aspx");
 		}
 
 		private static string SafeGet(ManagementObject obj, string propertyName)
@@ -86,108 +71,32 @@ namespace InstallerHost
 			}
 		}
 
-		private static void DownloadAndRunNvidiaAppInstaller()
+		private static void OpenOfficialUrl(string url)
 		{
-			ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
-
-			string pageUrl = "https://www.nvidia.com/pt-br/software/nvidia-app/";
-			string html;
-
-			using (WebClient client = CreateWebClient())
+			Uri parsed;
+			if (!Uri.TryCreate(url, UriKind.Absolute, out parsed) || !string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
 			{
-				Logger.Log("Downloading NVIDIA App page: " + pageUrl);
-				html = client.DownloadString(pageUrl);
+				throw new InvalidOperationException("Endereço oficial inválido.");
 			}
 
-			string installerUrl = FindNvidiaAppInstallerUrl(html);
-
-			if (string.IsNullOrWhiteSpace(installerUrl))
+			try
 			{
-				throw new Exception("NVIDIA App installer URL not found on official page.");
-			}
-
-			string installerPath = Path.Combine(Path.GetTempPath(), "NVIDIA_App_Installer.exe");
-
-			if (File.Exists(installerPath))
-			{
-				try
+				Process.Start(new ProcessStartInfo
 				{
-					File.Delete(installerPath);
-				}
-				catch
-				{
-				}
+					FileName = parsed.AbsoluteUri,
+					UseShellExecute = true
+				});
+				Logger.Log("Opened official NVIDIA driver page: " + parsed.AbsoluteUri);
 			}
-
-			using (WebClient client = CreateWebClient())
+			catch (Exception ex)
 			{
-				Logger.Log("Downloading NVIDIA App installer: " + installerUrl);
-				client.DownloadFile(installerUrl, installerPath);
+				Logger.Log("Failed to open official NVIDIA driver page: " + ex.ToString());
+				MessageBox.Show(
+					"Não foi possível abrir a página oficial: " + ex.Message,
+					"Driver NVIDIA",
+					MessageBoxButtons.OK,
+					MessageBoxIcon.Warning);
 			}
-
-			if (!File.Exists(installerPath) || new FileInfo(installerPath).Length < 1024L * 1024L)
-			{
-				throw new Exception("Downloaded NVIDIA App installer is missing or too small.");
-			}
-
-			Logger.Log("Launching NVIDIA App installer: " + installerPath);
-
-			ProcessStartInfo startInfo = new ProcessStartInfo
-			{
-				FileName = installerPath,
-				UseShellExecute = true
-			};
-
-			Process.Start(startInfo);
-		}
-
-		private static WebClient CreateWebClient()
-		{
-			WebClient client = new WebClient();
-			client.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TurboramaInstaller");
-			client.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-			return client;
-		}
-
-		private static string FindNvidiaAppInstallerUrl(string html)
-		{
-			if (string.IsNullOrWhiteSpace(html))
-			{
-				return string.Empty;
-			}
-
-			MatchCollection matches = Regex.Matches(
-				html,
-				@"https?:\\?/\\?/[^'""<>\\ ]+?\.exe",
-				RegexOptions.IgnoreCase
-			);
-
-			foreach (Match match in matches)
-			{
-				string url = match.Value.Replace("\\/", "/").Replace("&amp;", "&");
-				string lower = url.ToLowerInvariant();
-
-				if ((lower.Contains("nvidia") || lower.Contains("nvapp")) &&
-					(lower.Contains("app") || lower.Contains("nvidia_app") || lower.Contains("nvidia-app")) &&
-					lower.EndsWith(".exe"))
-				{
-					return url;
-				}
-			}
-
-			return string.Empty;
-		}
-
-		private static void OpenUrl(string url)
-		{
-			ProcessStartInfo startInfo = new ProcessStartInfo
-			{
-				FileName = url,
-				UseShellExecute = true
-			};
-
-			Process.Start(startInfo);
-			Logger.Log("Opened URL: " + url);
 		}
 	}
 }

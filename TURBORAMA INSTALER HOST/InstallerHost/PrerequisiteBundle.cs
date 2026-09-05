@@ -1,129 +1,152 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
-using System.Windows.Forms;
 
 namespace InstallerHost
 {
 	internal static class PrerequisiteBundle
 	{
 		private const string ResourcePrefix = "InstallerHost.resources.prerequisites.";
+		private static readonly object ExtractionSync = new object();
+		private static readonly Dictionary<string, string> ExtractedFiles =
+			new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		private static SecureInstallerStaging extractionStaging;
 
-		public static string ExtractBundledFile(string fileName)
+		static PrerequisiteBundle()
 		{
-			string path = TryExtractBundledFile(fileName);
-			if (string.IsNullOrEmpty(path))
-			{
-				throw new FileNotFoundException(
-					"Pre-requisito embutido nao encontrado: " + fileName + Environment.NewLine +
-					"Execute Baixar_Prerequisitos_Instalador.ps1 e recompile o InstallerHost em Release.",
-					fileName);
-			}
-
-			return path;
+			AppDomain.CurrentDomain.ProcessExit += delegate { CleanupExtractedFiles(); };
 		}
 
-		public static string TryExtractBundledFile(string fileName)
+		public static string ExtractBundledFile(GamingRuntimeComponent component)
 		{
-			if (string.IsNullOrWhiteSpace(fileName))
+			if (component == null || !component.CanInstallOffline || string.IsNullOrWhiteSpace(component.BundleFileName))
 			{
-				return null;
+				throw new InvalidDataException("Componente sem payload offline aprovado.");
 			}
 
-			foreach (string candidate in GetCandidateFileNames(fileName))
+			PrerequisitePayloadLock payload =
+				PrerequisiteIntegrityCatalog.GetRequiredPayload(component.BundleFileName);
+			lock (ExtractionSync)
 			{
-				string localPath = Path.Combine(GetLocalPrerequisitesFolder(), candidate);
-				if (File.Exists(localPath) && new FileInfo(localPath).Length > 1000L)
+				string existing;
+				if (ExtractedFiles.TryGetValue(payload.name, out existing) && File.Exists(existing))
 				{
-					Logger.Log("Using local prerequisite file: " + localPath);
-					return localPath;
+					using (TrustedInstallerFile verified =
+						InstallerPackageSecurity.OpenTrustedPayload(existing, component, component.DisplayName + " (incorporado)"))
+					{
+						return existing;
+					}
 				}
 
-				string resourceName = ResourcePrefix + candidate;
+				string resourceName = ResourcePrefix + payload.name;
 				Assembly assembly = Assembly.GetExecutingAssembly();
-				using (Stream stream = assembly.GetManifestResourceStream(resourceName))
+				using (Stream source = assembly.GetManifestResourceStream(resourceName))
 				{
-					if (stream == null)
+					if (source == null)
 					{
-						continue;
+						throw new FileNotFoundException(
+							"Payload incorporado não encontrado: " + payload.name + ".", payload.name);
+					}
+					if (source.Length != payload.length)
+					{
+						throw new InvalidDataException("Tamanho do recurso incorporado diverge do catálogo: " + payload.name + ".");
 					}
 
-					string tempDir = Path.Combine(Path.GetTempPath(), "TurboramaPrerequisites");
-					Directory.CreateDirectory(tempDir);
-					string outputPath = Path.Combine(tempDir, candidate);
-
-					using (FileStream fileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None))
+					if (extractionStaging == null)
 					{
-						stream.CopyTo(fileStream);
+						extractionStaging = SecureInstallerStaging.Create("EmbeddedPrerequisites");
 					}
-
-					if (!File.Exists(outputPath) || new FileInfo(outputPath).Length < 1000L)
+					string componentFolder = extractionStaging.CreateSubdirectory(Guid.NewGuid().ToString("N"));
+					string outputPath = Path.Combine(componentFolder, payload.name);
+					using (FileStream output = extractionStaging.CreateFileForWrite(outputPath))
 					{
-						throw new IOException("Falha ao extrair pre-requisito embutido: " + candidate);
+						source.CopyTo(output);
+						output.Flush(true);
 					}
+					extractionStaging.VerifyFilePolicy(outputPath);
 
-					Logger.Log("Extracted embedded prerequisite: " + candidate);
+					using (TrustedInstallerFile verified =
+						InstallerPackageSecurity.OpenTrustedPayload(outputPath, component, component.DisplayName + " (incorporado)"))
+					{
+					}
+					ExtractedFiles[payload.name] = outputPath;
+					Logger.Log("Extracted and verified embedded prerequisite: " + payload.name);
 					return outputPath;
 				}
 			}
-
-			return null;
 		}
 
 		public static void EnsureBundleAvailable()
 		{
-			foreach (string fileName in GamingRuntimeManifest.RequiredBundleFiles)
+			EnsureBundleFilesAvailable(GamingRuntimeManifest.RequiredBundleFiles);
+		}
+
+		public static void EnsureBundleAvailable(IEnumerable<GamingRuntimeComponent> components)
+		{
+			if (components == null)
 			{
-				if (!HasBundledFile(fileName))
-				{
-					throw new FileNotFoundException(
-						"Pacote offline incompleto: falta o pre-requisito '" + fileName + "'. " +
-						"Execute Baixar_Prerequisitos_Instalador.ps1 e recompile o InstallerHost.");
-				}
+				return;
 			}
+
+			EnsureBundleFilesAvailable(components
+				.Where(component => component != null && component.CanInstallOffline)
+				.Select(component => component.BundleFileName));
 		}
 
 		public static bool HasBundledFile(string fileName)
 		{
-			foreach (string candidate in GetCandidateFileNames(fileName))
+			GamingRuntimeComponent component = GamingRuntimeManifest.FindByBundleFile(fileName);
+			if (component == null || !component.CanInstallOffline)
 			{
-				string localPath = Path.Combine(GetLocalPrerequisitesFolder(), candidate);
-				if (File.Exists(localPath) && new FileInfo(localPath).Length > 1000L)
-				{
-					return true;
-				}
-
-				string resourceName = ResourcePrefix + candidate;
-				if (Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName) != null)
-				{
-					return true;
-				}
+				return false;
 			}
 
-			return false;
+			PrerequisitePayloadLock payload;
+			try
+			{
+				payload = PrerequisiteIntegrityCatalog.GetRequiredPayload(component.BundleFileName);
+			}
+			catch (Exception ex)
+			{
+				Logger.Log("Integrity catalog rejected " + fileName + ": " + ex.Message);
+				return false;
+			}
+
+			using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourcePrefix + payload.name))
+			{
+				return stream != null && stream.Length == payload.length;
+			}
 		}
 
-		private static string[] GetCandidateFileNames(string fileName)
+		public static void CleanupExtractedFiles()
 		{
-			if (GamingRuntimeManifest.BundleFileAliases == null)
+			lock (ExtractionSync)
 			{
-				return new string[] { fileName };
-			}
-
-			foreach (string[] aliases in GamingRuntimeManifest.BundleFileAliases)
-			{
-				if (aliases != null && aliases.Length > 0 && string.Equals(aliases[0], fileName, StringComparison.OrdinalIgnoreCase))
+				ExtractedFiles.Clear();
+				SecureInstallerStaging staging = extractionStaging;
+				extractionStaging = null;
+				if (staging != null)
 				{
-					return aliases;
+					staging.Dispose();
 				}
 			}
-
-			return new string[] { fileName };
 		}
 
-		private static string GetLocalPrerequisitesFolder()
+		private static void EnsureBundleFilesAvailable(IEnumerable<string> fileNames)
 		{
-			return Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "resources", "prerequisites");
+			List<string> missing = (fileNames ?? new string[0])
+				.Where(item => !string.IsNullOrWhiteSpace(item))
+				.Distinct(StringComparer.OrdinalIgnoreCase)
+				.Where(item => !HasBundledFile(item))
+				.ToList();
+			if (missing.Count > 0)
+			{
+				throw new FileNotFoundException(
+					"Pacote offline incompleto ou não catalogado:" + Environment.NewLine +
+					string.Join(Environment.NewLine, missing.Select(item => " - " + item)));
+			}
 		}
 	}
 }

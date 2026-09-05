@@ -10,10 +10,10 @@ namespace InstallerHost
 			base.SuspendLayout();
 			base.AutoScaleDimensions = new global::System.Drawing.SizeF(96f, 96f);
 			base.AutoScaleMode = global::System.Windows.Forms.AutoScaleMode.Dpi;
-			base.ClientSize = new global::System.Drawing.Size(980, 620);
+			base.ClientSize = new global::System.Drawing.Size(1080, 680);
 			base.Icon = (global::System.Drawing.Icon)componentResourceManager.GetObject("$this.Icon");
-			base.MaximizeBox = false;
-			base.MinimumSize = new global::System.Drawing.Size(980, 620);
+			base.MaximizeBox = true;
+			base.MinimumSize = new global::System.Drawing.Size(920, 590);
 			base.Name = "BaseForm";
 			base.StartPosition = global::System.Windows.Forms.FormStartPosition.CenterScreen;
 			base.ResumeLayout(false);
