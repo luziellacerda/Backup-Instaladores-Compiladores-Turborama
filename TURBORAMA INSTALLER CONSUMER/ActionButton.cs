@@ -117,14 +117,14 @@ namespace TurboRama.Next
             if (surface.Width <= 2 || surface.Height <= 2) return;
             bool pressed = IsPressed, highContrast = SystemInformation.HighContrast;
             bool quiet = Appearance == ButtonAppearance.Quiet || Appearance == ButtonAppearance.Navigation;
-            Color ink = Enabled ? (Primary ? Color.FromArgb(19, 35, 24) : Palette.Text) : Color.FromArgb(151, 162, 177);
+            Color ink = Enabled ? Palette.Text : Color.FromArgb(151, 162, 177);
             Color top, bottom, border;
             if (!Enabled) { top = bottom = Color.FromArgb(31, 35, 43); border = Color.FromArgb(51, 58, 70); }
             else if (Primary)
             {
-                top = Mix(Color.FromArgb(211, 255, 153), Color.FromArgb(231, 255, 197), hoverLevel);
-                bottom = Mix(Color.FromArgb(148, 225, 143), Color.FromArgb(173, 244, 169), hoverLevel);
-                border = Color.FromArgb(219, 255, 183);
+                top = Mix(Color.FromArgb(40, 61, 48), Color.FromArgb(54, 82, 60), hoverLevel);
+                bottom = Mix(Color.FromArgb(23, 38, 32), Color.FromArgb(31, 52, 40), hoverLevel);
+                border = Mix(Color.FromArgb(163, 235, 91), Palette.Accent, hoverLevel);
             }
             else if (Selected)
             { top = Color.FromArgb(44, 52, 48); bottom = Color.FromArgb(33, 41, 39); border = Color.FromArgb(77, 102, 79); ink = Color.FromArgb(212, 255, 167); }
@@ -134,11 +134,16 @@ namespace TurboRama.Next
                 bottom = Mix(Color.FromArgb(29, 34, 43), Color.FromArgb(39, 48, 59), hoverLevel);
                 border = Mix(Color.FromArgb(72, 80, 95), Color.FromArgb(123, 141, 160), hoverLevel);
             }
-            if (pressed) { top = bottom = Primary ? Color.FromArgb(139, 204, 128) : Color.FromArgb(25, 31, 39); }
+            if (pressed) { top = bottom = Primary ? Color.FromArgb(25, 45, 33) : Color.FromArgb(25, 31, 39); }
             if (highContrast)
             { top = bottom = Selected ? SystemColors.Highlight : SystemColors.Control; ink = !Enabled ? SystemColors.GrayText : Selected ? SystemColors.HighlightText : SystemColors.ControlText; border = SystemColors.ControlText; }
             using (GraphicsPath outline = Shape.Round(surface, radius))
             {
+                if (!highContrast && Enabled && Primary && !pressed)
+                {
+                    using (Pen aura = new Pen(Color.FromArgb(22 + (int)(26 * hoverLevel), Palette.Accent), Math.Max(3f, 5f * dpi)))
+                        g.DrawPath(aura, outline);
+                }
                 if (!highContrast && Enabled && !quiet && !pressed)
                 {
                     Rectangle shadowRect = surface; shadowRect.Offset(0, Px(2, dpi));
@@ -154,8 +159,16 @@ namespace TurboRama.Next
                     using (Pen stroke = new Pen(border, Math.Max(1f, dpi))) g.DrawPath(stroke, outline);
                     if (!quiet && !highContrast && Enabled && !pressed)
                     {
-                        using (Pen highlight = new Pen(Color.FromArgb(Primary ? 120 : 38, Color.White), Math.Max(1f, dpi)))
+                        using (Pen highlight = new Pen(Primary ? Color.FromArgb(150, Palette.Accent) : Color.FromArgb(38, Color.White), Math.Max(1f, dpi)))
                             g.DrawLine(highlight, surface.Left + radius, surface.Top + 1, surface.Right - radius, surface.Top + 1);
+                        if (Primary)
+                        {
+                            using (Pen ignition = new Pen(Color.FromArgb(210, Palette.Accent), Math.Max(2f, 2.5f * dpi)))
+                            {
+                                ignition.StartCap = ignition.EndCap = LineCap.Round;
+                                g.DrawLine(ignition, surface.Left + 1, surface.Top + radius, surface.Left + 1, surface.Bottom - radius);
+                            }
+                        }
                     }
                 }
             }
