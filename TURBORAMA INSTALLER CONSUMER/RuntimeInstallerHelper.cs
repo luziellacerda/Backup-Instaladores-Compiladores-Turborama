@@ -95,13 +95,13 @@ namespace InstallerHost
 				bool restartObserved = false;
 				foreach (RuntimeInstallPlanItem item in planned)
 				{
-					// A previous package or Windows Update may have requested a restart
-					// without returning 3010. Do not start another driver or runtime.
-					if (PrerequisiteDetector.IsRestartPending())
+					// Windows Update and generic pending-file notifications are advisory.
+					// An unfinished driver removal still needs a restart before another package.
+					if (PrerequisiteDetector.IsRuntimeRestartRequired())
 					{
 						restartObserved = true;
 						ReportProgress(progressCallback, "Reinicialização pendente",
-							"O Windows passou a indicar reinicialização pendente. As próximas etapas foram suspensas.");
+							"Uma remoção de driver precisa de reinicialização para terminar. As próximas etapas foram suspensas.");
 						break;
 					}
 					// Free space can change while earlier payloads are running.
@@ -126,7 +126,8 @@ namespace InstallerHost
 				GamingReadinessProfile after = PrerequisiteDetector.CaptureGamingReadinessProfile();
 				if (restartComponent != null) MarkRestartRequired(after, restartComponent, restartExitCode);
 				after.PendingRestart = after.PendingRestart || restartObserved;
-				if (after.PendingRestart)
+				after.RuntimeRestartRequired = after.RuntimeRestartRequired || restartObserved;
+				if (after.RuntimeRestartRequired)
 				{
 					// Keep every detector status intact; this is a paused result, not a
 					// successful verification of all selected components. The UI blocks
@@ -229,8 +230,8 @@ namespace InstallerHost
 		{
 			if (!hasRuntimeWork) return null;
 			if (profile == null) return "Diagnóstico indisponível. Nenhum instalador foi iniciado; execute uma nova análise.";
-			if (profile.PendingRestart)
-				return "O Windows tem uma reinicialização pendente. Salve seus arquivos e reinicie manualmente antes de instalar componentes.";
+			if (profile.RuntimeRestartRequired)
+				return "Um instalador ou uma remoção de driver exige reinicialização. Salve seus arquivos e reinicie antes de continuar os componentes.";
 			if (profile.SystemDriveFreeBytes < MinimumSystemDriveFreeBytes)
 				return "Espaço livre insuficiente ou não confirmado. Libere pelo menos 2 GB no disco do Windows e analise novamente. " +
 					"Nenhum instalador foi iniciado. Esta reserva inicial não inclui o espaço necessário para o produto completo.";
@@ -334,6 +335,7 @@ namespace InstallerHost
 			if (component == null) throw new ArgumentNullException("component");
 			if (!IsRestartExitCode(exitCode)) throw new ArgumentException("Código não indica reinicialização.", "exitCode");
 			profile.PendingRestart = true;
+			profile.RuntimeRestartRequired = true;
 			if (profile.OverallState == GamingReadinessState.Ready) profile.OverallState = GamingReadinessState.Attention;
 			string detail = exitCode == 1641
 				? "O instalador informou reinicialização iniciada (1641), apesar da opção de supressão. As próximas etapas foram suspensas; confirme o driver após reiniciar."

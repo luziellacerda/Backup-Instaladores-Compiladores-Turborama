@@ -79,7 +79,7 @@ namespace InstallerHost
 		public bool SkipIfAllInstalled()
 		{
 			if (IsInstallationRunning() || !HasCurrentReadinessProfile() || prerequisiteRestartRequired ||
-				gamingReadinessProfile.PendingRestart) return false;
+				gamingReadinessProfile.RuntimeRestartRequired) return false;
 			GamingRuntimeInstallSelection selection = GetPrerequisiteSelection().RuntimeSelection;
 			GamingRuntimeComponent[] installable = GamingRuntimeManifest.GetComponents()
 				.Where(component => component.CanInstallOffline &&
@@ -138,7 +138,7 @@ namespace InstallerHost
 			int totalSteps = GetSelectedStepCount(selection);
 			int runtimeSteps = totalSteps - (selection.OpenNvidiaOfficialSource ? 1 : 0);
 			if (HasSelectedRuntimeGroup(selection.RuntimeSelection) &&
-				(prerequisiteRestartRequired || gamingReadinessProfile.PendingRestart))
+				(prerequisiteRestartRequired || gamingReadinessProfile.RuntimeRestartRequired))
 			{
 				SetProgressHeaderSafe("Reinicialização pendente",
 					"Salve seus arquivos e reinicie o Windows manualmente antes de preparar mais componentes. Nenhum reinício será solicitado por esta tela.");
@@ -251,7 +251,7 @@ namespace InstallerHost
 
 			gamingReadinessProfile = result.Profile;
 			gamingReadinessCapturedAtUtc = DateTime.UtcNow;
-			prerequisiteRestartRequired = prerequisiteRestartRequired || (result.Profile != null && result.Profile.PendingRestart);
+			prerequisiteRestartRequired = prerequisiteRestartRequired || (result.Profile != null && result.Profile.RuntimeRestartRequired);
 			ApplyGamingReadinessProfileToUi();
 			if (prerequisiteRestartRequired)
 			{
@@ -600,7 +600,9 @@ namespace InstallerHost
 					gamingReadinessProfile.SystemDriveFreeDisplay + " livres." +
 					(lowSpace ? " Pouco espaço disponível: libere espaço antes de instalar componentes." :
 					" Confira também o espaço exigido pelo produto na unidade de destino.") +
-					(prerequisiteRestartRequired || gamingReadinessProfile.PendingRestart ? " Reinicialização pendente: reinicie o Windows antes de instalar componentes." : string.Empty);
+					(prerequisiteRestartRequired || gamingReadinessProfile.RuntimeRestartRequired
+						? " Um componente exige reinicialização antes de continuar."
+						: gamingReadinessProfile.PendingRestart ? " Aviso do Windows: reinicie ao concluir. A instalação pode continuar." : string.Empty);
 				diskSpaceLabel.ForeColor = lowSpace || prerequisiteRestartRequired || gamingReadinessProfile.PendingRestart ? Palette.Warning : Palette.Muted;
 			}
 			if (readinessButton != null)

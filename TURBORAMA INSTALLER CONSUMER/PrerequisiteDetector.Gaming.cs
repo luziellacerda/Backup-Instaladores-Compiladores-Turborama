@@ -29,6 +29,7 @@ namespace InstallerHost
 			TryDetectGpus(profile);
 			TryDetectGraphicsApis(profile);
 			profile.PendingRestart = IsRestartPending();
+			profile.RuntimeRestartRequired = IsRuntimeRestartRequired();
 
 			foreach (GamingRuntimeComponent component in GamingRuntimeManifest.GetComponents())
 			{
@@ -74,6 +75,12 @@ namespace InstallerHost
 				switch (component.DetectionKey)
 				{
 					case "windows-update":
+						if (profile != null && profile.OsBuild >= MinimumModernWindowsBuild && profile.PendingRestart)
+						{
+							result.State = GamingReadinessState.Attention;
+							result.Detail = "O Windows tem reinicialização pendente. Aviso: permite continuar a instalação; reinicie ao concluir.";
+							return result;
+						}
 						installed = profile != null && profile.OsBuild >= MinimumModernWindowsBuild && !profile.PendingRestart;
 						detail = profile != null && profile.PendingRestart
 							? "O Windows informa reinicialização pendente; depois, procure atualizações novamente."
@@ -561,7 +568,9 @@ namespace InstallerHost
 			if (profile.PendingRestart)
 			{
 				AddFinding(profile, "pending-restart", "Reinicialização pendente", "Uma instalação ou atualização aguarda reinicialização.",
-					"Reinicie o PC e execute o diagnóstico novamente.", GamingReadinessState.Attention, string.Empty);
+					profile.RuntimeRestartRequired ? "Reinicie para concluir a operação do componente."
+						: "Pode continuar a instalação. Reinicie o PC ao concluir para aplicar as atualizações.",
+					GamingReadinessState.Attention, string.Empty);
 			}
 
 			if (profile.PhysicalMemoryBytes > 0 && profile.PhysicalMemoryBytes < 4L * OneGigabyte)
@@ -832,6 +841,12 @@ namespace InstallerHost
 			string edition = GetRegistryValueString(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "EditionID");
 			string text = (edition + " " + (profile == null ? string.Empty : profile.OsCaption)).ToUpperInvariant();
 			return text.EndsWith("N", StringComparison.Ordinal) || text.Contains(" N ") || text.Contains("KN");
+		}
+
+		internal static bool IsRuntimeRestartRequired()
+		{
+			// An unfinished filesystem-driver removal is distinct from Windows Update.
+			return GetRegistryViews().Any(view => IsDokanyDeletePending(view));
 		}
 
 		internal static bool IsRestartPending()

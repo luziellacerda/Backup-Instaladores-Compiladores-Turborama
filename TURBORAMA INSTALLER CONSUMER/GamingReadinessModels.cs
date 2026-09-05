@@ -160,6 +160,7 @@ namespace InstallerHost
 		public string OsArchitecture { get; internal set; }
 		public bool Is64BitOperatingSystem { get; internal set; }
 		public bool PendingRestart { get; internal set; }
+		public bool RuntimeRestartRequired { get; internal set; }
 		public string CpuName { get; internal set; }
 		public int PhysicalCoreCount { get; internal set; }
 		public int LogicalProcessorCount { get; internal set; }

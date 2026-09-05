@@ -323,12 +323,21 @@ namespace InstallerHost
             verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, true) == null,
                 "Initial reserve passes only when the complete threshold is available");
             space.PendingRestart = true;
+            space.OsBuild = 19045;
+            RuntimeComponentStatus updateWarning = PrerequisiteDetector.DetectRuntimeComponent(space,
+                GamingRuntimeManifest.GetComponents().Single(component => component.DetectionKey == "windows-update"));
+            verify(updateWarning.State == GamingReadinessState.Attention && updateWarning.Detail.Contains("permite continuar"),
+                "Pending Windows Update is displayed as an advisory, never as a blocking component");
+            verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, true) == null,
+                "Windows Update pending restart is advisory and permits offline runtime installation");
+            space.RuntimeRestartRequired = true;
             verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, true) != null,
-                "Worker preflight rejects existing restart-pending state");
+                "Worker preflight still respects an actual component restart requirement");
 			verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(null, true) != null &&
 				RuntimeInstallerHelper.GetInstallationPreflightBlockReason(null, false) == null,
 				"Missing evidence blocks real installation but preserves a zero-work path");
 			space.PendingRestart = false;
+			space.RuntimeRestartRequired = false;
 			space.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
 			GamingRuntimeInstallSelection dokanyOnly = new GamingRuntimeInstallSelection { InstallDokany = true };
 			verify(RuntimeInstallerHelper.GetInstallationPreflightBlockReason(space, dokanyOnly, true) != null,
@@ -393,6 +402,7 @@ namespace InstallerHost
                     "Selecting only drivers cannot bypass the UI low-disk gate");
                 page.gamingReadinessProfile.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
                 page.gamingReadinessProfile.PendingRestart = true;
+                page.gamingReadinessProfile.RuntimeRestartRequired = true;
                 page.BtnNext_Click(page, EventArgs.Empty);
                 verify(page.installerWorker == null && page.progressTitleText == "Reinicialização pendente",
                     "Selecting only drivers cannot bypass the UI restart gate");
@@ -409,7 +419,13 @@ namespace InstallerHost
                 page.chkDokany.Checked = false;
                 verify(page.SkipIfAllInstalled(), "An unselected optional driver does not prevent the original skip behavior");
                 ready.PendingRestart = true;
-                verify(!page.SkipIfAllInstalled(), "Even all-Ready evidence cannot auto-skip pending-restart warning");
+                verify(page.SkipIfAllInstalled(), "Ready components permit continuation despite a Windows Update restart warning");
+                page.SetButtonsInstallingState(true);
+                page.InstallerWorker_RunWorkerCompleted(page, new RunWorkerCompletedEventArgs(
+                    new PrerequisiteInstallationResult(new PrerequisiteSelection
+                    { RuntimeSelection = new GamingRuntimeInstallSelection() }, ready), null, false));
+                verify(page.installationComplete && !page.prerequisiteRestartRequired,
+                    "Windows Update advisory cannot convert completed component work into a paused repair");
                 ready.PendingRestart = false;
                 RuntimeInstallerHelper.MarkRestartRequired(ready, winfsp, 3010);
                 verify(ready.PendingRestart && ready.RuntimeStatuses.Single(item => item.Component.Id == "winfsp").State == GamingReadinessState.Attention,

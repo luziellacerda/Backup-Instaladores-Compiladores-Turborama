@@ -127,12 +127,17 @@ namespace InstallerHost
                     "Official-source URL is unchanged without copying or opening it");
                 verify(!string.IsNullOrWhiteSpace(components.Items[0].ToolTipText), "Long rows retain their complete content in a tooltip");
 				profile.PendingRestart = true;
+				profile.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
+				verify(dialog.CheckRepairPrerequisites(), "Windows Update pending restart allows repair confirmation");
+				profile.RuntimeRestartRequired = true;
 				repair.PerformClick();
 				Application.DoEvents();
 				Label repairStatus = Find<Label>(dialog, "RepairStatus");
-				verify(dialog.Visible && !dialog.RepairRequested && repairStatus.Text.Contains("reinicialização pendente"),
-					"Actual repair click with restart pending keeps dialog open and explains why nothing started");
+				verify(dialog.Visible && !dialog.RepairRequested && repairStatus.Text.Contains("exige reinicialização"),
+					"An actual component restart requirement remains visible when repair is clicked");
 				profile.PendingRestart = false;
+				profile.RuntimeRestartRequired = false;
+				profile.SystemDriveFreeBytes = 400L * 1024L * 1024L;
 				repair.PerformClick();
 				Application.DoEvents();
 				verify(dialog.Visible && !dialog.RepairRequested && repairStatus.Text.Contains("2 GB"),
