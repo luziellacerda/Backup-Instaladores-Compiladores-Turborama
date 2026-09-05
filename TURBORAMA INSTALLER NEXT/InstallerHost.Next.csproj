@@ -14,6 +14,7 @@
   <ItemGroup><Reference Include="System"/><Reference Include="System.Core"/><Reference Include="System.Drawing"/><Reference Include="System.Windows.Forms"/></ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs"/><Compile Include="SetupSession.cs"/><Compile Include="UiKit.cs"/>
+    <Compile Include="ActionButton.cs"/><Compile Include="VectorIcon.cs"/>
     <Compile Include="ShellForm.cs"/><Compile Include="Pages.cs"/><Compile Include="ReadinessModels.cs"/>
     <Compile Include="ReadinessService.cs"/><Compile Include="ReadinessPage.cs"/>
     <None Include="App.config"/><None Include="app.manifest"/>

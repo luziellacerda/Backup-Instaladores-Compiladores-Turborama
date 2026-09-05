@@ -21,7 +21,8 @@ namespace TurboRama.Next
             Ui.AddRow(copy, Ui.Label("Seu próximo jogo\ncomeça aqui.", 29, Palette.Text, true));
             Label description = Ui.Label("Conheça seu PC. Escolha os componentes.\nConfira cada etapa antes de instalar.", 11, Palette.Muted);
             Ui.AddRow(copy, description);
-            ActionButton scan = Ui.Button("OverviewScan", "Analisar meu PC  →", true);
+            ActionButton scan = Ui.Button("OverviewScan", "Analisar meu PC", true);
+            scan.Icon = Glyph.Scan; scan.TrailingArrow = true; scan.Width = 248;
             scan.Click += delegate { navigate(PageId.Diagnostics); };
             scan.Dock = DockStyle.None; scan.Margin = new Padding(0, 8, 0, 0);
             copy.RowStyles.Add(new RowStyle(SizeType.AutoSize)); copy.Controls.Add(scan, 0, copy.RowCount++);
@@ -40,15 +41,13 @@ namespace TurboRama.Next
         }
         private Control ProfileCard(string number, string title, string detail, Action selected)
         {
-            TableLayoutPanel card = new TableLayoutPanel { ColumnCount = 2, Dock = DockStyle.Fill,
-                Padding = new Padding(18, 12, 18, 12), BackColor = Palette.Surface, Margin = new Padding(0, 0, 14, 0) };
-            card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 62));
-            TableLayoutPanel text = Ui.Vertical();
-            Ui.AddRow(text, Ui.Label(number + "   " + title, 12, Palette.Text, true));
-            Ui.AddRow(text, Ui.Label(detail, 9, Palette.Muted));
-            ActionButton choose = Ui.Button("Profile" + number, "→"); choose.Size = new Size(52, 46);
+            ActionButton choose = Ui.Button("Profile" + number, title);
+            choose.Appearance = ButtonAppearance.Compound; choose.Description = detail;
+            choose.Icon = number == "01" ? Glyph.Monitor : Glyph.Gamepad;
+            choose.Dock = DockStyle.Fill; choose.Font = new Font("Segoe UI Semibold", 11.5f);
+            choose.Margin = new Padding(0, 0, number == "01" ? 12 : 0, 0);
             choose.AccessibleName = "Selecionar perfil " + title; choose.Click += delegate { selected(); };
-            card.Controls.Add(text, 0, 0); card.Controls.Add(choose, 1, 0); return card;
+            return choose;
         }
     }
 
@@ -58,28 +57,34 @@ namespace TurboRama.Next
         private readonly Dictionary<string, CheckBox> checks = new Dictionary<string, CheckBox>();
         private readonly Dictionary<string, Control> cards = new Dictionary<string, Control>();
         private readonly Label count;
-        private readonly ComboBox filter;
+        private readonly Dictionary<string, ActionButton> filters = new Dictionary<string, ActionButton>();
+        private string activeFilter = "";
         private bool refreshing;
         public ComponentsPage(SetupSession state)
         {
             session = state; Dock = DockStyle.Fill; BackColor = Palette.Background;
-            TableLayoutPanel page = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+            TableLayoutPanel page = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
             page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            page.RowStyles.Add(new RowStyle(SizeType.AutoSize)); page.RowStyles.Add(new RowStyle(SizeType.AutoSize)); page.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            page.RowStyles.Add(new RowStyle(SizeType.AutoSize)); page.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            page.RowStyles.Add(new RowStyle(SizeType.AutoSize)); page.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             FlowLayoutPanel toolbar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0, 0, 0, 8) };
-            ActionButton essentials = Ui.Button("SelectEssentials", "Essenciais"); essentials.Width = 145;
+            ActionButton essentials = Ui.Button("SelectEssentials", "Essenciais"); essentials.Width = 170; essentials.Icon = Glyph.Spark;
             essentials.Click += delegate { session.ApplyProfile(false); RefreshSelection(); };
-            ActionButton legacy = Ui.Button("SelectCompatibility", "Compatibilidade"); legacy.Width = 180;
+            ActionButton legacy = Ui.Button("SelectCompatibility", "Compatibilidade"); legacy.Width = 222; legacy.Icon = Glyph.Gamepad;
             legacy.Click += delegate { session.ApplyProfile(true); RefreshSelection(); };
-            ActionButton clear = Ui.Button("ClearSelection", "Limpar seleção"); clear.Width = 160;
+            ActionButton clear = Ui.Button("ClearSelection", "Limpar seleção"); clear.Width = 178; clear.Appearance = ButtonAppearance.Quiet; clear.Icon = Glyph.Close;
             clear.Click += delegate { session.ClearSelection(); RefreshSelection(); };
-            filter = new ComboBox { Name = "ComponentFilter", AccessibleName = "Filtrar componentes", DropDownStyle = ComboBoxStyle.DropDownList,
-                Width = 200, Font = Ui.Font(11), BackColor = Palette.Raised, ForeColor = Palette.Text, Margin = new Padding(0, 8, 0, 8) };
-            filter.Items.AddRange(new object[] { "Todos os componentes", "Essenciais", "Compatibilidade" }); filter.SelectedIndex = 0;
-            filter.SelectedIndexChanged += delegate { ApplyFilter(); };
-            toolbar.Controls.AddRange(new Control[] { essentials, legacy, clear, filter }); page.Controls.Add(toolbar, 0, 0);
-            count = Ui.Label("", 10, Palette.Muted); page.Controls.Add(count, 0, 1);
-            FlowLayoutPanel rows = Ui.Stack(); Ui.FillStackWidth(rows); page.Controls.Add(rows, 0, 2);
+            toolbar.Controls.AddRange(new Control[] { essentials, legacy, clear }); page.Controls.Add(toolbar, 0, 0);
+            FlowLayoutPanel filterBar = new FlowLayoutPanel { Name = "ComponentFilters", Dock = DockStyle.Top, AutoSize = true,
+                WrapContents = true, Margin = new Padding(0, 0, 0, 8) };
+            Label filterLabel = Ui.Label("EXIBIR", 9, Palette.Muted, true); filterLabel.Margin = new Padding(6, 15, 18, 0);
+            filterBar.Controls.Add(filterLabel);
+            AddFilter(filterBar, "FilterAll", "Todos", "", 120);
+            AddFilter(filterBar, "FilterEssentials", "Essenciais", "ESSENCIAIS", 156);
+            AddFilter(filterBar, "FilterCompatibility", "Compatibilidade", "COMPATIBILIDADE", 200);
+            page.Controls.Add(filterBar, 0, 1);
+            count = Ui.Label("", 10, Palette.Muted); page.Controls.Add(count, 0, 2);
+            FlowLayoutPanel rows = Ui.Stack(); Ui.FillStackWidth(rows); page.Controls.Add(rows, 0, 3);
             foreach (ComponentOption item in ComponentCatalog.All)
             {
                 TableLayoutPanel row = new TableLayoutPanel { Name = "ComponentRow_" + item.Id, ColumnCount = 1,
@@ -105,12 +110,20 @@ namespace TurboRama.Next
             finally { refreshing = false; }
             count.Text = session.SelectionCount + " de " + ComponentCatalog.All.Count + " grupos selecionados. Nesta prévia, nenhum pacote é baixado ou instalado.";
         }
+        private void AddFilter(FlowLayoutPanel host, string name, string title, string group, int width)
+        {
+            ActionButton button = Ui.Button(name, title); button.Appearance = ButtonAppearance.Navigation;
+            button.Size = new Size(width, 44); button.Selected = group == activeFilter;
+            button.AccessibleName = "Exibir " + title.ToLowerInvariant();
+            button.AccessibleDescription = "Filtra a lista sem alterar os componentes selecionados.";
+            button.Click += delegate { activeFilter = group; ApplyFilter(); };
+            filters.Add(group, button); host.Controls.Add(button);
+        }
         private void ApplyFilter()
         {
+            foreach (var filter in filters) filter.Value.Selected = filter.Key == activeFilter;
             foreach (ComponentOption item in ComponentCatalog.All)
-                cards[item.Id].Visible = filter.SelectedIndex == 0 ||
-                    (filter.SelectedIndex == 1 && item.Group == "ESSENCIAIS") ||
-                    (filter.SelectedIndex == 2 && item.Group == "COMPATIBILIDADE");
+                cards[item.Id].Visible = activeFilter.Length == 0 || item.Group == activeFilter;
         }
     }
 
@@ -131,7 +144,7 @@ namespace TurboRama.Next
             TableLayoutPanel safety = Ui.Vertical(); safety.BackColor = Palette.Surface; safety.Padding = new Padding(24); safety.Margin = new Padding(0, 14, 0, 14);
             Ui.AddRow(safety, Ui.Label("Você continua no controle.", 16, Palette.Text, true));
             Ui.AddRow(safety, Ui.Label("Esta é uma avaliação da interface nova. A simulação percorre as etapas do plano sem instalar, baixar arquivos, alterar o Registro ou pedir acesso de administrador.", 11, Palette.Muted));
-            Ui.AddRow(safety, Ui.Label("A entrega final depende de testes em Windows limpo, análise dos alertas e assinatura confiável. Esta prévia não é uma versão aprovada para produção.", 10, Palette.Warning));
+            Ui.AddRow(safety, Ui.Label("A entrega final depende de testes em Windows limpo e validação dos instaladores e alertas. Esta prévia não é uma versão aprovada para produção.", 10, Palette.Warning));
             stack.Controls.Add(safety);
             agree = new CheckBox { Name = "PreviewConsent", Text = "Entendi: vou testar uma simulação, não uma instalação real.",
                 AutoSize = true, Font = Ui.Font(11), ForeColor = Palette.Text, Margin = new Padding(4, 8, 0, 14) };

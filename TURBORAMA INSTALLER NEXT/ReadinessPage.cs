@@ -314,16 +314,10 @@ namespace TurboRama.Next
 
         private Button NewButton(string text, string name, bool primary)
         {
-            Button button = new Button
-            {
-                Name = name, Text = text, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                MinimumSize = new Size(0, 42), Padding = new Padding(14, 8, 14, 8),
-                Margin = new Padding(6, 0, 0, 0), FlatStyle = FlatStyle.Flat,
-                BackColor = primary ? Accent : Raised, ForeColor = primary ? Background : TextColor,
-                Cursor = Cursors.Hand, UseVisualStyleBackColor = false
-            };
-            button.FlatAppearance.BorderSize = 1;
-            button.FlatAppearance.BorderColor = primary ? Accent : Color.FromArgb(62, 68, 81);
+            ActionButton button = Ui.Button(name, text);
+            button.Width = 214; button.Margin = new Padding(6, 0, 0, 0);
+            button.Icon = primary ? Glyph.Refresh : Glyph.Close;
+            button.Appearance = primary ? ButtonAppearance.Secondary : ButtonAppearance.Quiet;
             return button;
         }
 

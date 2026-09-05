@@ -30,7 +30,7 @@ namespace TurboRama.Next
         public static ActionButton Button(string name, string text, bool primary = false)
         {
             return new ActionButton { Name = name, AccessibleName = text, Text = text, Primary = primary,
-                Size = new Size(180, 46), Margin = new Padding(0, 0, 12, 0), Font = Font(10, true) };
+                Size = new Size(196, 52), Margin = new Padding(0, 0, 12, 0), Font = new Font("Segoe UI Semibold", 10.5f) };
         }
         public static FlowLayoutPanel Stack()
         {
@@ -75,39 +75,6 @@ namespace TurboRama.Next
                 try { resize(flow, EventArgs.Empty); }
                 finally { arranging = false; }
             };
-        }
-    }
-
-    internal sealed class ActionButton : Button
-    {
-        private bool hover;
-        public bool Primary { get; set; }
-        public bool Selected { get; set; }
-        public ActionButton()
-        {
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
-                ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; Cursor = Cursors.Hand;
-            UseVisualStyleBackColor = false;
-        }
-        protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
-        protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
-        protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
-        protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
-        protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Color fill = !Enabled ? Palette.Surface : Primary ? Palette.Accent : Selected ? Palette.Raised : hover ? Palette.Raised : Palette.Surface;
-            Color ink = !Enabled ? Palette.Muted : Primary ? Palette.Background : Selected ? Palette.Accent : Palette.Text;
-            using (GraphicsPath path = Shape.Round(new Rectangle(1, 1, Width - 3, Height - 3), 9))
-            using (Brush brush = new SolidBrush(fill))
-            using (Pen pen = new Pen(Selected ? Palette.Accent : Palette.Line))
-            { e.Graphics.FillPath(brush, path); if (!Primary) e.Graphics.DrawPath(pen, path); }
-            TextRenderer.DrawText(e.Graphics, Text, Font, new Rectangle(10, 0, Width - 20, Height), ink,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
-            if (Focused && ShowFocusCues)
-                ControlPaint.DrawFocusRectangle(e.Graphics, new Rectangle(6, 6, Width - 12, Height - 12), ink, fill);
         }
     }
 

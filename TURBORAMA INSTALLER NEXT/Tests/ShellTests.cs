@@ -119,13 +119,14 @@ internal static class ShellTests
         using (ShellForm shell = Open(session, new QueueRunner()))
         {
             Button primary = Find<Button>(shell, "PrimaryAction");
-            Check(object.ReferenceEquals(shell.AcceptButton, primary), "Overview default command must be shell primary.");
+            Button overviewAction = Find<Button>(shell, "OverviewScan");
+            Check(object.ReferenceEquals(shell.AcceptButton, overviewAction) && !primary.Visible, "Overview must expose only its hero primary action.");
             foreach (PageId page in new[] { PageId.Diagnostics, PageId.Components, PageId.Review, PageId.Overview })
             {
                 Find<Button>(shell, "Navigate" + page).PerformClick(); Pump();
                 Check(session.Page == page, "Navigation button went to wrong page: " + page);
                 Check(shell.CancelButton == null, "Shell retained a page-owned Escape button.");
-                Check(page == PageId.Review ? shell.AcceptButton == null : object.ReferenceEquals(shell.AcceptButton, primary), "AcceptButton not rebound correctly on " + page);
+                Check(page == PageId.Review ? shell.AcceptButton == null : object.ReferenceEquals(shell.AcceptButton, page == PageId.Overview ? overviewAction : primary), "AcceptButton not rebound correctly on " + page);
             }
             shell.NavigateTo(PageId.Review);
             Check(!primary.Enabled && shell.AcceptButton == null, "Review without consent must have no default command.");
@@ -147,10 +148,16 @@ internal static class ShellTests
             Check(session.SelectionCount == 0, "Clear button did not clear state.");
             Find<CheckBox>(shell, "Select_xna").Checked = true;
             Check(session.SelectionCount == 1 && session.IsSelected("xna"), "Checkbox did not update state.");
-            ComboBox filter = Find<ComboBox>(shell, "ComponentFilter"); filter.SelectedIndex = 1;
+            Button essentialsFilter = Find<Button>(shell, "FilterEssentials"); essentialsFilter.PerformClick();
             Check(!Find<Control>(shell, "ComponentRow_xna").Visible, "Essentials filter did not hide compatibility row.");
+            Check(Find<Control>(shell, "ComponentRow_vc-modern").Visible, "Essentials filter hid an essential row.");
+            Check((essentialsFilter.AccessibilityObject.State & AccessibleStates.Selected) != 0, "Active filter is not accessible.");
             Check(session.IsSelected("xna"), "Filtering silently altered selection.");
-            filter.SelectedIndex = 0;
+            Find<Button>(shell, "FilterCompatibility").PerformClick();
+            Check(Find<Control>(shell, "ComponentRow_xna").Visible && !Find<Control>(shell, "ComponentRow_vc-modern").Visible, "Compatibility filter failed.");
+            Check((essentialsFilter.AccessibilityObject.State & AccessibleStates.Selected) == 0, "Old filter remains selected.");
+            Check(session.SelectionCount == 1 && session.IsSelected("xna"), "Compatibility filter altered plan.");
+            Find<Button>(shell, "FilterAll").PerformClick();
             Check(Find<Control>(shell, "ComponentRow_xna").Visible, "All filter failed to restore row.");
             Find<Button>(shell, "SelectCompatibility").PerformClick();
             Check(session.SelectionCount == ComponentCatalog.All.Count, "Compatibility profile button mismatch.");

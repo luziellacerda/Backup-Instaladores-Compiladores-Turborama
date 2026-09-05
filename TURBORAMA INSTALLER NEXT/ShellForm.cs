@@ -55,11 +55,13 @@ namespace TurboRama.Next
                 ColumnCount = 4, RowCount = 1, Margin = new Padding(0, 0, 0, 18), Padding = Padding.Empty };
             for (int column = 0; column < 4; column++) menu.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
             menu.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            string[] titles = { "01   Visão geral", "02   Diagnóstico", "03   Componentes", "04   Revisar plano" };
+            string[] titles = { "Visão geral", "Diagnóstico", "Componentes", "Revisar plano" };
+            Glyph[] icons = { Glyph.Home, Glyph.Scan, Glyph.Grid, Glyph.CheckList };
             for (int index = 0; index < titles.Length; index++)
             {
                 PageId target = (PageId)index;
                 ActionButton button = Ui.Button("Navigate" + target, titles[index]); button.Dock = DockStyle.Fill;
+                button.Appearance = ButtonAppearance.Navigation; button.Icon = icons[index];
                 button.Margin = new Padding(0, 0, index == 3 ? 0 : 12, 6);
                 button.Click += delegate { NavigateTo(target); }; menu.Controls.Add(button, index, 0); navigation.Add(button);
             }
@@ -77,8 +79,8 @@ namespace TurboRama.Next
             footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             status = Ui.Label("", 9, Palette.Muted); status.Name = "SessionStatus"; status.Dock = DockStyle.Fill; status.TextAlign = ContentAlignment.MiddleLeft;
             FlowLayoutPanel actions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill, Margin = Padding.Empty };
-            back = Ui.Button("PreviousPage", "Voltar"); back.Width = 110; back.Click += delegate { PreviousPage(); };
-            primary = Ui.Button("PrimaryAction", "Começar", true); primary.Width = 214; primary.Margin = Padding.Empty;
+            back = Ui.Button("PreviousPage", "Voltar"); back.Width = 120; back.Appearance = ButtonAppearance.Quiet; back.Icon = Glyph.ArrowLeft; back.Click += delegate { PreviousPage(); };
+            primary = Ui.Button("PrimaryAction", "Começar", true); primary.Width = 272; primary.Margin = Padding.Empty; primary.TrailingArrow = true;
             primary.Click += async delegate { await PrimaryActionAsync(); };
             actions.Controls.Add(back); actions.Controls.Add(primary); footer.Controls.Add(status, 0, 0); footer.Controls.Add(actions, 1, 0); shell.Controls.Add(footer, 0, 3);
             diagnostics = new ReadinessPage(scan); components = new ComponentsPage(session); review = new ReviewPage(session);
@@ -122,13 +124,18 @@ namespace TurboRama.Next
             }
             back.Visible = session.Page != PageId.Overview && session.Page != PageId.Simulation;
             back.Enabled = !session.IsBusy;
-            string[] actions = { "Analisar meu PC  →", "Escolher componentes  →", "Revisar meu plano  →", "Simular plano  →", "Simulando...", "Revisar seleção  →" };
+            string[] actions = { "Analisar meu PC", "Escolher componentes", "Revisar meu plano", "Simular plano", "Simulando...", "Revisar seleção" };
             primary.Text = actions[(int)session.Page]; primary.AccessibleName = primary.Text;
+            primary.Visible = session.Page != PageId.Overview;
             primary.Enabled = !session.IsBusy && (session.Page != PageId.Review || (session.Consent && session.SelectionCount > 0));
             status.Text = session.IsBusy ? "SIMULAÇÃO EM ANDAMENTO\nAguarde a conclusão das etapas." :
                 session.SelectionCount + " grupos no plano  ·  revisão " + session.Revision + "\nPrévia sem assinatura digital. Não é uma release final.";
-            // The shell exclusively owns keyboard commands. No page may retain the old AcceptButton.
-            AcceptButton = primary.Enabled ? primary : null;
+            if (session.Page == PageId.Review && !primary.Enabled)
+                status.Text = session.SelectionCount == 0 ? "Selecione componentes antes de simular." : "Leia o plano e marque a confirmação para simular.";
+            primary.AccessibleDescription = primary.Enabled ? "Avançar no fluxo de avaliação; não instala componentes." : status.Text;
+            // One primary action per screen. On the overview it belongs to the hero.
+            AcceptButton = session.Page == PageId.Overview ?
+                pages[PageId.Overview].Controls.Find("OverviewScan", true)[0] as IButtonControl : primary.Enabled ? primary : null;
             CancelButton = null;
             if (changed && !session.IsBusy && IsHandleCreated) pages[session.Page].SelectNextControl(null, true, true, true, false);
         }

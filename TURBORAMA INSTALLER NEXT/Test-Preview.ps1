@@ -21,6 +21,11 @@ try {
         else { & $nextTestExe }
         if ($LASTEXITCODE -ne 0) { throw ('Teste falhou: ' + $nextTest) }
     }
+    $nextButtonsExe = Join-Path $PSScriptRoot 'bin\Release\ButtonTests.exe'
+    & $nextCompiler /nologo /target:exe /warnaserror+ ('/out:' + $nextButtonsExe) /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:Accessibility.dll UiKit.cs ActionButton.cs VectorIcon.cs Tests\ButtonTests.cs
+    if ($LASTEXITCODE -ne 0) { throw 'Compilação do teste de botões falhou.' }
+    & $nextButtonsExe (Join-Path $PSScriptRoot 'TestResults\ButtonStates')
+    if ($LASTEXITCODE -ne 0) { throw 'Teste de botões falhou.' }
     Write-Output 'Prévia testada. Não é instalador final, não é certificação Windows, não publica artefatos.'
 }
 finally { Pop-Location }
