@@ -106,10 +106,26 @@ jobs:
             -T "v143,host=x64" `
             -DRETROBAT=OFF `
             -DBATOCERA=OFF `
+            -DTURBORAMA_RELEASE_HARDENING=ON `
             -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=FALSE `
             -DCMAKE_SYSTEM_VERSION=10.0.26100.0
           if ($LASTEXITCODE -ne 0) {
             throw "Configuracao CMake falhou com codigo $LASTEXITCODE."
+          }
+
+      - name: Validar audio e compatibilidade do ecossistema PIX
+        working-directory: TurboramaEmulationStation
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($test in @(
+            'Test-AudioHandoff.ps1',
+            'Test-RetroArchAudioRepair.ps1',
+            'Test-LaunchCreditCompatibility.ps1',
+            'Test-CreditManagerFailClosed.ps1'
+          )) {
+            & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+              -NoProfile -ExecutionPolicy Bypass -File ".\tools\tests\$test"
+            if ($LASTEXITCODE -ne 0) { throw "Teste falhou: $test" }
           }
 
       - name: Compilar Release x64
@@ -173,6 +189,8 @@ jobs:
             -Destination (Join-Path $stage 'plugins') -Recurse -Force
           Copy-Item -LiteralPath (Join-Path $project 'resources') `
             -Destination (Join-Path $stage 'resources') -Recurse -Force
+          Copy-Item -LiteralPath (Join-Path $project 'tools\Repair-RetroArchAudio.ps1') -Destination $stage
+          Copy-Item -LiteralPath (Join-Path $project 'tools\AUDIO-LEIA-ME.txt') -Destination $stage
           Copy-Item -LiteralPath (Join-Path $project 'bin\x64\Release\screensaver_videos') `
             -Destination (Join-Path $stage 'screensaver_videos') -Recurse -Force
 
@@ -277,6 +295,7 @@ jobs:
               -FilePath (Join-Path $stage 'emulationstation.exe') `
               -WorkingDirectory $stage `
               -ArgumentList $argument `
+              -WindowStyle Hidden `
               -PassThru
             if (-not $process.WaitForExit(30000)) {
               Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
@@ -289,6 +308,9 @@ jobs:
 
           Invoke-SmokeTest '--help'
           Invoke-SmokeTest '--protected-decorations-self-test'
+          Invoke-SmokeTest '--credit-warning-overlay-self-test'
+          Invoke-SmokeTest '--pix-agent-manager-self-test'
+          Invoke-SmokeTest '--pix-agent-trust-self-test'
 
           $manifest = Join-Path $stage 'SHA256SUMS.txt'
           Get-ChildItem -LiteralPath $stage -Recurse -File |
@@ -335,6 +357,9 @@ jobs:
           - Arquivos no pacote: $env:PACKAGE_FILE_COUNT
           - SHA-256 do ZIP: $env:ZIP_SHA256
           - Runner: Windows Server 2022 / Visual Studio 2022
+          - Audio: espera limitada pela liberacao VLC antes do jogo
+          - RetroArch: reparador com backup incluido; veja AUDIO-LEIA-ME.txt
+          - Preservados: servidor PIX, saldo, cronometro, supervisao e caches
 
           O executavel nao possui assinatura digital. Use `TESTAR-ISOLADO.cmd`
           para testar sem alterar o perfil normal do EmulationStation.
@@ -362,7 +387,7 @@ jobs:
             & gh release edit $env:RELEASE_TAG `
               --repo $env:GITHUB_REPOSITORY `
               --title "PIX-SERVIDOR-CONTADOR - Windows x64" `
-              --notes-file $notes --prerelease
+              --notes-file $notes --prerelease=false
           }
           else {
             & gh release create $env:RELEASE_TAG `
@@ -370,7 +395,7 @@ jobs:
               --repo $env:GITHUB_REPOSITORY `
               --target $env:GITHUB_SHA `
               --title "PIX-SERVIDOR-CONTADOR - Windows x64" `
-              --notes-file $notes --prerelease
+              --notes-file $notes
           }
           if ($LASTEXITCODE -ne 0) {
             throw 'Falha ao publicar o release.'

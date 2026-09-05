@@ -18,6 +18,7 @@
 #include "AudioManager.h"
 #include "Log.h"
 #include <condition_variable>
+#include <chrono>
 #include <deque>
 #include <new>
 #include <thread>
@@ -69,7 +70,10 @@ namespace
 				// measure. Under pathological rapid scrolling, apply backpressure by
 				// completing this one release on the caller instead of growing forever.
 				if (mJobs.size() + mInFlight >= MAX_RELEASE_JOBS)
+				{
 					releaseSynchronously = true;
+					++mInFlight;
+				}
 				else
 					mJobs.push_back({ player, context });
 			}
@@ -78,9 +82,21 @@ namespace
 				if (player != nullptr)
 					libvlc_media_player_release(player);
 				VideoVlcComponent::releaseContext(context);
+				{
+					std::lock_guard<std::mutex> lock(mMutex);
+					--mInFlight;
+				}
+				mDrained.notify_all();
 				return;
 			}
 			mCondition.notify_one();
+		}
+
+		bool waitUntilReleased(unsigned timeoutMs)
+		{
+			std::unique_lock<std::mutex> lock(mMutex);
+			return mDrained.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+				[this]() { return mJobs.empty() && mInFlight == 0; });
 		}
 
 	private:
@@ -122,17 +138,26 @@ namespace
 					std::lock_guard<std::mutex> lock(mMutex);
 					mInFlight--;
 				}
+				mDrained.notify_all();
 			}
 		}
 
 		static const size_t MAX_RELEASE_JOBS = 16;
 		std::mutex mMutex;
 		std::condition_variable mCondition;
+		std::condition_variable mDrained;
 		std::deque<MediaPlayerReleaseJob> mJobs;
 		bool mStopping;
 		size_t mInFlight;
 		std::thread mWorker;
 	};
+}
+
+bool VideoVlcComponent::waitForAudioRelease(unsigned timeoutMs)
+{
+	// Called on the UI thread after Window::deinit has hidden the videos.
+	// Normal carousel navigation remains asynchronous and keeps its pools.
+	return MediaPlayerReleaseQueue::instance().waitUntilReleased(timeoutMs);
 }
 
 // VLC prepares to render a video frame.

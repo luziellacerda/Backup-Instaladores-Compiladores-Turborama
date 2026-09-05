@@ -19,6 +19,7 @@ option(USE_SYSTEM_PUGIXML "Set to ON to use system-wide pugixml library" OFF)
 # Opt-in profile used only by the commercial release orchestrator. Keeping the
 # defaults OFF preserves developer and legacy builds that do not own a signing
 # certificate. The thumbprint is public metadata; no private key enters CMake.
+option(TURBORAMA_RELEASE_HARDENING "Enable optimized and hardened TurboRama Release flags" OFF)
 option(TURBORAMA_COMMERCIAL_HARDENING "Enable hardened TurboRama commercial Release flags" OFF)
 option(TURBORAMA_REQUIRE_SIGNED_PIX "Require signed TurboRama PIX components at runtime" OFF)
 set(TURBORAMA_PIX_SIGNER_THUMBPRINT "" CACHE STRING "Pinned SHA-1 thumbprint for signed TurboRama PIX components")
@@ -274,7 +275,7 @@ if(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP") #multi-processor compilation
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP") #multi-processor compilation
 
-    if(TURBORAMA_COMMERCIAL_HARDENING)
+    if(TURBORAMA_RELEASE_HARDENING OR TURBORAMA_COMMERCIAL_HARDENING)
         string(APPEND CMAKE_CXX_FLAGS_RELEASE " /O2 /GL /guard:cf /GS /Gy /Gw /Brepro")
         string(APPEND CMAKE_C_FLAGS_RELEASE " /O2 /GL /guard:cf /GS /Gy /Gw /Brepro")
         string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE

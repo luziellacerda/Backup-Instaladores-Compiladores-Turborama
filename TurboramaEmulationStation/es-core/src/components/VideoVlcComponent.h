@@ -99,6 +99,7 @@ class VideoVlcComponent : public VideoComponent
 
 public:
 	static void init();
+	static bool waitForAudioRelease(unsigned timeoutMs);
 	static void releaseContext(VideoContext* ctx);
 	static void clearBufferPool();
 

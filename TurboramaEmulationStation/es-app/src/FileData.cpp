@@ -4,6 +4,7 @@
 #include "utils/StringUtil.h"
 #include "utils/TimeUtil.h"
 #include "AudioManager.h"
+#include "components/VideoVlcComponent.h"
 #include "CollectionSystemManager.h"
 #include "FileFilterIndex.h"
 #include "FileSorts.h"
@@ -1231,6 +1232,12 @@ bool FileData::launchGame(Window* window, LaunchGameOptions options)
 
 	bool hideWindow = Settings::getInstance()->getBool("HideWindow");
 	window->deinit(hideWindow);
+	// Muting VLC does not release its audio device. Finish queued releases
+	// before game-start and before the existing supervised credit session.
+	if (!VideoVlcComponent::waitForAudioRelease(3000))
+		LOG(LogWarning) << "[AudioHandoff] VLC release exceeded 3000 ms; continuing game launch";
+	else
+		LOG(LogInfo) << "[AudioHandoff] VLC audio released before game launch";
 	
 	const std::string rom = Utils::FileSystem::getEscapedPath(getPath());
 	const std::string basename = Utils::FileSystem::getStem(getPath());

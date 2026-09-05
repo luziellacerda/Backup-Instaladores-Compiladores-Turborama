@@ -1,0 +1,23 @@
+Audio do emulador (RetroArch)
+
+O frontend aguarda por ate 3 segundos a liberacao dos videos VLC antes de
+iniciar o jogo. A espera acontece antes de iniciar a sessao de credito.
+Os caches e limites de memoria continuam ativos durante a navegacao.
+
+O retroarch.cfg pertence a instalacao dos emuladores, nao ao frontend.
+Feche o RetroArch antes de corrigir a configuracao (ele salva ao sair).
+No PowerShell, execute com o caminho exato da sua instalacao:
+
+  .\Repair-RetroArchAudio.ps1 -ConfigPath 'D:\sua-instalacao\emulators\retroarch\retroarch.cfg'
+
+Se houver um template do instalador, aplique tambem nele para novas instalacoes.
+A ferramenta desativa WASAPI exclusivo, desfaz audio mudo persistido e remove
+somente o atalho de mudo na letra O. Outros atalhos, driver, dispositivo,
+volume e todas as configuracoes restantes sao preservados byte por byte.
+Cada arquivo alterado recebe uma copia .audio-backup-<identificador> para voltar.
+Nao execute com o emulador aberto. Overrides por core/jogo podem ter suas
+proprias configuracoes: use o caminho exato do override se ele repetir o problema.
+
+Teste o mesmo jogo antes/depois. O log do frontend deve registrar AudioHandoff.
+Se o jogo continuar mudo, confira o log de inicializacao do RetroArch e a saida
+de audio escolhida pelo Windows. Esta correcao nao altera o servidor PIX.

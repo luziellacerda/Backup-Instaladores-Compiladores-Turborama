@@ -134,6 +134,14 @@ currentPlayer=Ana
 player=Ana;id=wallet-player-0123456789abcdef;playedSeconds=5;remainingSeconds=120;totalMinutesPurchased=2;archived=0;tombstonedAt=0
 "@
 
+# Here-strings inherit the checkout's CRLF on Windows. Normalize fixtures before
+# regex mutations, otherwise invalid-config cases accidentally test valid input.
+foreach ($fixtureName in @('config', 'validCredit', 'validMirror', 'legacyCredit',
+    'legacyMirror', 'validWalletGraph', 'validSchema5PlayerMirror')) {
+    $fixture = Get-Variable -Name $fixtureName -ValueOnly
+    Set-Variable -Name $fixtureName -Value $fixture.Replace("`r`n", "`n")
+}
+
 $largeSchema5GuestWallet = ($validCredit -replace '(?m)^remainingSeconds=120$', 'remainingSeconds=36000') `
     -replace 'guestRemainingSeconds=120', 'guestRemainingSeconds=36000'
 
