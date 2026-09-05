@@ -10,6 +10,8 @@ class SuiteAccessGate final
 public:
 	static SuiteAccessGate& instance();
 	~SuiteAccessGate();
+	// False + empty error means the verified helper reported user cancellation.
+	// Every other failure retains a message and never authorizes the frontend.
 	bool start(std::string& error);
 	bool authorized() const;
 	void stop();
@@ -26,4 +28,17 @@ private:
 	SuiteAccessGate();
 	struct State;
 	std::unique_ptr<State> mState;
+};
+
+// Keep cleanup local to the frontend's active scope, including early returns
+// and exception unwinding. The singleton destructor remains the exit fallback.
+class SuiteAccessLifetime final
+{
+public:
+	explicit SuiteAccessLifetime(SuiteAccessGate& gate) : mGate(gate) {}
+	~SuiteAccessLifetime() { mGate.stop(); }
+	SuiteAccessLifetime(const SuiteAccessLifetime&) = delete;
+	SuiteAccessLifetime& operator=(const SuiteAccessLifetime&) = delete;
+private:
+	SuiteAccessGate& mGate;
 };

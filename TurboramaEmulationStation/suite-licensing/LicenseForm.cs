@@ -53,7 +53,12 @@ internal sealed class LicenseForm : Form
                     || _runtime.CurrentContext?.IsAuthorized != true)))
                 Close();
         };
-        FormClosing += (_, _) => _lifetime.Cancel();
+        FormClosing += (_, _) =>
+        {
+            if (!_bridge.WasReady && !_lifetime.IsCancellationRequested)
+                _bridge.CancelAccess();
+            _lifetime.Cancel();
+        };
     }
 
     // Used only by the preflight failure path. This dialog has no runtime,
@@ -133,7 +138,7 @@ internal sealed class LicenseForm : Form
         form.FormBorderStyle = FormBorderStyle.FixedDialog;
         form.MaximizeBox = false;
         form.MinimizeBox = false;
-        form.ShowIcon = false;
+        ConfigureWindowIcon(form);
         form.ClientSize = new Size(540, 340);
         form.BackColor = LicenseAccessView.Canvas;
         form.ForeColor = LicenseAccessView.PrimaryText;
@@ -148,6 +153,37 @@ internal sealed class LicenseForm : Form
             if (DwmSetWindowAttribute(form.Handle, 20, ref dark, sizeof(int)) != 0)
                 _ = DwmSetWindowAttribute(form.Handle, 19, ref dark, sizeof(int));
         };
+    }
+
+    private static void ConfigureWindowIcon(Form form)
+    {
+        form.ShowIcon = true;
+        try
+        {
+            // The same icon as the frontend is embedded at build time. Never
+            // resolve it from the working directory or another user's file.
+            using var resource = typeof(LicenseForm).Assembly.GetManifestResourceStream(
+                "TurboRama.Suite.Access.AppIcon.ico");
+            if (resource is null) return;
+            using var source = new Icon(resource);
+            var icon = (Icon)source.Clone();
+            try
+            {
+                form.Icon = icon;
+                form.Disposed += (_, _) => icon.Dispose();
+            }
+            catch
+            {
+                icon.Dispose();
+                throw;
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException
+            or ExternalException or InvalidOperationException or NotSupportedException)
+        {
+            // Keep the Windows default icon if presentation fails. Licensing
+            // and the cached-login hidden state never depend on icon loading.
+        }
     }
 
     [DllImport("dwmapi.dll")]

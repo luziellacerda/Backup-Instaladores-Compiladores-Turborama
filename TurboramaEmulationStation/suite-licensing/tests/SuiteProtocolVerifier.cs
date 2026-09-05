@@ -30,6 +30,7 @@ public static partial class SuiteProtocolVerifier
     public static void Run()
     {
         VerifySharedContractAsync().GetAwaiter().GetResult();
+        VerifyRuntimeShutdownAsync().GetAwaiter().GetResult();
         VerifyAdditiveSuiteRouteNamespace();
         VerifyCanonicalContexts();
         VerifyLegacyV1SigningEnvelope();

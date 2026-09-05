@@ -73,7 +73,11 @@ internal sealed class NetworkInventoryCollector : IDisposable
     {
         NetworkChange.NetworkAddressChanged-=OnChanged;
         _stop.Cancel();
-        try{_worker.GetAwaiter().GetResult();}catch(OperationCanceledException){}
-        _stop.Dispose();
+        // Optional diagnostics cannot hold the helper open after licensing has
+        // stopped. The native parent retains its independent hard exit bound.
+        try{_worker.WaitAsync(TimeSpan.FromSeconds(1)).GetAwaiter().GetResult();}
+        catch(OperationCanceledException){}
+        catch(TimeoutException){}
+        if(_worker.IsCompleted)_stop.Dispose();
     }
 }

@@ -725,10 +725,14 @@ int main(int argc, char* argv[])
 	std::string suiteAccessError;
 	if (!SuiteAccessGate::instance().start(suiteAccessError))
 	{
+		if (suiteAccessError.empty()) return 0; // Explicit first-login cancellation.
 		MessageBoxA(nullptr, suiteAccessError.c_str(), "TurboRama Suite - acesso",
 			MB_OK | MB_ICONERROR | MB_TOPMOST);
 		return 44;
 	}
+	// Every subsequent return/unwind completes the helper's bounded cleanup.
+	// The explicit stop at normal shutdown still releases before other teardown.
+	SuiteAccessLifetime suiteAccessLifetime(SuiteAccessGate::instance());
 #endif
 
 	// call this ONLY when linking with FreeImage as a static library

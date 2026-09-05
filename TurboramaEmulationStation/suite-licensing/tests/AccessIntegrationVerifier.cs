@@ -14,8 +14,11 @@ internal static class AccessIntegrationVerifier
         bool Authorized() => fixture != "--pipe-deny-second"
             || Interlocked.Increment(ref checks) <= 2; // READY + first CHECK
         bridge.Start(Authorized);
-        if (fixture != "--pipe-pending")
+        if (fixture == "--pipe-cancel") bridge.CancelAccess();
+        else if (fixture == "--pipe-denied") bridge.Deny();
+        else if (fixture != "--pipe-pending")
             bridge.Ready(Authorized);
+        if (fixture == "--pipe-cancel-after-ready") bridge.CancelAccess();
         lifetime.Token.WaitHandle.WaitOne();
         return 0;
     }
@@ -28,6 +31,7 @@ internal static class AccessIntegrationVerifier
         await VerifyMalformedCommandAsync();
         await VerifyParentEofAsync(pending: false);
         await VerifyParentEofAsync(pending: true);
+        await VerifyExplicitCancelAsync();
     }
 
     private static void VerifyFailurePresentation()
@@ -114,6 +118,27 @@ internal static class AccessIntegrationVerifier
         child.StandardInput.Close();
         await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
         Require(child.ExitCode == 0, "parent EOF cancels helper, including pending login");
+    }
+
+    private static async Task VerifyExplicitCancelAsync()
+    {
+        foreach (var fixture in new[] { "--pipe-cancel", "--pipe-denied" })
+        {
+            using var child = StartFixture(fixture);
+            Require(await ReadTokenAsync(child) == (fixture == "--pipe-cancel" ? "CANCELLED" : "DENIED"),
+                "cancel must be distinct from authorization failure");
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Require(child.ExitCode == 0, "cancel/denial fixture exits");
+            Require((await child.StandardOutput.ReadToEndAsync()).Length == 0,
+                "no READY or extra token after cancellation");
+        }
+        using var ready = StartFixture("--pipe-cancel-after-ready");
+        Require(await ReadTokenAsync(ready) == "READY", "established authorization fixture");
+        await ready.StandardInput.WriteAsync("CHECK\n");
+        await ready.StandardInput.FlushAsync();
+        Require(await ReadTokenAsync(ready) == "OK", "cancel-only token cannot mask established session state");
+        ready.StandardInput.Close();
+        await ready.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     private static Process StartFixture(string fixture)

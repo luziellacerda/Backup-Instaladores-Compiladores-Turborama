@@ -9,7 +9,7 @@
 #define PROGRAM_VERSION_MAJOR        1
 #define PROGRAM_VERSION_MINOR        1
 #define PROGRAM_VERSION_MAINTENANCE   1
-#define PROGRAM_VERSION_STRING "TurboRama Suite 1.1.1 (EmulationStation 42)"
+#define PROGRAM_VERSION_STRING "TurboRama Suite 1.1.2 (EmulationStation 42)"
 #define RESOURCE_VERSION_STRING "1,1,1\0"
 #else
 #define PROGRAM_VERSION_MAJOR        42

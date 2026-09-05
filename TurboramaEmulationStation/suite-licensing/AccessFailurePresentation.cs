@@ -22,8 +22,8 @@ internal static class AccessFailurePresentation
         "Já existe uma sessão EmulationStation neste computador. "
         + "Solicite ao administrador o encerramento da sessão anterior no painel e tente novamente.";
     internal const string ExistingIdentityUnavailable =
-        "Não foi possível usar a identificação existente do Suite nesta conta do Windows. "
-        + "Abra o Suite na mesma conta já autorizada e confira o acesso.";
+        "Não foi possível usar a ativação existente nesta conta do Windows. "
+        + "Confira se este é o computador e a conta já autorizados.";
     internal const string SecureConnectionUnavailable =
         "Não foi possível confirmar o acesso por uma conexão segura com o servidor. "
         + "Confira a conexão e tente novamente.";

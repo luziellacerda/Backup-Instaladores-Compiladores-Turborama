@@ -59,6 +59,13 @@ inventário, `ActivateAndOpenAsync` e a fábrica que exigia autoridade de conte�
 O construtor usa o vencimento da autoridade de licença. `Program.cs` cria
 somente esse runtime, após validar a autoridade e a chave já existente.
 
+Na versão 1.1.2, o descarte revoga a capacidade antes de esperar, limita a espera
+por tarefas a três segundos e não descarta o semáforo ainda usado por uma
+operação atrasada. Cancelamento/fechamento impede publicar resposta de login
+tardia. Não há nova ação de protocolo nem fechamento remoto: a reabertura
+valida uma sessão nova como na Suite; a política de substituição pertence ao
+store ES do servidor e continua isolada do store original da Suite.
+
 `tests/SuiteProtocolVerifier.cs`: reutiliza os testes criptográficos e de sessão
 originais. Removido o teste que realizava ativação HTTP simulada; substituída a
 inspeção da API de ativação por verificação de sua ausência. O teste de configuração
@@ -71,7 +78,8 @@ pertencem ao executável publicado.
 - `Program.cs`: entrada exclusiva `--bridge`, validação inicial e diagnóstico
   `--probe-identity` sem assinatura/rede/criação de chave.
 - `BridgeConnection.cs`: pipes privados, tokens fixos, CHECK contínuo e
-  cancelamento por EOF/comando malformado.
+  cancelamento por EOF/comando malformado. Em 1.1.2, `CANCELLED` distingue a
+  desistência do usuário antes de READY; nunca concede acesso ou oculta revogação.
 - `LicenseForm.cs`: primeira entrada do identificador já usado na Suite;
   confirmação online, cache após sucesso e encerramento quando a sessão perde validade.
 - `LicenseCache.cs`: somente identificador, DPAPI CurrentUser, limites de leitura
@@ -81,6 +89,8 @@ pertencem ao executável publicado.
   build autocontido win-x64, sem elevação, SDK fixado e teste obrigatório antes da publicação.
 - `tests/AccessIntegrationVerifier.cs`: fixtures adicionais DPAPI/IPC sem acesso
   a dados reais, rede ou identidade CNG.
+- `tests/RuntimeShutdownVerifier.cs`: descarte limitado, resposta tardia, heartbeat
+  cancelado e reabertura por nova prova, somente com dados e servidor sintéticos.
 
 ## Autoridade pública fixada
 

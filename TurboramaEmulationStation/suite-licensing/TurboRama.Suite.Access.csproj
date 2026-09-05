@@ -8,13 +8,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>TurboRama.Suite.Access</AssemblyName>
     <RootNamespace>TurboRama.EmulationStation.Access</RootNamespace>
-    <Version>1.1.1</Version>
-    <AssemblyVersion>1.1.1.0</AssemblyVersion>
-    <FileVersion>1.1.1.0</FileVersion>
+    <Version>1.1.2</Version>
+    <AssemblyVersion>1.1.2.0</AssemblyVersion>
+    <FileVersion>1.1.2.0</FileVersion>
     <Product>TurboRama EmulationStation Suite</Product>
     <Company>TurboRama</Company>
     <Description>Validação online da ativação existente do TurboRama Suite.</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../es-app/src/es_icon.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
@@ -29,5 +30,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="tests/**/*.cs" />
+    <EmbeddedResource Include="../es-app/src/es_icon.ico"
+                      Link="Resources/AppIcon.ico"
+                      LogicalName="TurboRama.Suite.Access.AppIcon.ico" />
   </ItemGroup>
 </Project>

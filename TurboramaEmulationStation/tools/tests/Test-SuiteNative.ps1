@@ -80,7 +80,30 @@ Build-Native 'missing-resource.exe' $sources @("/FI$pin")
 Copy-Item -LiteralPath $mock -Destination $stale -Force
 Assert-Exit (Join-Path $output 'invalid-resource.exe') 0 '--expect-integrity-failure'
 Assert-Exit (Join-Path $output 'missing-resource.exe') 0 '--expect-integrity-failure'
+
+# Synthetic helpers exercise EOF cleanup (including a hang) and initial
+# cancellation/denial/crash/malformed replies. None contains licensing code.
+foreach ($mode in @(1, 2, 3, 4, 5, 6)) {
+    $variant = switch ($mode) { 1 { 'graceful' } 2 { 'stuck' } 3 { 'cancelled' } 4 { 'denied' } 5 { 'unexpected-eof' } 6 { 'malformed-cancel' } }
+    $variantHelper = Join-Path $output "$variant-helper.exe"
+    Build-Native "$variant-helper.exe" @((Join-Path $fixtures 'mock-helper.cpp')) @("/DSUITE_NATIVE_EOF_MODE=$mode")
+    $variantHash = (Get-FileHash -LiteralPath $variantHelper -Algorithm SHA256).Hash
+    $variantPin = Join-Path $output "$variant-pin.h"
+    [IO.File]::WriteAllText($variantPin, '#define TURBORAMA_SUITE_HELPER_SHA256 "' + $variantHash + '"', $encoding)
+    $variantResource = Join-Path $output "$variant.rc"
+    $variantCompiled = Join-Path $output "$variant.res"
+    [IO.File]::WriteAllText($variantResource, '31001 RCDATA "' + $variantHelper.Replace('\', '/') + '"', $encoding)
+    & $rc /nologo "/fo$variantCompiled" $variantResource
+    if ($LASTEXITCODE -ne 0) { throw "Lifecycle resource compilation failed: $variant" }
+    Build-Native "$variant-gate.exe" ($sources + $variantCompiled) @("/FI$variantPin")
+    $argument = if ($mode -le 2) { "--lifecycle-$variant" }
+        elseif ($mode -eq 3) { '--expect-cancelled' }
+        else { '--expect-initial-failure' }
+    Assert-Exit (Join-Path $output "$variant-gate.exe") 0 $argument
+}
+Assert-Exit (Join-Path $output 'graceful-gate.exe') 0 '--lifecycle-early-return'
+Assert-Exit (Join-Path $output 'graceful-gate.exe') 0 '--lifecycle-unwind'
 $leakedRoots = @(Get-ChildItem -LiteralPath $env:LOCALAPPDATA -Directory -Filter 'TurboRama.Suite.Access.*' |
     Where-Object { $_.FullName -notin $rootsBefore })
 if ($leakedRoots.Count -ne 0) { throw 'Native test left a private extraction directory behind.' }
-'SUITE_NATIVE_TESTS=OK (embedded/absent/altered, adjacent ignored, private ACL, file lock, sanitized environment, probe, pipes, revocation, cleanup)'
+'SUITE_NATIVE_TESTS=OK (embedded/absent/altered, adjacent ignored, ACL, locks, environment, probe, revocation, graceful EOF cleanup, bounded forced stop, early return/unwind, explicit cancellation, denied/crash/malformed remain errors, no orphan, directory cleanup)'

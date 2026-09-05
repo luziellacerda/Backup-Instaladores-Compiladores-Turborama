@@ -20,6 +20,7 @@ internal static class Program
         using var lifetime = new CancellationTokenSource();
         using var bridge = new BridgeConnection(lifetime);
         SuiteLicensingRuntime? runtime = null;
+        NetworkInventoryCollector? networkCollector = null;
         try
         {
             var authority = LoadAuthority();
@@ -28,7 +29,7 @@ internal static class Program
             _ = identity.Describe();
             var client = new SuiteLicenseClient(authority, identity);
             runtime = new SuiteLicensingRuntime(client, authority, TimeProvider.System);
-            using var networkCollector = NetworkInventoryCollector.TryStart(client, runtime, lifetime.Token);
+            networkCollector = NetworkInventoryCollector.TryStart(client, runtime, lifetime.Token);
             using var form = new LicenseForm(runtime, bridge, lifetime);
             bridge.Start(() => runtime.IsAvailable
                 && runtime.CurrentContext?.IsAuthorized == true);
@@ -50,6 +51,7 @@ internal static class Program
             lifetime.Cancel();
             if (runtime is not null)
                 runtime.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            networkCollector?.Dispose();
         }
     }
 

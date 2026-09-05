@@ -11,6 +11,7 @@ internal sealed class BridgeConnection : IDisposable
     private readonly StreamWriter _output;
     private int _ready;
     private int _disposed;
+    private bool _cancelled;
     private Task? _reader;
 
     internal BridgeConnection(CancellationTokenSource lifetime)
@@ -49,9 +50,23 @@ internal sealed class BridgeConnection : IDisposable
     {
         lock (_gate)
         {
-            if (Volatile.Read(ref _disposed) == 0) WriteUnsafe("DENIED\n");
+            if (Volatile.Read(ref _disposed) == 0 && !_cancelled) WriteUnsafe("DENIED\n");
         }
         Cancel();
+    }
+
+    internal void CancelAccess()
+    {
+        lock (_gate)
+        {
+            // An explicit user cancellation before READY is not an activation
+            // failure. It never turns a revoked/established session into success.
+            if (WasReady || _cancelled || _lifetime.IsCancellationRequested
+                || Volatile.Read(ref _disposed) != 0) return;
+            _cancelled = true;
+            WriteUnsafe("CANCELLED\n");
+            Cancel();
+        }
     }
 
     private void ReadCommands(Func<bool> authorized)

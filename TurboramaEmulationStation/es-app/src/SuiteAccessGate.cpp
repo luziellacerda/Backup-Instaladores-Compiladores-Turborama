@@ -29,6 +29,10 @@ namespace
 	constexpr DWORD ReplyTimeoutMs = 3000;
 	constexpr DWORD PollIntervalMs = 1000;
 	constexpr DWORD ProbeTimeoutMs = 30000;
+	// The managed helper has bounded UI/heartbeat cleanup on EOF.
+	// Preserve the job as an orphan guard while allowing that cleanup to finish.
+	constexpr DWORD GracefulStopTimeoutMs = 6000;
+	constexpr DWORD ForcedStopTimeoutMs = 3000;
 	constexpr DWORD IoChunkBytes = 1024 * 1024;
 	constexpr long long MaximumProofAgeMs = 4000;
 	constexpr char HelperDigest[] = TURBORAMA_SUITE_HELPER_SHA256;
@@ -379,6 +383,7 @@ struct SuiteAccessGate::State
 	std::atomic<long long> lastProof{ 0 };
 	std::thread monitor;
 	bool started = false;
+	bool childResumed = false;
 	~State() { close(); }
 
 	bool prepare()
@@ -440,35 +445,53 @@ struct SuiteAccessGate::State
 		Handle loadedImage(CreateFileW(imagePath.data(), GENERIC_READ, FILE_SHARE_READ, nullptr,
 			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
 		if (!loadedImage.valid() || !sameFile(helperFile.get(), loadedImage.get())) return false;
-		return ResumeThread(childThread.get()) != static_cast<DWORD>(-1);
+		childResumed = ResumeThread(childThread.get()) != static_cast<DWORD>(-1);
+		return childResumed;
 	}
 
-	bool readReply(const char* expected, DWORD timeout, long long& receivedAt)
+	bool readReply(const char* expected, DWORD timeout, long long& receivedAt, bool* cancelled = nullptr)
 	{
 		std::array<char, 16> reply{};
 		size_t size = 0;
 		const size_t required = std::strlen(expected);
+		constexpr char CancelledReply[] = "CANCELLED\n";
+		constexpr size_t CancelledSize = sizeof(CancelledReply) - 1;
+		const size_t maximum = cancelled ? std::max(required, CancelledSize) : required;
+		if (cancelled) *cancelled = false;
 		const auto deadline = nowMs() + timeout;
 		while (nowMs() <= deadline)
 		{
-			if (WaitForSingleObject(stopEvent.get(), 0) != WAIT_TIMEOUT ||
-				WaitForSingleObject(process.get(), 0) != WAIT_TIMEOUT) return false;
+			if (WaitForSingleObject(stopEvent.get(), 0) != WAIT_TIMEOUT) return false;
+			const bool running = WaitForSingleObject(process.get(), 0) == WAIT_TIMEOUT;
 			DWORD available = 0;
 			if (!PeekNamedPipe(output.get(), nullptr, 0, nullptr, &available, nullptr)) return false;
 			if (available > 0)
 			{
 				// No queued or unsolicited OKs: each check consumes exactly one reply.
-				if (size + available > required || required > reply.size()) return false;
+				if (size + available > maximum || maximum > reply.size()) return false;
 				DWORD read = 0;
 				if (!ReadFile(output.get(), reply.data() + size, available, &read, nullptr) || read == 0)
 					return false;
 				size += read;
-				if (size == required)
+				// A user cancellation may be buffered just before the helper exits.
+				// Drain that fixed initial token, but never grant READY from a dead
+				// helper or accept cancellation once monitoring has begun.
+				if (cancelled && exactReply(reply.data(), size, CancelledReply))
+				{
+					*cancelled = nowMs() <= deadline;
+					return false;
+				}
+				if (size == required && exactReply(reply.data(), size, expected))
 				{
 					receivedAt = nowMs();
-					return receivedAt <= deadline && exactReply(reply.data(), size, expected);
+					return running && receivedAt <= deadline;
 				}
+				const bool expectedPrefix = size < required && std::memcmp(reply.data(), expected, size) == 0;
+				const bool cancelPrefix = cancelled && size < CancelledSize &&
+					std::memcmp(reply.data(), CancelledReply, size) == 0;
+				if (!expectedPrefix && !cancelPrefix) return false;
 			}
+			if (!running) return false;
 			if (WaitForSingleObject(stopEvent.get(), 10) != WAIT_TIMEOUT) return false;
 		}
 		return false;
@@ -496,11 +519,20 @@ struct SuiteAccessGate::State
 		revoked.store(true);
 		if (stopEvent.valid()) SetEvent(stopEvent.get());
 		if (monitor.joinable()) monitor.join();
-		// Only the helper belongs to this job. Emulator process trees are untouched.
+		// Closing stdin sends EOF, allowing the helper to cancel its UI/heartbeat
+		// and complete bounded local cleanup before the job is killed.
+		// Revocation above is immediate; this wait never extends authorization.
 		input.reset();
+		DWORD exitState = WAIT_OBJECT_0;
+		if (process.valid())
+			exitState = WaitForSingleObject(process.get(), childResumed ? GracefulStopTimeoutMs : 0);
+		// Only this helper and its descendants belong to the job. Closing it also
+		// reclaims an unresponsive helper; emulator/Suite processes are untouched.
 		job.reset();
-		if (process.valid()) WaitForSingleObject(process.get(), 3000);
+		if (process.valid() && exitState != WAIT_OBJECT_0)
+			WaitForSingleObject(process.get(), ForcedStopTimeoutMs);
 		process.reset();
+		childResumed = false;
 		output.reset();
 		helperFile.reset();
 		extractionDirectory.reset();
@@ -522,7 +554,7 @@ SuiteAccessGate& SuiteAccessGate::instance()
 
 bool SuiteAccessGate::start(std::string& error)
 {
-	error = "Nao foi possivel validar a ativacao do TurboRama Suite. Abra o Suite nesta conta do Windows e tente novamente.";
+	error = "Nao foi possivel confirmar o acesso do EmulationStation. Confira a conexao e a ativacao existente nesta conta do Windows.";
 	if (mState->started) return false;
 	mState->started = true;
 	auto fail = [&]() { mState->close(); return false; };
@@ -533,7 +565,12 @@ bool SuiteAccessGate::start(std::string& error)
 	}
 	if (!mState->launch(L"--bridge")) return fail();
 	long long receivedAt = 0;
-	if (!mState->readReply("READY\n", LoginTimeoutMs, receivedAt) || !fresh(nowMs(), receivedAt)) return fail();
+	bool cancelled = false;
+	if (!mState->readReply("READY\n", LoginTimeoutMs, receivedAt, &cancelled) || !fresh(nowMs(), receivedAt))
+	{
+		if (cancelled) error.clear();
+		return fail();
+	}
 	mState->lastProof.store(receivedAt);
 	mState->revoked.store(false);
 	try { mState->monitor = std::thread([this]() { mState->monitorSession(); }); }

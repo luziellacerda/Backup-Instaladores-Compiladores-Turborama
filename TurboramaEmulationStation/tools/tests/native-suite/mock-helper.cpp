@@ -2,6 +2,7 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#include <TlHelp32.h>
 #include <aclapi.h>
 #include <cstdio>
 #include <cstring>
@@ -9,6 +10,37 @@
 #include <io.h>
 #include <string>
 #include <vector>
+
+#ifndef SUITE_NATIVE_EOF_MODE
+#define SUITE_NATIVE_EOF_MODE 0
+#endif
+
+#if SUITE_NATIVE_EOF_MODE == 1 || SUITE_NATIVE_EOF_MODE == 2
+static bool signalCleanup()
+{
+    const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return false;
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    DWORD parent = 0;
+    if (Process32FirstW(snapshot, &entry))
+    {
+        do
+        {
+            if (entry.th32ProcessID == GetCurrentProcessId())
+            { parent = entry.th32ParentProcessID; break; }
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    if (!parent) return false;
+    const std::wstring eventName = L"Local\\TurboRama.Native.EofCompleted." + std::to_wstring(parent);
+    const HANDLE completed = OpenEventW(EVENT_MODIFY_STATE, FALSE, eventName.c_str());
+    if (!completed) return false;
+    const bool signalled = SetEvent(completed) != FALSE;
+    CloseHandle(completed);
+    return signalled;
+}
+#endif
 
 static bool privateAcl(const wchar_t* directory)
 {
@@ -79,9 +111,41 @@ int main(int argc, char** argv)
         return 21;
     }
     if (std::strcmp(argv[1], "--bridge") != 0) return 13;
+#if SUITE_NATIVE_EOF_MODE == 3
+    std::fputs("CANCELLED\n", stdout);
+    std::fflush(stdout);
+    return 20; // Exercise cancellation buffered before an immediate process exit.
+#elif SUITE_NATIVE_EOF_MODE == 4
+    std::fputs("DENIED\n", stdout);
+    std::fflush(stdout);
+    return 21;
+#elif SUITE_NATIVE_EOF_MODE == 5
+    return 22; // Unexpected EOF is still an error, never user cancellation.
+#elif SUITE_NATIVE_EOF_MODE == 6
+    std::fputs("CANCELLED\r\n", stdout);
+    std::fflush(stdout);
+    return 20; // A malformed lookalike must not suppress the native error.
+#else
     std::fputs("READY\n", stdout);
     std::fflush(stdout);
     char line[20]{};
+#if SUITE_NATIVE_EOF_MODE == 1 || SUITE_NATIVE_EOF_MODE == 2
+    // Lifecycle fixtures only: keep responding until the native gate sends EOF.
+    // Signal completion only after the synthetic cleanup; killing the job first
+    // cannot satisfy the parent's completion check.
+    while (std::fgets(line, sizeof(line), stdin))
+    {
+        if (std::strcmp(line, "CHECK\n") != 0) return 14;
+        std::fputs("OK\n", stdout);
+        std::fflush(stdout);
+    }
+#if SUITE_NATIVE_EOF_MODE == 2
+    Sleep(30000); // Must be killed by the parent's bounded fallback.
+#else
+    Sleep(300); // Synthetic signed-close latency; no network or identity exists.
+#endif
+    return signalCleanup() ? 73 : 16;
+#else
     for (int round = 0; round < 2; ++round)
     {
         if (!std::fgets(line, sizeof(line), stdin) || std::strcmp(line, "CHECK\n") != 0) return 14;
@@ -91,6 +155,9 @@ int main(int argc, char** argv)
     if (!std::fgets(line, sizeof(line), stdin)) return 15;
     std::fputs("DENIED\n", stdout);
     std::fflush(stdout);
-    Sleep(10000);
+    while (std::fgets(line, sizeof(line), stdin)) { }
+    Sleep(150);
     return 0;
+#endif
+#endif
 }

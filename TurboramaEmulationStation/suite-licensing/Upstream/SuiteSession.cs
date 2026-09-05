@@ -293,25 +293,37 @@ public sealed class SuiteLicensingRuntime : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        var current = CurrentContext;
+        if (current is not null) Revoke(current.StateForRuntime, "RUNTIME_DISPOSED");
+        using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         CancelNoThrow(_lifetimeCancellation);
         CancelNoThrow(_authorityCancellation);
-        await _operationGate.WaitAsync().ConfigureAwait(false);
+        var entered = false;
         try
         {
-            await RetireCurrentSessionAsync("RUNTIME_DISPOSED").ConfigureAwait(false);
-            _client?.Dispose();
+            await _operationGate.WaitAsync(shutdown.Token).ConfigureAwait(false);
+            entered = true;
+            await RetireCurrentSessionAsync("RUNTIME_DISPOSED", shutdown.Token).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
         finally
         {
-            _operationGate.Release();
+            if (entered) _operationGate.Release();
+            _client?.Dispose();
         }
 
-        try { await _authorityExpirationTask.ConfigureAwait(false); }
-        catch (OperationCanceledException) { }
+        try { await _authorityExpirationTask.WaitAsync(shutdown.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
 
-        _authorityCancellation.Dispose();
-        _lifetimeCancellation.Dispose();
-        _operationGate.Dispose();
+        // A transport that ignores cancellation can outlive the shutdown budget.
+        // Leave its already-cancelled sources valid until that operation unwinds;
+        // the native parent still enforces a final bounded process lifetime.
+        if (entered)
+        {
+            _authorityCancellation.Dispose();
+            _lifetimeCancellation.Dispose();
+            _operationGate.Dispose();
+        }
     }
 
     internal void DetachAuthorizationConsumer(
@@ -330,6 +342,7 @@ public sealed class SuiteLicensingRuntime : IAsyncDisposable
         var validityStartedTimestamp = _timeProvider.GetTimestamp();
         var response = await _client!.OpenSessionAsync(licenseId, sessionId,
             heartbeat: false, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         EnsureAvailable();
 
         var state = new SuiteAuthorizationState(
@@ -338,17 +351,26 @@ public sealed class SuiteLicensingRuntime : IAsyncDisposable
         var sessionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             _lifetimeCancellation.Token, _authorityCancellation.Token);
         var authorityExpired = false;
+        var stopping = false;
         lock (_authorizationGate)
         {
             authorityExpired = Volatile.Read(ref _authorityExpired) != 0
                 || (_authorityDeadline?.IsElapsed ?? false);
-            if (!authorityExpired)
+            stopping = Volatile.Read(ref _disposed) != 0 || cancellationToken.IsCancellationRequested
+                || _lifetimeCancellation.IsCancellationRequested;
+            if (!authorityExpired && !stopping)
             {
                 Volatile.Write(ref _currentContext, context);
                 _sessionCancellation = sessionCancellation;
             }
         }
 
+        if (stopping)
+        {
+            sessionCancellation.Dispose();
+            Revoke(state, "RUNTIME_DISPOSED");
+            throw new OperationCanceledException(cancellationToken);
+        }
         if (authorityExpired)
         {
             sessionCancellation.Dispose();
@@ -508,21 +530,11 @@ public sealed class SuiteLicensingRuntime : IAsyncDisposable
         return TimeSpan.FromSeconds(Math.Clamp(requested * (1 + jitter), 1d, latest));
     }
 
-    private async Task RetireCurrentSessionAsync(string reasonCode)
+    private async Task RetireCurrentSessionAsync(string reasonCode,
+        CancellationToken shutdownToken = default)
     {
-        var cancellation = Interlocked.Exchange(ref _sessionCancellation, null);
-        var task = Interlocked.Exchange(ref _sessionTask, null);
-        if (cancellation is not null)
-        {
-            CancelNoThrow(cancellation);
-            if (task is not null)
-            {
-                try { await task.ConfigureAwait(false); }
-                catch (OperationCanceledException) { }
-            }
-            cancellation.Dispose();
-        }
-
+        // Revoke locally before waiting for background tasks. As in Suite,
+        // reopening performs a fresh online proof, not a new activation.
         AuthorizedStoreContext? context;
         lock (_authorizationGate)
         {
@@ -530,6 +542,20 @@ public sealed class SuiteLicensingRuntime : IAsyncDisposable
             Volatile.Write(ref _currentContext, null);
         }
         if (context is not null) Revoke(context.StateForRuntime, reasonCode);
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+        budget.CancelAfter(TimeSpan.FromSeconds(3));
+        var cancellation = Interlocked.Exchange(ref _sessionCancellation, null);
+        var task = Interlocked.Exchange(ref _sessionTask, null);
+        if (cancellation is not null)
+        {
+            CancelNoThrow(cancellation);
+            if (task is not null)
+            {
+                try { await task.WaitAsync(budget.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+            }
+            cancellation.Dispose();
+        }
     }
 
     private void Revoke(SuiteAuthorizationState state, string reasonCode)
