@@ -81,8 +81,8 @@ namespace InstallerHost
 			{
 				throw new ArgumentOutOfRangeException("fieldCount");
 			}
-			Version left;
-			Version right;
+			Version left = null;
+			Version right = null;
 			bool parsed = fieldCount == 4
 				? TryParseFourPartVersion(first, out left) && TryParseFourPartVersion(second, out right)
 				: TryParseAtLeastThreePartVersion(first, out left) && TryParseAtLeastThreePartVersion(second, out right);
