@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param()
 if ($PSVersionTable.PSEdition -ne 'Desktop') {
-    & (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -File $PSCommandPath
+    # Scope is this verifier process only; no persistent ExecutionPolicy setting is changed.
+    & (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -ExecutionPolicy RemoteSigned -File $PSCommandPath
     exit $LASTEXITCODE
 }
 $ErrorActionPreference = 'Stop'
