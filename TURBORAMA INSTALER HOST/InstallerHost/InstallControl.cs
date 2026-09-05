@@ -4,8 +4,6 @@ using System.ComponentModel;
 using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.ComTypes;
 using System.Windows.Forms;
 using Allegoria.Controls;
 using InstallerHost.Properties;
@@ -41,7 +39,9 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 		protected override void OnLoad(EventArgs e)
 		{
 			base.OnLoad(e);
-			this.txtFolder.Text = "C:\\Turborama";
+			this.txtFolder.Text = Path.Combine(
+				Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+				"TurboRama");
 			TurboramaPremiumUi.ApplyInstallV3(this);
 			base.ActiveControl = this.btnInstall;
 		}
@@ -68,7 +68,7 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 				return;
 			}
 			// Capture and canonicalize on the UI thread. BackgroundWorker must never
-			// read a WinForms control directly, and elevated extraction never
+			// read a WinForms control directly, and limited-token extraction never
 			// overwrites an existing file/directory tree.
 			string destinationFolder;
 			try
@@ -87,6 +87,7 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			this.btnBack.Enabled = false;
 			this.btnInstall.Enabled = false;
 			this.btnBrowse.Enabled = false;
+			this.btnCancel.Enabled = false;
 			this.worker = new BackgroundWorker
 			{
 				WorkerReportsProgress = true
@@ -95,21 +96,62 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			{
 				try
 				{
-					using (Stream installerZipStream = this.GetInstallerZipStream())
-					using (SecureExtractionGuard extractionGuard = SecureExtractionGuard.Create(destinationFolder))
+					// The host stays elevated for prerequisite installers, but every read,
+					// destination mutation, validation and rollback of the product package
+					// happens under the linked standard/Medium token.
+					LimitedUserImpersonation.Run(delegate
 					{
-						SecureProductExtractor.Extract(installerZipStream, extractionGuard, delegate(int progress)
+						using (Stream installerZipStream = this.GetInstallerZipStream())
 						{
-							BackgroundWorker activeWorker = this.worker;
-							if (activeWorker != null)
+							SecureExtractionGuard extractionGuard = null;
+							try
 							{
-								activeWorker.ReportProgress(progress);
+								extractionGuard = SecureExtractionGuard.Create(destinationFolder);
+								try
+								{
+									SecureProductExtractor.Extract(installerZipStream, extractionGuard, delegate(int progress)
+									{
+										BackgroundWorker activeWorker = this.worker;
+										if (activeWorker != null)
+										{
+											activeWorker.ReportProgress(progress);
+										}
+									});
+									this.ValidateExtractedInstallation(destinationFolder);
+									extractionGuard.Commit();
+								}
+								catch (Exception extractionError)
+								{
+									try
+									{
+										extractionGuard.RollbackCreatedEntries();
+									}
+									catch (Exception rollbackError)
+									{
+										throw new AggregateException(
+											"A instalação falhou e a reversão segura ficou incompleta. Não reutilize esta pasta.",
+											extractionError,
+											rollbackError);
+									}
+									throw;
+								}
 							}
-						});
-						this.ValidateExtractedInstallation(destinationFolder);
-						this.EnsureTurboRamaExecutable(destinationFolder);
-					}
-					this.CreateTurboRamaShortcuts(destinationFolder);
+							finally
+							{
+								if (extractionGuard != null)
+								{
+									extractionGuard.Dispose();
+								}
+							}
+						}
+					});
+				}
+				catch (UnauthorizedAccessException accessError)
+				{
+					workArgs.Result = new UnauthorizedAccessException(
+						"A extração segura roda sem privilégios administrativos. Selecione uma pasta local vazia gravável pela conta padrão. " +
+						accessError.Message,
+						accessError);
 				}
 				catch (Exception ex2)
 				{
@@ -133,9 +175,11 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			};
 			this.worker.RunWorkerCompleted += delegate(object completeSender, RunWorkerCompletedEventArgs completeArgs)
 			{
+				this.worker = null;
 				this.btnInstall.Enabled = true;
 				this.btnBrowse.Enabled = true;
 				this.btnBack.Enabled = true;
+				this.btnCancel.Enabled = true;
 				this.progressBar.Visible = false;
 				this.txtInfo.Visible = true;
 				// Superficie erros nao capturados no DoWork (e.Error) e Result
@@ -154,6 +198,15 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 		// Token: 0x0600001E RID: 30 RVA: 0x00003880 File Offset: 0x00001A80
 		public void BtnCancel_Click(object sender, EventArgs e)
 		{
+			if (this.IsExtractionInProgress)
+			{
+				MessageBox.Show(this,
+					"Aguarde a extração e a validação terminarem. O instalador não pode ser fechado durante a transação.",
+					"Instalação em andamento",
+					MessageBoxButtons.OK,
+					MessageBoxIcon.Information);
+				return;
+			}
 			if (MessageBox.Show("Tem certeza que deseja cancelar a instalação?", "Cancelar instalação", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
 			{
 				Application.Exit();
@@ -200,6 +253,15 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 		// Token: 0x04000019 RID: 25
 		private BackgroundWorker worker;
 
+		internal bool IsExtractionInProgress
+		{
+			get
+			{
+				BackgroundWorker activeWorker = this.worker;
+				return activeWorker != null && activeWorker.IsBusy;
+			}
+		}
+
 		// Token: 0x02000012 RID: 18
 		
 		private void ValidateExtractedInstallation(string destinationFolder)
@@ -230,11 +292,7 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			if (!File.Exists(esCfg))
 				warnings.Add("emulationstation\\emulatorLauncher.cfg (paths do sistema)");
 
-			bool hasLauncherAtRoot =
-				File.Exists(Path.Combine(destinationFolder, "TurboRama.exe")) ||
-				File.Exists(Path.Combine(destinationFolder, "Turborama.exe")) ||
-				File.Exists(Path.Combine(destinationFolder, "RetroBat.exe")) ||
-				File.Exists(Path.Combine(destinationFolder, "retrobat.exe"));
+			bool hasLauncherAtRoot = File.Exists(Path.Combine(destinationFolder, "TurboRama.exe"));
 
 			if (!hasLauncherAtRoot)
 			{
@@ -263,12 +321,12 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			if (!File.Exists(esSystems))
 				warnings.Add("emulationstation\\.emulationstation\\es_systems.cfg");
 
-			// DEV-ONLY nao deve ir para kiosk
+			// Never mutate a validated package after extraction. A development-only
+			// launcher makes the package invalid and triggers transactional rollback.
 			string devOnly = Path.Combine(destinationFolder, "TurboRama.exe.DEV-ONLY-NAO-USAR-NO-KIOSK");
 			if (File.Exists(devOnly))
 			{
-				try { File.Delete(devOnly); Logger.Log("Removed DEV-ONLY launcher from install."); }
-				catch (Exception ex) { Logger.Log("Could not remove DEV-ONLY: " + ex.Message); }
+				missing.Add("remover TurboRama.exe.DEV-ONLY-NAO-USAR-NO-KIOSK do pacote de produção");
 			}
 
 			foreach (string w in warnings)
@@ -284,151 +342,6 @@ this.wizardHeader.Text = Texts.GetString("InstallTitle", Array.Empty<object>());
 			}
 
 			Logger.Log("Installation package validation passed.");
-		}
-
-		private void EnsureTurboRamaExecutable(string destinationFolder)
-		{
-			string turboRamaExe = Path.Combine(destinationFolder, "TurboRama.exe");
-			string turboramaExe = Path.Combine(destinationFolder, "Turborama.exe");
-			string retroBatExe1 = Path.Combine(destinationFolder, "RetroBat.exe");
-			string retroBatExe2 = Path.Combine(destinationFolder, "retrobat.exe");
-			string tempRename = Path.Combine(destinationFolder, "TurboRama.rename.tmp");
-
-			try
-			{
-				if (File.Exists(tempRename))
-				{
-					File.Delete(tempRename);
-				}
-
-				if (File.Exists(turboramaExe))
-				{
-					File.Move(turboramaExe, tempRename);
-					File.Move(tempRename, turboRamaExe);
-					Logger.Log("Executable renamed from Turborama.exe to TurboRama.exe");
-				}
-				else if (File.Exists(retroBatExe1))
-				{
-					File.Move(retroBatExe1, turboRamaExe);
-					Logger.Log("Executable renamed from RetroBat.exe to TurboRama.exe");
-				}
-				else if (File.Exists(retroBatExe2))
-				{
-					File.Move(retroBatExe2, turboRamaExe);
-					Logger.Log("Executable renamed from retrobat.exe to TurboRama.exe");
-				}
-
-				if (File.Exists(retroBatExe1))
-				{
-					File.Delete(retroBatExe1);
-					Logger.Log("Removed old RetroBat.exe");
-				}
-				if (File.Exists(retroBatExe2))
-				{
-					File.Delete(retroBatExe2);
-					Logger.Log("Removed old retrobat.exe");
-				}
-			}
-			catch (Exception ex)
-			{
-				Logger.Log("Failed to create TurboRama.exe: " + ex.ToString());
-				throw new Exception("Failed to create TurboRama.exe: " + ex.Message, ex);
-			}
-
-			if (!File.Exists(turboRamaExe))
-			{
-				throw new FileNotFoundException("TurboRama.exe was not created. The installer archive does not contain RetroBat.exe, retrobat.exe, Turborama.exe or TurboRama.exe.", turboRamaExe);
-			}
-
-		}
-
-
-		private void CreateTurboRamaShortcuts(string destinationFolder)
-		{
-			string turboRamaExe = Path.Combine(destinationFolder, "TurboRama.exe");
-
-			if (!File.Exists(turboRamaExe))
-			{
-				throw new FileNotFoundException("Cannot create shortcuts because TurboRama2026.exe was not found.", turboRamaExe);
-			}
-
-			try
-			{
-				string desktopFolder = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-				if (!string.IsNullOrWhiteSpace(desktopFolder))
-				{
-					string desktopShortcut = Path.Combine(desktopFolder, "TurboRama2026.lnk");
-					this.CreateShortcut(desktopShortcut, turboRamaExe, destinationFolder, "Abrir TurboRama 2026", turboRamaExe);
-					Logger.Log("Desktop shortcut created: " + desktopShortcut);
-				}
-
-				string driveRootShortcut = Path.Combine(Path.GetPathRoot(destinationFolder) ?? "D:\\", "TurboRama2026.lnk");
-				if (!string.IsNullOrWhiteSpace(driveRootShortcut))
-				{
-					this.CreateShortcut(driveRootShortcut, turboRamaExe, destinationFolder, "Abrir TurboRama 2026", turboRamaExe);
-					Logger.Log("Drive shortcut created: " + driveRootShortcut);
-				}
-
-				string programsFolder = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
-				if (!string.IsNullOrWhiteSpace(programsFolder))
-				{
-					string startMenuFolder = Path.Combine(programsFolder, "TurboRama");
-					Directory.CreateDirectory(startMenuFolder);
-					string startMenuShortcut = Path.Combine(startMenuFolder, "TurboRama2026.lnk");
-					this.CreateShortcut(startMenuShortcut, turboRamaExe, destinationFolder, "Abrir TurboRama 2026", turboRamaExe);
-					Logger.Log("Start Menu shortcut created: " + startMenuShortcut);
-				}
-			}
-			catch (Exception ex)
-			{
-				Logger.Log("Failed to create TurboRama shortcuts: " + ex.ToString());
-				throw new Exception("Falha ao criar atalhos do TurboRama: " + ex.Message, ex);
-			}
-		}
-
-		private void CreateShortcut(string shortcutPath, string targetPath, string workingDirectory, string description, string iconPath)
-		{
-			IShellLinkW link = (IShellLinkW)new ShellLink();
-			link.SetPath(targetPath);
-			link.SetWorkingDirectory(workingDirectory);
-			link.SetDescription(description);
-			link.SetIconLocation(iconPath, 0);
-
-			IPersistFile file = (IPersistFile)link;
-			file.Save(shortcutPath, true);
-
-			Marshal.ReleaseComObject(file);
-		}
-
-		[ComImport]
-		[Guid("00021401-0000-0000-C000-000000000046")]
-		private class ShellLink
-		{
-		}
-
-		[ComImport]
-		[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-		[Guid("000214F9-0000-0000-C000-000000000046")]
-		private interface IShellLinkW
-		{
-			void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] string pszFile, int cchMaxPath, IntPtr pfd, uint fFlags);
-			void GetIDList(out IntPtr ppidl);
-			void SetIDList(IntPtr pidl);
-			void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] string pszName, int cchMaxName);
-			void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
-			void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] string pszDir, int cchMaxPath);
-			void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
-			void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] string pszArgs, int cchMaxPath);
-			void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
-			void GetHotkey(out short pwHotkey);
-			void SetHotkey(short wHotkey);
-			void GetShowCmd(out int piShowCmd);
-			void SetShowCmd(int iShowCmd);
-			void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int cchIconPath, out int piIcon);
-			void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
-			void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, uint dwReserved);
-			void Resolve(IntPtr hwnd, uint fFlags);
-			void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
 		}
 
 	}

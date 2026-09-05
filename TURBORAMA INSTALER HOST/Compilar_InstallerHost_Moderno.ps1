@@ -126,6 +126,7 @@ namespace TurboramaInstallerHost
 }
 
 $InstallerRoot = $PSScriptRoot
+$ThisPipelinePath = $PSCommandPath
 $ProjectDirectory = Join-Path $InstallerRoot "InstallerHost"
 $ProjectPath = Join-Path $ProjectDirectory "InstallerHost.csproj"
 $LockFilePath = Join-Path $ProjectDirectory "prerequisites.lock.json"
@@ -1080,21 +1081,45 @@ function Get-GitMetadata {
         throw "Git nao encontrado; proveniencia do build nao pode ser estabelecida."
     }
 
-    $commitOutput = @(& $git.Source -C $repositoryRoot rev-parse HEAD 2>$null)
-    $commitExitCode = $LASTEXITCODE
-    $commit = $commitOutput | Select-Object -First 1
-    if ($commitExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($commit)) {
-        throw "Nao foi possivel obter o commit Git atual."
+    $previousOptionalLocks = [Environment]::GetEnvironmentVariable("GIT_OPTIONAL_LOCKS", "Process")
+    try {
+        $env:GIT_OPTIONAL_LOCKS = "0"
+        $commitOutput = @(& $git.Source -C $repositoryRoot rev-parse --verify "HEAD^{commit}" 2>$null)
+        $commitExitCode = $LASTEXITCODE
+        $commit = $commitOutput | Select-Object -First 1
+        if ($commitExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($commit) -or
+            $commit.Trim() -cnotmatch "^[a-f0-9]{40}$") {
+            throw "Nao foi possivel obter o commit Git atual."
+        }
+
+        $branchOutput = @(& $git.Source -C $repositoryRoot branch --show-current 2>$null)
+        $branchExitCode = $LASTEXITCODE
+        if ($branchExitCode -ne 0) {
+            throw "Nao foi possivel obter a branch Git atual."
+        }
+        $branch = $branchOutput | Select-Object -First 1
+
+        $statusLines = @(& $git.Source -C $repositoryRoot status --porcelain=v1 --untracked-files=all 2>$null)
+        $statusExitCode = $LASTEXITCODE
+        if ($statusExitCode -ne 0) {
+            throw "Nao foi possivel obter o status Git atual."
+        }
+
+        return [pscustomobject]@{
+            RepositoryRoot = $repositoryRoot
+            Commit = $commit.Trim()
+            Branch = if ($null -eq $branch) { "" } else { $branch.Trim() }
+            Dirty = ($statusLines.Count -gt 0)
+            Status = @($statusLines)
+        }
     }
-    $branchOutput = @(& $git.Source -C $repositoryRoot branch --show-current 2>$null)
-    $branch = $branchOutput | Select-Object -First 1
-    $statusLines = @(& $git.Source -C $repositoryRoot status --short --untracked-files=all 2>$null)
-    return [pscustomobject]@{
-        RepositoryRoot = $repositoryRoot
-        Commit = $commit.Trim()
-        Branch = if ($null -eq $branch) { "" } else { $branch.Trim() }
-        Dirty = ($statusLines.Count -gt 0)
-        Status = $statusLines
+    finally {
+        if ($null -eq $previousOptionalLocks) {
+            Remove-Item Env:\GIT_OPTIONAL_LOCKS -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:GIT_OPTIONAL_LOCKS = $previousOptionalLocks
+        }
     }
 }
 
@@ -1120,23 +1145,30 @@ function Clear-SafeReleaseOutputs {
 }
 
 function Open-ImmutableBuildInputHandles {
-    param([Parameter(Mandatory = $true)][object[]]$Payloads)
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Payloads,
+        [Parameter(Mandatory = $true)]$InputSnapshot
+    )
 
     $handles = New-Object System.Collections.Generic.List[System.IO.FileStream]
+    $paths = New-Object System.Collections.Generic.List[string]
+    $seen = @{}
     try {
         foreach ($payload in $Payloads) {
-            $path = Join-Path $PrerequisitesDirectory ([string]$payload.name)
-            $handle = [System.IO.File]::Open(
-                $path,
-                [System.IO.FileMode]::Open,
-                [System.IO.FileAccess]::Read,
-                [System.IO.FileShare]::Read
-            )
-            $handles.Add($handle) | Out-Null
+            $paths.Add((Join-Path $PrerequisitesDirectory ([string]$payload.name))) | Out-Null
         }
-        foreach ($path in @($LockFilePath, $ProjectPath)) {
+        foreach ($record in $InputSnapshot.Files) {
+            $paths.Add([string]$record.FullPath) | Out-Null
+        }
+
+        foreach ($path in $paths) {
+            $fullPath = [System.IO.Path]::GetFullPath($path)
+            if ($seen.ContainsKey($fullPath)) {
+                continue
+            }
+            $seen[$fullPath] = $true
             $handle = [System.IO.File]::Open(
-                $path,
+                $fullPath,
                 [System.IO.FileMode]::Open,
                 [System.IO.FileAccess]::Read,
                 [System.IO.FileShare]::Read
@@ -1175,6 +1207,145 @@ function Get-RelativePathText {
     $baseUri = New-Object System.Uri($BasePath.TrimEnd("\", "/") + [System.IO.Path]::DirectorySeparatorChar)
     $fullUri = New-Object System.Uri($FullPath)
     return [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($fullUri).ToString()).Replace("/", "\")
+}
+
+function Get-BuildInputSnapshot {
+    $repositoryRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $InstallerRoot)).TrimEnd("\", "/")
+    $repositoryPrefix = $repositoryRoot + [System.IO.Path]::DirectorySeparatorChar
+    $projectRoot = [System.IO.Path]::GetFullPath($ProjectDirectory).TrimEnd("\", "/")
+    $projectPrefix = $projectRoot + [System.IO.Path]::DirectorySeparatorChar
+    $candidatePaths = New-Object System.Collections.Generic.List[string]
+
+    foreach ($fixedPath in @($ThisPipelinePath, $DownloaderPath, $ProjectPath, $LockFilePath)) {
+        $candidatePaths.Add([System.IO.Path]::GetFullPath($fixedPath)) | Out-Null
+    }
+
+    [xml]$projectXml = Get-Content -LiteralPath $ProjectPath -Raw
+    $namespaceManager = New-Object System.Xml.XmlNamespaceManager($projectXml.NameTable)
+    $namespaceManager.AddNamespace("msb", "http://schemas.microsoft.com/developer/msbuild/2003")
+    $inputNodes = @($projectXml.SelectNodes(
+        "//msb:Compile[@Include] | //msb:EmbeddedResource[@Include] | //msb:Content[@Include] | //msb:None[@Include]",
+        $namespaceManager))
+    $relativeIncludes = New-Object System.Collections.Generic.List[string]
+
+    foreach ($node in $inputNodes) {
+        $include = $node.GetAttribute("Include").Trim().Replace("/", "\")
+        if ($node.LocalName -eq "EmbeddedResource" -and
+            $include.StartsWith("resources\prerequisites\", [System.StringComparison]::OrdinalIgnoreCase)) {
+            # Os payloads grandes sao imutabilizados e registrados separadamente pelo lockfile.
+            continue
+        }
+        $relativeIncludes.Add($include) | Out-Null
+    }
+
+    foreach ($propertyName in @("ApplicationManifest", "ApplicationIcon")) {
+        $propertyNode = $projectXml.SelectSingleNode(
+            "/msb:Project/msb:PropertyGroup/msb:$propertyName[normalize-space(text()) != '']",
+            $namespaceManager)
+        if ($null -ne $propertyNode) {
+            $relativeIncludes.Add($propertyNode.InnerText.Trim().Replace("/", "\")) | Out-Null
+        }
+    }
+
+    foreach ($include in $relativeIncludes) {
+        if ([string]::IsNullOrWhiteSpace($include) -or
+            [System.IO.Path]::IsPathRooted($include) -or
+            $include.Contains('$(') -or $include.Contains('@(') -or $include.Contains('%(') -or
+            $include.IndexOfAny([char[]]@("*", "?", "[", "]")) -ge 0 -or
+            $include.Split('\') -contains "..") {
+            throw ("Input de build dinamico/inseguro recusado no csproj: {0}" -f $include)
+        }
+
+        $fullPath = [System.IO.Path]::GetFullPath((Join-Path $ProjectDirectory $include))
+        if (-not $fullPath.StartsWith($projectPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw ("Input de build fora do projeto recusado: {0}" -f $include)
+        }
+        $candidatePaths.Add($fullPath) | Out-Null
+    }
+
+    $seen = @{}
+    $records = New-Object System.Collections.Generic.List[object]
+    foreach ($fullPath in $candidatePaths) {
+        if (-not $fullPath.StartsWith($repositoryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw ("Input de build fora do repositorio recusado: {0}" -f $fullPath)
+        }
+        if ($seen.ContainsKey($fullPath)) {
+            continue
+        }
+        $seen[$fullPath] = $true
+
+        if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+            throw ("Input de build declarado nao encontrado: {0}" -f $fullPath)
+        }
+        $item = Get-Item -LiteralPath $fullPath -Force
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw ("Input de build em reparse point recusado: {0}" -f $fullPath)
+        }
+
+        $stream = [System.IO.File]::Open(
+            $fullPath,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::Read)
+        try {
+            $length = $stream.Length
+            $sha256 = Get-StreamSha256 -Stream $stream
+        }
+        finally {
+            $stream.Dispose()
+        }
+
+        $records.Add([pscustomobject]@{
+            Path = Get-RelativePathText -BasePath $repositoryRoot -FullPath $fullPath
+            FullPath = $fullPath
+            Length = $length
+            SHA256 = $sha256
+        }) | Out-Null
+    }
+
+    $sortedRecords = @($records | Sort-Object -Property Path)
+    $canonicalText = @($sortedRecords | ForEach-Object {
+        "{0}`0{1}`0{2}" -f $_.Path, $_.Length, $_.SHA256
+    }) -join "`n"
+    $aggregateHash = Get-BytesSha256 -Bytes ([System.Text.Encoding]::UTF8.GetBytes($canonicalText))
+    return [pscustomobject]@{
+        Count = $sortedRecords.Count
+        AggregateSHA256 = $aggregateHash
+        Files = $sortedRecords
+    }
+}
+
+function Assert-BuildInputsUnchanged {
+    param(
+        [Parameter(Mandatory = $true)]$Before,
+        [Parameter(Mandatory = $true)]$After
+    )
+
+    if ($Before.Count -eq $After.Count -and
+        ([string]$Before.AggregateSHA256).Equals([string]$After.AggregateSHA256, [System.StringComparison]::Ordinal)) {
+        return
+    }
+
+    $beforeMap = @{}
+    foreach ($record in $Before.Files) { $beforeMap[[string]$record.Path] = $record }
+    $afterMap = @{}
+    foreach ($record in $After.Files) { $afterMap[[string]$record.Path] = $record }
+    $allPaths = @(@($beforeMap.Keys) + @($afterMap.Keys) | Sort-Object -Unique)
+    $changes = New-Object System.Collections.Generic.List[string]
+    foreach ($path in $allPaths) {
+        if (-not $beforeMap.ContainsKey($path)) {
+            $changes.Add("adicionado: $path") | Out-Null
+        }
+        elseif (-not $afterMap.ContainsKey($path)) {
+            $changes.Add("removido: $path") | Out-Null
+        }
+        elseif ([long]$beforeMap[$path].Length -ne [long]$afterMap[$path].Length -or
+            -not ([string]$beforeMap[$path].SHA256).Equals([string]$afterMap[$path].SHA256, [System.StringComparison]::Ordinal)) {
+            $changes.Add("alterado: $path") | Out-Null
+        }
+    }
+
+    throw ("Inputs do build mudaram durante a compilacao: {0}" -f (@($changes) -join "; "))
 }
 
 function Get-ReleaseAllowlist {
@@ -1268,7 +1439,9 @@ function Write-BuildManifest {
     param(
         [Parameter(Mandatory = $true)]$LockInfo,
         [Parameter(Mandatory = $true)]$PayloadAudit,
-        [Parameter(Mandatory = $true)]$GitInfo,
+        [Parameter(Mandatory = $true)]$GitInfoBefore,
+        [Parameter(Mandatory = $true)]$GitInfoAfter,
+        [Parameter(Mandatory = $true)]$BuildInputSnapshot,
         [Parameter(Mandatory = $true)]$MSBuildInfo,
         [Parameter(Mandatory = $true)][string]$Net472Path,
         [Parameter(Mandatory = $true)][string[]]$ReleaseAllowlist
@@ -1280,13 +1453,18 @@ function Write-BuildManifest {
     $exeSignature = Get-ArtifactAuthenticode -Path $exePath
 
     $signatureValid = $exeSignature.Status -eq "Valid"
-    $nonPublishable = [bool]($AllowDirty -or $GitInfo.Dirty -or -not $signatureValid)
+    $headStable = ([string]$GitInfoBefore.Commit).Equals([string]$GitInfoAfter.Commit, [System.StringComparison]::Ordinal)
+    $gitDirty = [bool]($GitInfoBefore.Dirty -or $GitInfoAfter.Dirty)
+    $nonPublishable = [bool]($AllowDirty -or $gitDirty -or -not $headStable -or -not $signatureValid)
     $publishable = [bool](-not $nonPublishable)
     $releaseChannel = if ($publishable) { "Release" } else { "Prerelease" }
     $effectiveReleaseTag = if ($publishable) { $LockInfo.ReleaseTag } else { $LockInfo.ReleaseTag + "-prerelease" }
     $reasons = New-Object System.Collections.Generic.List[string]
     if ($AllowDirty) { $reasons.Add("AllowDirtyOverride") | Out-Null }
-    if ($GitInfo.Dirty) { $reasons.Add("GitWorkingTreeDirty") | Out-Null }
+    if ($gitDirty) { $reasons.Add("GitWorkingTreeDirty") | Out-Null }
+    if ($GitInfoBefore.Dirty) { $reasons.Add("GitPreBuildDirty") | Out-Null }
+    if ($GitInfoAfter.Dirty) { $reasons.Add("GitPostBuildDirty") | Out-Null }
+    if (-not $headStable) { $reasons.Add("GitHeadChangedDuringBuild") | Out-Null }
     if (-not $signatureValid) { $reasons.Add("InstallerHostNotSigned") | Out-Null }
 
     $buildLog = Get-Content -LiteralPath (Join-Path $ReleaseDirectory "InstallerHost-build.log") -Raw
@@ -1319,11 +1497,24 @@ function Write-BuildManifest {
             PayloadCount = $LockInfo.Payloads.Count
         }
         Git = [ordered]@{
-            Commit = $GitInfo.Commit
-            Branch = $GitInfo.Branch
-            Dirty = $GitInfo.Dirty
+            Commit = $GitInfoAfter.Commit
+            Branch = $GitInfoAfter.Branch
+            Dirty = $GitInfoAfter.Dirty
             AllowDirty = [bool]$AllowDirty
-            Status = @($GitInfo.Status)
+            Status = @($GitInfoAfter.Status)
+            HeadStable = $headStable
+            PreBuild = [ordered]@{
+                Commit = $GitInfoBefore.Commit
+                Branch = $GitInfoBefore.Branch
+                Dirty = $GitInfoBefore.Dirty
+                Status = @($GitInfoBefore.Status)
+            }
+            PostBuild = [ordered]@{
+                Commit = $GitInfoAfter.Commit
+                Branch = $GitInfoAfter.Branch
+                Dirty = $GitInfoAfter.Dirty
+                Status = @($GitInfoAfter.Status)
+            }
         }
         Toolchain = [ordered]@{
             MSBuildPath = $MSBuildInfo.Path
@@ -1349,6 +1540,17 @@ function Write-BuildManifest {
         EmbeddedInputs = [ordered]@{
             Count = $PayloadAudit.Records.Count
             Payloads = @($PayloadAudit.Records)
+        }
+        BuildInputs = [ordered]@{
+            Count = $BuildInputSnapshot.Count
+            AggregateSHA256 = $BuildInputSnapshot.AggregateSHA256
+            Files = @($BuildInputSnapshot.Files | ForEach-Object {
+                [ordered]@{
+                    Path = $_.Path
+                    Length = $_.Length
+                    SHA256 = $_.SHA256
+                }
+            })
         }
         Outputs = $outputRecords
     }
@@ -1381,6 +1583,10 @@ try {
     Assert-ProjectMatchesLock -Payloads $lockInfo.Payloads
     $preflightReleaseAllowlist = @(Get-ReleaseAllowlist)
     Write-Ok ("Content de Release explicito e sem wildcard: {0} arquivo(s)" -f ($preflightReleaseAllowlist.Count - 3))
+    $buildInputSnapshotPreflight = Get-BuildInputSnapshot
+    Write-Ok ("Inputs rastreados: {0} arquivo(s); SHA256 agregado {1}" -f
+        $buildInputSnapshotPreflight.Count,
+        $buildInputSnapshotPreflight.AggregateSHA256)
 
     Write-Section "Toolchain e proveniencia"
     $msbuildInfo = Resolve-MSBuild17 -RequestedPath $MSBuildPath
@@ -1395,15 +1601,15 @@ try {
     }
     Write-Ok (".NET Framework 4.7.2 reference assemblies: {0}" -f $net472Path)
 
-    $gitInfo = Get-GitMetadata
-    if ($gitInfo.Dirty -and -not $AllowDirty) {
+    $gitInfoPreflight = Get-GitMetadata
+    if ($gitInfoPreflight.Dirty -and -not $AllowDirty) {
         throw "Git working tree esta dirty. O build padrao publicavel foi recusado; use -AllowDirty somente para build local de teste."
     }
     if ($AllowDirty) {
         Write-Host "[NAO PUBLICAVEL] -AllowDirty ativo; o manifesto registrara NonPublishable=true." -ForegroundColor Yellow
     }
     else {
-        Write-Ok ("Git limpo no commit {0}" -f $gitInfo.Commit)
+        Write-Ok ("Git limpo no commit {0}" -f $gitInfoPreflight.Commit)
     }
 
     Write-Section "Auditoria criptografica dos payloads"
@@ -1431,14 +1637,28 @@ try {
 
     if ($DryRun) {
         Write-Section "Dry-run concluido"
-        Write-Ok "Lockfile, csproj, Content, Git, toolchain, payloads, certificados, ZIPs e ancoras SFX aprovados"
+        Write-Ok "Lockfile, csproj, Content, inputs rastreados, Git, toolchain, payloads, certificados, ZIPs e ancoras SFX aprovados"
         exit 0
     }
 
     Write-Section "Build Release limpo"
+    $buildInputSnapshotBefore = Get-BuildInputSnapshot
+    Assert-BuildInputsUnchanged -Before $buildInputSnapshotPreflight -After $buildInputSnapshotBefore
+    $gitInfoBefore = Get-GitMetadata
+    if (-not $AllowDirty) {
+        if (-not ([string]$gitInfoBefore.Commit).Equals([string]$gitInfoPreflight.Commit, [System.StringComparison]::Ordinal)) {
+            throw ("HEAD mudou entre o preflight e o build: {0} -> {1}." -f $gitInfoPreflight.Commit, $gitInfoBefore.Commit)
+        }
+        if ($gitInfoBefore.Dirty) {
+            throw ("Arvore Git ficou dirty antes do build: {0}" -f (@($gitInfoBefore.Status) -join " | "))
+        }
+    }
+
     $buildInputHandles = $null
     try {
-        $buildInputHandles = Open-ImmutableBuildInputHandles -Payloads $lockInfo.Payloads
+        $buildInputHandles = Open-ImmutableBuildInputHandles `
+            -Payloads $lockInfo.Payloads `
+            -InputSnapshot $buildInputSnapshotBefore
         Clear-SafeReleaseOutputs
         $fileLoggerArgument = "/flp:logfile={0};verbosity=normal;encoding=UTF-8" -f $BuildLogPath
         & $msbuildInfo.Path $ProjectPath "/t:Rebuild" "/p:Configuration=Release" "/p:Platform=AnyCPU" "/m" "/nologo" "/verbosity:minimal" "/fl" $fileLoggerArgument
@@ -1449,21 +1669,47 @@ try {
             throw ("MSBuild nao gerou o log esperado: {0}" -f $BuildLogPath)
         }
         Copy-Item -LiteralPath $BuildLogPath -Destination (Join-Path $ReleaseDirectory "InstallerHost-build.log") -Force
+
+        $releaseAllowlist = @(Get-ReleaseAllowlist)
+        Assert-ReleaseMatchesAllowlist -Allowlist $releaseAllowlist
+
+        if ((Get-Sha256 -Path $LockFilePath) -ne $lockInfo.SHA256) {
+            throw "prerequisites.lock.json mudou durante o build; artefato recusado."
+        }
+
+        $buildInputSnapshotAfter = Get-BuildInputSnapshot
+        Assert-BuildInputsUnchanged -Before $buildInputSnapshotBefore -After $buildInputSnapshotAfter
+        Write-Ok ("Inputs do build permaneceram imutaveis: {0} arquivo(s); SHA256 agregado {1}" -f
+            $buildInputSnapshotAfter.Count,
+            $buildInputSnapshotAfter.AggregateSHA256)
+
+        $gitInfoAfter = Get-GitMetadata
+        $headStable = ([string]$gitInfoBefore.Commit).Equals([string]$gitInfoAfter.Commit, [System.StringComparison]::Ordinal)
+        if (-not $AllowDirty) {
+            if (-not $headStable) {
+                throw ("HEAD mudou durante o build: {0} -> {1}. Artefato recusado." -f $gitInfoBefore.Commit, $gitInfoAfter.Commit)
+            }
+            if ($gitInfoAfter.Dirty) {
+                throw ("Arvore Git ficou dirty durante o build; artefato recusado: {0}" -f (@($gitInfoAfter.Status) -join " | "))
+            }
+            Write-Ok ("Proveniencia pos-build confirmada: HEAD {0}; arvore limpa" -f $gitInfoAfter.Commit)
+        }
+        else {
+            Write-Note ("Proveniencia pos-build registrada sob -AllowDirty: HEAD {0}; dirty={1}; status={2}" -f
+                $gitInfoAfter.Commit,
+                $gitInfoAfter.Dirty,
+                (@($gitInfoAfter.Status) -join " | "))
+        }
+
+        Write-Section "Manifesto e publicabilidade"
+        Write-BuildManifest -LockInfo $lockInfo -PayloadAudit $payloadAudit `
+            -GitInfoBefore $gitInfoBefore -GitInfoAfter $gitInfoAfter `
+            -BuildInputSnapshot $buildInputSnapshotAfter `
+            -MSBuildInfo $msbuildInfo -Net472Path $net472Path -ReleaseAllowlist $releaseAllowlist
     }
     finally {
         Close-BuildInputHandles -Handles $buildInputHandles
     }
-
-    $releaseAllowlist = @(Get-ReleaseAllowlist)
-    Assert-ReleaseMatchesAllowlist -Allowlist $releaseAllowlist
-
-    if ((Get-Sha256 -Path $LockFilePath) -ne $lockInfo.SHA256) {
-        throw "prerequisites.lock.json mudou durante o build; artefato recusado."
-    }
-
-    Write-Section "Manifesto e publicabilidade"
-    Write-BuildManifest -LockInfo $lockInfo -PayloadAudit $payloadAudit -GitInfo $gitInfo `
-        -MSBuildInfo $msbuildInfo -Net472Path $net472Path -ReleaseAllowlist $releaseAllowlist
 
     Write-Section "Concluido"
     Write-Ok ("Release local em {0}" -f $ReleaseDirectory)

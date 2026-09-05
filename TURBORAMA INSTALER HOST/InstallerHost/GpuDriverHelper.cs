@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Management;
 using System.Text;
 using System.Windows.Forms;
@@ -56,7 +55,7 @@ namespace InstallerHost
 			}
 
 			message.AppendLine();
-			message.AppendLine("Deseja abrir a pagina oficial do fabricante para baixar/atualizar o driver de video?");
+			message.AppendLine("Deseja copiar os links oficiais para abrir no navegador depois de fechar o instalador?");
 			message.AppendLine();
 			message.AppendLine("O Turborama nao instala driver de video automaticamente para evitar driver incorreto, tela preta ou conflito no Windows.");
 
@@ -72,10 +71,7 @@ namespace InstallerHost
 				return;
 			}
 
-			foreach (KeyValuePair<string, string> vendorUrl in vendorUrls)
-			{
-				OpenUrl(vendorUrl.Value);
-			}
+			OpenUrl(string.Join(Environment.NewLine, vendorUrls.Values));
 		}
 
 		private static List<GpuInfo> DetectVideoControllers()
@@ -194,17 +190,12 @@ namespace InstallerHost
 
 			try
 			{
-				ProcessStartInfo startInfo = new ProcessStartInfo
-				{
-					FileName = url,
-					UseShellExecute = true
-				};
-				Process.Start(startInfo);
-				Logger.Log("Opened GPU driver URL: " + url);
+				Clipboard.SetText(url);
+				Logger.Log("Copied GPU driver URL: " + url);
 			}
 			catch (Exception ex)
 			{
-				Logger.Log("Failed to open GPU driver URL: " + url + " - " + ex.ToString());
+				Logger.Log("Failed to copy GPU driver URL: " + url + " - " + ex.ToString());
 			}
 		}
 	}

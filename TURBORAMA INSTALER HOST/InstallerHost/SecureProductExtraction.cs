@@ -5,14 +5,13 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Security.AccessControl;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
 namespace InstallerHost
 {
 	/// <summary>
-	/// Extracts the already authenticated logical product ZIP without following
+	/// Extracts the integrity-verified logical product ZIP without following
 	/// reparse points or overwriting any pre-existing file.
 	/// </summary>
 	internal static class SecureProductExtractor
@@ -263,13 +262,15 @@ namespace InstallerHost
 	}
 
 	/// <summary>
-	/// Pins the destination directory tree with no delete sharing and temporarily
-	/// protects the root DACL while elevated extraction is in progress.
+	/// Pins the destination tree without write/delete sharing and records every
+	/// object created by this transaction for handle-based rollback. Production
+	/// creation is accepted only while running under a limited, non-admin token.
 	/// </summary>
 	internal sealed class SecureExtractionGuard : IDisposable
 	{
 		private const uint FileReadAttributes = 0x00000080U;
 		private const uint GenericWrite = 0x40000000U;
+		private const uint DeleteAccess = 0x00010000U;
 		private const uint FileShareRead = 0x00000001U;
 		private const uint FileShareWrite = 0x00000002U;
 		private const uint FileShareDelete = 0x00000004U;
@@ -284,11 +285,14 @@ namespace InstallerHost
 		private const int ErrorAlreadyExists = 183;
 		private const int ErrorFileNotFound = 2;
 		private const int ErrorPathNotFound = 3;
+		private const uint DuplicateSameAccess = 0x00000002U;
 
 		private readonly Dictionary<string, DirectoryLease> _directories =
 			new Dictionary<string, DirectoryLease>(StringComparer.OrdinalIgnoreCase);
-		private string _originalRootDacl;
-		private bool _rootDaclProtected;
+		private readonly List<DirectoryLease> _directoryOrder = new List<DirectoryLease>();
+		private readonly List<FileLease> _createdFiles = new List<FileLease>();
+		private bool _committed;
+		private bool _rollbackAttempted;
 		private bool _disposed;
 
 		private SecureExtractionGuard(string rootPath)
@@ -311,30 +315,27 @@ namespace InstallerHost
 
 		internal static SecureExtractionGuard Create(string destinationPath)
 		{
-			return CreateCore(destinationPath, true);
+			LimitedUserImpersonation.EnsureCurrentTokenIsLimited();
+			return CreateCore(destinationPath);
 		}
 
 #if PRODUCT_PACKAGE_SECURITY_TESTS
 		internal static SecureExtractionGuard CreateForSecurityTest(string destinationPath)
 		{
-			// The production executable is requireAdministrator. The isolated test
-			// harness intentionally has no UAC manifest, so it exercises all handle,
-			// path and reparse defenses without applying the administrator-only DACL.
-			return CreateCore(destinationPath, false);
+			// The isolated harness has no UAC manifest. It must satisfy the same
+			// limited-token invariant as production; only token acquisition differs.
+			LimitedUserImpersonation.EnsureCurrentTokenIsLimited();
+			return CreateCore(destinationPath);
 		}
 #endif
 
-		private static SecureExtractionGuard CreateCore(string destinationPath, bool protectRootDacl)
+		private static SecureExtractionGuard CreateCore(string destinationPath)
 		{
 			string rootPath = CanonicalizeDestination(destinationPath);
 			SecureExtractionGuard guard = new SecureExtractionGuard(rootPath);
 			try
 			{
 				guard.AcquireDestinationTree();
-				if (protectRootDacl)
-				{
-					guard.ProtectRootDacl();
-				}
 				guard.ValidateHeldDirectories();
 				if (Directory.EnumerateFileSystemEntries(rootPath).Any())
 				{
@@ -342,9 +343,21 @@ namespace InstallerHost
 				}
 				return guard;
 			}
-			catch
+			catch (Exception creationError)
 			{
-				guard.Dispose();
+				try
+				{
+					guard.RollbackCreatedEntries();
+				}
+				catch (Exception rollbackError)
+				{
+					guard.CloseAllHandles();
+					throw new AggregateException(
+						"Destination setup failed and its handle-based rollback was incomplete.",
+						creationError,
+						rollbackError);
+				}
+				guard.CloseAllHandles();
 				throw;
 			}
 		}
@@ -381,7 +394,8 @@ namespace InstallerHost
 					continue;
 				}
 
-				if (!NativeMethods.CreateDirectory(current, IntPtr.Zero))
+				bool created = NativeMethods.CreateDirectory(current, IntPtr.Zero);
+				if (!created)
 				{
 					int error = Marshal.GetLastWin32Error();
 					if (error != ErrorAlreadyExists)
@@ -389,7 +403,7 @@ namespace InstallerHost
 						throw new IOException("Unable to create protected extraction directory: " + current, new Win32Exception(error));
 					}
 				}
-				this.AddDirectoryLease(current);
+				this.AddDirectoryLease(current, created);
 				this.ValidateDirectoryForWrite(current);
 			}
 		}
@@ -409,7 +423,7 @@ namespace InstallerHost
 
 			SafeFileHandle handle = NativeMethods.CreateFile(
 				fullPath,
-				GenericWrite,
+				GenericWrite | DeleteAccess | FileReadAttributes,
 				0U,
 				IntPtr.Zero,
 				CreateNew,
@@ -424,16 +438,119 @@ namespace InstallerHost
 					new Win32Exception(error));
 			}
 
-			NativeMethods.ByHandleFileInformation information = GetInformation(handle, fullPath);
-			NativeMethods.FileAttributeTagInformation tagInformation = GetTagInformation(handle, fullPath);
-			if ((tagInformation.FileAttributes & (FileAttributeDirectory | FileAttributeReparsePoint)) != 0U ||
-				tagInformation.ReparseTag != 0U)
+			try
 			{
+				NativeMethods.ByHandleFileInformation information = GetInformation(handle, fullPath);
+				NativeMethods.FileAttributeTagInformation tagInformation = GetTagInformation(handle, fullPath);
+				if ((tagInformation.FileAttributes & (FileAttributeDirectory | FileAttributeReparsePoint)) != 0U ||
+					tagInformation.ReparseTag != 0U)
+				{
+					throw new IOException("Created extraction target is not a regular file: " + fullPath);
+				}
+
+				SafeFileHandle rollbackHandle = DuplicateHandle(handle, fullPath);
+				this._createdFiles.Add(new FileLease(fullPath, rollbackHandle, information));
+				return new FileStream(handle, FileAccess.Write, 1024 * 1024, false);
+			}
+			catch (Exception creationError)
+			{
+				try
+				{
+					MarkForDeletion(handle, fullPath);
+				}
+				catch (Exception cleanupError)
+				{
+					handle.Dispose();
+					throw new AggregateException(
+						"File creation failed and the new object could not be rolled back safely.",
+						creationError,
+						cleanupError);
+				}
 				handle.Dispose();
-				throw new IOException("Created extraction target is not a regular file: " + fullPath);
+				throw;
+			}
+		}
+
+		internal void Commit()
+		{
+			this.ThrowIfDisposed();
+			if (this._rollbackAttempted)
+			{
+				throw new InvalidOperationException("A rolled-back extraction transaction cannot be committed.");
+			}
+			if (this._committed)
+			{
+				return;
 			}
 
-			return new FileStream(handle, FileAccess.Write, 1024 * 1024, false);
+			this.ValidateHeldDirectories();
+			foreach (FileLease lease in this._createdFiles)
+			{
+				ValidateFileLease(lease);
+			}
+			this._committed = true;
+			this.CloseFileHandles();
+		}
+
+		internal void RollbackCreatedEntries()
+		{
+			this.ThrowIfDisposed();
+			if (this._committed)
+			{
+				throw new InvalidOperationException("A committed extraction transaction cannot be rolled back.");
+			}
+			if (this._rollbackAttempted)
+			{
+				return;
+			}
+			this._rollbackAttempted = true;
+
+			List<Exception> failures = new List<Exception>();
+			for (int i = this._createdFiles.Count - 1; i >= 0; i--)
+			{
+				FileLease lease = this._createdFiles[i];
+				try
+				{
+					ValidateFileLease(lease);
+					MarkForDeletion(lease.Handle, lease.Path);
+				}
+				catch (Exception ex)
+				{
+					failures.Add(new IOException("Could not roll back created file: " + lease.Path, ex));
+				}
+				finally
+				{
+					lease.Handle.Dispose();
+				}
+			}
+			this._createdFiles.Clear();
+
+			for (int i = this._directoryOrder.Count - 1; i >= 0; i--)
+			{
+				DirectoryLease lease = this._directoryOrder[i];
+				if (!lease.Created || lease.Handle.IsClosed)
+				{
+					continue;
+				}
+				try
+				{
+					ValidateDirectoryLease(lease);
+					MarkForDeletion(lease.Handle, lease.Path);
+				}
+				catch (Exception ex)
+				{
+					failures.Add(new IOException("Could not roll back created directory: " + lease.Path, ex));
+				}
+				finally
+				{
+					lease.Handle.Dispose();
+				}
+			}
+
+			if (failures.Count > 0)
+			{
+				throw new AggregateException("Handle-based extraction rollback was incomplete.", failures);
+			}
 		}
 
 		internal void ValidateHeldDirectories()
@@ -441,7 +558,10 @@ namespace InstallerHost
 			this.ThrowIfDisposed();
 			foreach (DirectoryLease lease in this._directories.Values)
 			{
-				ValidateLease(lease);
+				if (!lease.Handle.IsClosed)
+				{
+					ValidateDirectoryLease(lease);
+				}
 			}
 		}
 
@@ -461,7 +581,11 @@ namespace InstallerHost
 				{
 					throw new IOException("Extraction directory is not pinned by a trusted handle: " + current);
 				}
-				ValidateLease(lease);
+				if (lease.Handle.IsClosed)
+				{
+					throw new IOException("Extraction directory lease is already closed: " + current);
+				}
+				ValidateDirectoryLease(lease);
 				if (current.Equals(this.RootPath, StringComparison.OrdinalIgnoreCase))
 				{
 					break;
@@ -477,33 +601,33 @@ namespace InstallerHost
 				return;
 			}
 
-			if (this._rootDaclProtected)
+			Exception rollbackFailure = null;
+			try
 			{
-				try
+				if (!this._committed && !this._rollbackAttempted)
 				{
-					DirectorySecurity security = new DirectorySecurity();
-					security.SetSecurityDescriptorSddlForm(this._originalRootDacl, AccessControlSections.Access);
-					new DirectoryInfo(this.RootPath).SetAccessControl(security);
+					this.RollbackCreatedEntries();
 				}
-				catch
-				{
-					// Preserve fail-closed extraction behavior; ACL restoration failure is
-					// intentionally not allowed to mask the original installation error.
-				}
+			}
+			catch (Exception ex)
+			{
+				rollbackFailure = ex;
+			}
+			finally
+			{
+				this.CloseAllHandles();
 			}
 
-			foreach (DirectoryLease lease in this._directories.Values.Reverse())
+			if (rollbackFailure != null)
 			{
-				lease.Handle.Dispose();
+				throw rollbackFailure;
 			}
-			this._directories.Clear();
-			this._disposed = true;
 		}
 
 		private void AcquireDestinationTree()
 		{
 			string volumeRoot = Path.GetPathRoot(this.RootPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-			this.AddDirectoryLease(volumeRoot);
+			this.AddDirectoryLease(volumeRoot, false);
 
 			string relative = this.RootPath.Substring(volumeRoot.Length);
 			string current = volumeRoot.TrimEnd(Path.DirectorySeparatorChar);
@@ -511,7 +635,8 @@ namespace InstallerHost
 			for (int i = 0; i < segments.Length; i++)
 			{
 				current = Path.Combine(current + Path.DirectorySeparatorChar, segments[i]);
-				if (!NativeMethods.CreateDirectory(current, IntPtr.Zero))
+				bool created = NativeMethods.CreateDirectory(current, IntPtr.Zero);
+				if (!created)
 				{
 					int error = Marshal.GetLastWin32Error();
 					if (error != ErrorAlreadyExists)
@@ -519,25 +644,11 @@ namespace InstallerHost
 						throw new IOException("Unable to create destination directory: " + current, new Win32Exception(error));
 					}
 				}
-				this.AddDirectoryLease(current);
+				this.AddDirectoryLease(current, created);
 			}
 		}
 
-		private void ProtectRootDacl()
-		{
-			DirectoryInfo directory = new DirectoryInfo(this.RootPath);
-			DirectorySecurity original = directory.GetAccessControl(AccessControlSections.Access);
-			this._originalRootDacl = original.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
-
-			DirectorySecurity protectedSecurity = new DirectorySecurity();
-			protectedSecurity.SetSecurityDescriptorSddlForm(
-				"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",
-				AccessControlSections.Access);
-			directory.SetAccessControl(protectedSecurity);
-			this._rootDaclProtected = true;
-		}
-
-		private void AddDirectoryLease(string directoryPath)
+		private void AddDirectoryLease(string directoryPath, bool created)
 		{
 			string fullPath = Path.GetFullPath(directoryPath).TrimEnd(Path.DirectorySeparatorChar);
 			if (fullPath.Length == 2 && fullPath[1] == ':')
@@ -551,8 +662,8 @@ namespace InstallerHost
 
 			SafeFileHandle handle = NativeMethods.CreateFile(
 				fullPath,
-				FileReadAttributes,
-				FileShareRead | FileShareWrite,
+				FileReadAttributes | (created ? DeleteAccess : 0U),
+				FileShareRead,
 				IntPtr.Zero,
 				OpenExisting,
 				FileFlagBackupSemantics | FileFlagOpenReparsePoint,
@@ -574,7 +685,9 @@ namespace InstallerHost
 				throw new IOException("Extraction path contains a reparse point or non-directory component: " + fullPath);
 			}
 
-			this._directories.Add(fullPath, new DirectoryLease(fullPath, handle, information));
+			DirectoryLease lease = new DirectoryLease(fullPath, handle, information, created);
+			this._directories.Add(fullPath, lease);
+			this._directoryOrder.Add(lease);
 		}
 
 		private static string CanonicalizeDestination(string destinationPath)
@@ -669,7 +782,26 @@ namespace InstallerHost
 			return information;
 		}
 
-		private static void ValidateLease(DirectoryLease lease)
+		private static SafeFileHandle DuplicateHandle(SafeFileHandle source, string path)
+		{
+			IntPtr duplicate;
+			if (!NativeMethods.DuplicateHandle(
+				NativeMethods.GetCurrentProcess(),
+				source.DangerousGetHandle(),
+				NativeMethods.GetCurrentProcess(),
+				out duplicate,
+				0U,
+				false,
+				DuplicateSameAccess))
+			{
+				throw new IOException("Unable to retain rollback handle for created file: " + path,
+					new Win32Exception(Marshal.GetLastWin32Error()));
+			}
+			GC.KeepAlive(source);
+			return new SafeFileHandle(duplicate, true);
+		}
+
+		private static void ValidateDirectoryLease(DirectoryLease lease)
 		{
 			NativeMethods.ByHandleFileInformation current = GetInformation(lease.Handle, lease.Path);
 			NativeMethods.FileAttributeTagInformation tagInformation = GetTagInformation(lease.Handle, lease.Path);
@@ -682,6 +814,62 @@ namespace InstallerHost
 			{
 				throw new IOException("Protected extraction directory changed or became a reparse point: " + lease.Path);
 			}
+		}
+
+		private static void ValidateFileLease(FileLease lease)
+		{
+			NativeMethods.ByHandleFileInformation current = GetInformation(lease.Handle, lease.Path);
+			NativeMethods.FileAttributeTagInformation tagInformation = GetTagInformation(lease.Handle, lease.Path);
+			if ((tagInformation.FileAttributes & (FileAttributeDirectory | FileAttributeReparsePoint)) != 0U ||
+				tagInformation.ReparseTag != 0U ||
+				current.VolumeSerialNumber != lease.VolumeSerialNumber ||
+				current.FileIndexHigh != lease.FileIndexHigh ||
+				current.FileIndexLow != lease.FileIndexLow)
+			{
+				throw new IOException("Created extraction file changed identity or became unsafe: " + lease.Path);
+			}
+		}
+
+		private static void MarkForDeletion(SafeFileHandle handle, string path)
+		{
+			NativeMethods.FileDispositionInformation disposition = new NativeMethods.FileDispositionInformation
+			{
+				DeleteFile = 1
+			};
+			if (!NativeMethods.SetFileInformationByHandle(
+				handle,
+				NativeMethods.FileDispositionInfo,
+				ref disposition,
+				Marshal.SizeOf(typeof(NativeMethods.FileDispositionInformation))))
+			{
+				throw new IOException("Unable to mark created extraction object for deletion: " + path,
+					new Win32Exception(Marshal.GetLastWin32Error()));
+			}
+		}
+
+		private void CloseFileHandles()
+		{
+			foreach (FileLease lease in this._createdFiles)
+			{
+				lease.Handle.Dispose();
+			}
+			this._createdFiles.Clear();
+		}
+
+		private void CloseAllHandles()
+		{
+			if (this._disposed)
+			{
+				return;
+			}
+			this.CloseFileHandles();
+			for (int i = this._directoryOrder.Count - 1; i >= 0; i--)
+			{
+				this._directoryOrder[i].Handle.Dispose();
+			}
+			this._directoryOrder.Clear();
+			this._directories.Clear();
+			this._disposed = true;
 		}
 
 		private static NativeMethods.FileAttributeTagInformation GetTagInformation(SafeFileHandle handle, string path)
@@ -709,7 +897,31 @@ namespace InstallerHost
 
 		private sealed class DirectoryLease
 		{
-			internal DirectoryLease(string path, SafeFileHandle handle, NativeMethods.ByHandleFileInformation information)
+			internal DirectoryLease(
+				string path,
+				SafeFileHandle handle,
+				NativeMethods.ByHandleFileInformation information,
+				bool created)
+			{
+				this.Path = path;
+				this.Handle = handle;
+				this.Created = created;
+				this.VolumeSerialNumber = information.VolumeSerialNumber;
+				this.FileIndexHigh = information.FileIndexHigh;
+				this.FileIndexLow = information.FileIndexLow;
+			}
+
+			internal string Path { get; private set; }
+			internal SafeFileHandle Handle { get; private set; }
+			internal bool Created { get; private set; }
+			internal uint VolumeSerialNumber { get; private set; }
+			internal uint FileIndexHigh { get; private set; }
+			internal uint FileIndexLow { get; private set; }
+		}
+
+		private sealed class FileLease
+		{
+			internal FileLease(string path, SafeFileHandle handle, NativeMethods.ByHandleFileInformation information)
 			{
 				this.Path = path;
 				this.Handle = handle;
@@ -728,6 +940,7 @@ namespace InstallerHost
 		private static class NativeMethods
 		{
 			internal const int FileAttributeTagInfo = 9;
+			internal const int FileDispositionInfo = 4;
 
 			[StructLayout(LayoutKind.Sequential)]
 			internal struct FileTime
@@ -758,6 +971,12 @@ namespace InstallerHost
 				internal uint ReparseTag;
 			}
 
+			[StructLayout(LayoutKind.Sequential)]
+			internal struct FileDispositionInformation
+			{
+				internal byte DeleteFile;
+			}
+
 			[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
 			[return: MarshalAs(UnmanagedType.Bool)]
 			internal static extern bool CreateDirectory(string path, IntPtr securityAttributes);
@@ -785,6 +1004,28 @@ namespace InstallerHost
 				int fileInformationClass,
 				out FileAttributeTagInformation fileInformation,
 				int bufferSize);
+
+			[DllImport("kernel32.dll", SetLastError = true)]
+			[return: MarshalAs(UnmanagedType.Bool)]
+			internal static extern bool SetFileInformationByHandle(
+				SafeFileHandle file,
+				int fileInformationClass,
+				ref FileDispositionInformation fileInformation,
+				int bufferSize);
+
+			[DllImport("kernel32.dll", SetLastError = true)]
+			[return: MarshalAs(UnmanagedType.Bool)]
+			internal static extern bool DuplicateHandle(
+				IntPtr sourceProcessHandle,
+				IntPtr sourceHandle,
+				IntPtr targetProcessHandle,
+				out IntPtr targetHandle,
+				uint desiredAccess,
+				[MarshalAs(UnmanagedType.Bool)] bool inheritHandle,
+				uint options);
+
+			[DllImport("kernel32.dll")]
+			internal static extern IntPtr GetCurrentProcess();
 		}
 	}
 }

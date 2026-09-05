@@ -1,6 +1,5 @@
 using System;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -17,6 +16,9 @@ namespace InstallerHost
 			this.mainForm = main;
 			this.installPath = path;
 			this.InitializeComponent();
+			this.chkRunApp.Checked = false;
+			this.chkRunApp.Enabled = false;
+			this.chkRunApp.Visible = false;
 
 this.lblMessage.Text = Texts.GetString("InstallComplete", Array.Empty<object>());
 			this.chkRunApp.Text = Texts.GetString("RunRetroBat", Array.Empty<object>());
@@ -68,28 +70,8 @@ this.lblMessage.Text = Texts.GetString("InstallComplete", Array.Empty<object>())
 		// Token: 0x06000014 RID: 20 RVA: 0x00002CE4 File Offset: 0x00000EE4
 		private void BtnFinish_Click(object sender, EventArgs e)
 		{
-			if (this.chkRunApp.Checked)
-			{
-				string text = Path.Combine(this.installPath, "TurboRama.exe");
-				if (File.Exists(text))
-				{
-					try
-					{
-						Process.Start(text);
-						Logger.Log("Launched installed app: " + text);
-						goto IL_00A5;
-					}
-					catch (Exception ex)
-					{
-						MessageBox.Show("Falha ao iniciar o Sistema Turborama: " + ex.Message);
-						Logger.Log("Failed to launch application: " + ex.ToString());
-						goto IL_00A5;
-					}
-				}
-				MessageBox.Show("Executável não encontrado: " + text);
-				Logger.Log("Executable not found: " + text);
-			}
-			IL_00A5:
+			// The installer is elevated. The installed application must be opened
+			// separately by the user after this privileged process has exited.
 			Application.Exit();
 		}
 
@@ -104,14 +86,11 @@ this.lblMessage.Text = Texts.GetString("InstallComplete", Array.Empty<object>())
 				{
 					try
 					{
-						Process.Start(new ProcessStartInfo(text)
-						{
-							UseShellExecute = true
-						});
+						Clipboard.SetText(text);
 					}
 					catch (Exception ex)
 					{
-						MessageBox.Show("Não foi possível abrir o link: " + ex.Message);
+						MessageBox.Show("Não foi possível copiar o link: " + ex.Message);
 					}
 				}
 			}

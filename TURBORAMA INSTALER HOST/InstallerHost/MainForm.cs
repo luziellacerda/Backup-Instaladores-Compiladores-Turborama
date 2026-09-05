@@ -21,6 +21,22 @@ namespace InstallerHost
 			this.ShowWelcome();
 		}
 
+		protected override void OnFormClosing(FormClosingEventArgs e)
+		{
+			if (this._install != null && this._install.IsExtractionInProgress)
+			{
+				e.Cancel = true;
+				MessageBox.Show(this,
+					"Aguarde a extração, validação e possível reversão terminarem antes de fechar o instalador.",
+					"Instalação em andamento",
+					MessageBoxButtons.OK,
+					MessageBoxIcon.Information);
+				return;
+			}
+
+			base.OnFormClosing(e);
+		}
+
 		// Token: 0x0600002D RID: 45 RVA: 0x000042EC File Offset: 0x000024EC
 		private void ShowControl(UserControl control)
 		{

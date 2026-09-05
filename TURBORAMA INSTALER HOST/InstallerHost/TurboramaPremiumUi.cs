@@ -458,13 +458,11 @@ namespace InstallerHost
 
                 if (run != null)
                 {
-                    run.Parent = finishCard;
-                    run.Text = "Executar o Sistema Turborama agora";
-                    run.Location = new Point(100, 208);
-                    run.Size = new Size(390, 26);
-                    StyleCheckBox(run);
-                    run.BackColor = Color.Transparent;
+                    run.Checked = false;
+                    run.Enabled = false;
+                    run.Visible = false;
                 }
+                finishCard.Controls.Add(MakeLabel("Conclua o instalador e abra TurboRama.exe na pasta acima.", 100, 208, 470, 30, CyanSoft, 8.8f, false));
 
                 if (links != null)
                 {
@@ -475,10 +473,10 @@ namespace InstallerHost
                 }
 
                 Button openFolder = new Button();
-                openFolder.Text = "Abrir pasta";
-                openFolder.Name = "btnOpenInstallFolder";
-                openFolder.Size = new Size(112, 30);
-                openFolder.Location = new Point(532, 386);
+                openFolder.Text = "Copiar caminho";
+                openFolder.Name = "btnCopyInstallFolder";
+                openFolder.Size = new Size(126, 30);
+                openFolder.Location = new Point(518, 386);
                 openFolder.Anchor = AnchorStyles.Top | AnchorStyles.Right;
                 StyleSecondaryButton(openFolder);
                 string pathToOpen = installPath;
@@ -486,9 +484,9 @@ namespace InstallerHost
                 {
                     try
                     {
-                        if (!string.IsNullOrEmpty(pathToOpen) && Directory.Exists(pathToOpen))
+                        if (!string.IsNullOrEmpty(pathToOpen))
                         {
-                            Process.Start(new ProcessStartInfo(pathToOpen) { UseShellExecute = true });
+                            Clipboard.SetText(pathToOpen);
                         }
                     }
                     catch

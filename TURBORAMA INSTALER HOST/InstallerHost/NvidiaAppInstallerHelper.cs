@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Management;
 using System.Windows.Forms;
 
@@ -50,7 +49,7 @@ namespace InstallerHost
 			}
 
 			MessageBox.Show(
-				"A página oficial da NVIDIA será aberta." + Environment.NewLine + Environment.NewLine +
+				"O link oficial da NVIDIA será copiado. Feche o instalador e cole o endereço no navegador." + Environment.NewLine + Environment.NewLine +
 				"O TurboRama não baixa nem executa drivers automaticamente, pois o pacote correto depende do modelo da GPU e do Windows.",
 				"Driver NVIDIA",
 				MessageBoxButtons.OK,
@@ -81,18 +80,14 @@ namespace InstallerHost
 
 			try
 			{
-				Process.Start(new ProcessStartInfo
-				{
-					FileName = parsed.AbsoluteUri,
-					UseShellExecute = true
-				});
-				Logger.Log("Opened official NVIDIA driver page: " + parsed.AbsoluteUri);
+				Clipboard.SetText(parsed.AbsoluteUri);
+				Logger.Log("Copied official NVIDIA driver URL: " + parsed.AbsoluteUri);
 			}
 			catch (Exception ex)
 			{
-				Logger.Log("Failed to open official NVIDIA driver page: " + ex.ToString());
+				Logger.Log("Failed to copy official NVIDIA driver URL: " + ex.ToString());
 				MessageBox.Show(
-					"Não foi possível abrir a página oficial: " + ex.Message,
+					"Não foi possível copiar a página oficial: " + ex.Message,
 					"Driver NVIDIA",
 					MessageBoxButtons.OK,
 					MessageBoxIcon.Warning);

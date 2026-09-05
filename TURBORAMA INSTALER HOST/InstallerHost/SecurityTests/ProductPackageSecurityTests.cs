@@ -129,6 +129,14 @@ namespace InstallerHost
 
 		private static void RunExtractionTests(string testRoot)
 		{
+			bool limitedActionRan = false;
+			LimitedUserImpersonation.Run(delegate
+			{
+				LimitedUserImpersonation.EnsureCurrentTokenIsLimited();
+				limitedActionRan = true;
+			});
+			Assert(limitedActionRan, "product extraction action runs in a limited non-admin token context");
+
 			byte[] zipBytes = CreateZip(new Dictionary<string, byte[]>
 			{
 				{ "folder/", null },
@@ -140,12 +148,14 @@ namespace InstallerHost
 			using (MemoryStream stream = new MemoryStream(zipBytes, false))
 			{
 				SecureProductExtractor.Extract(stream, guard, null);
+				guard.Commit();
 			}
 			Assert(File.ReadAllText(Path.Combine(destination, "folder", "game.txt")) == "verified game data",
 				"verified ZIP extracted through protected CreateNew path");
 
 			string conflictParent = NewCaseFolder(testRoot, "extract-conflict");
 			string conflictDestination = Path.Combine(conflictParent, "destination");
+			Directory.CreateDirectory(conflictDestination);
 			using (SecureExtractionGuard guard = SecureExtractionGuard.CreateForSecurityTest(conflictDestination))
 			{
 				File.WriteAllText(Path.Combine(conflictDestination, "TurboRama.exe"), "existing", Encoding.ASCII);
@@ -188,6 +198,105 @@ namespace InstallerHost
 			CreateJunction(linkDestination, realDestination);
 			ExpectFailure(delegate { SecureExtractionGuard.ValidateDestinationSelection(linkDestination); },
 				"destination reparse point rejected");
+
+			RunRollbackTests(testRoot, zipBytes);
+		}
+
+		private static void RunRollbackTests(string testRoot, byte[] zipBytes)
+		{
+			string writeFailureDestination = Path.Combine(NewCaseFolder(testRoot, "rollback-write"), "destination");
+			Directory.CreateDirectory(writeFailureDestination);
+			bool injectedWriteFailureObserved = false;
+			using (SecureExtractionGuard guard = SecureExtractionGuard.CreateForSecurityTest(writeFailureDestination))
+			{
+				try
+				{
+					using (MemoryStream stream = new MemoryStream(zipBytes, false))
+					{
+						SecureProductExtractor.Extract(stream, guard, delegate(int progress)
+						{
+							if (progress > 0)
+							{
+								throw new IOException("injected failure after file write");
+							}
+						});
+					}
+				}
+				catch (IOException)
+				{
+					injectedWriteFailureObserved = true;
+					guard.RollbackCreatedEntries();
+				}
+			}
+			Assert(injectedWriteFailureObserved, "injected failure after a file write reaches rollback");
+			Assert(Directory.Exists(writeFailureDestination) &&
+				!Directory.EnumerateFileSystemEntries(writeFailureDestination).Any(),
+				"rollback removes only transaction output and preserves pre-existing empty root");
+
+			using (SecureExtractionGuard retryGuard = SecureExtractionGuard.CreateForSecurityTest(writeFailureDestination))
+			using (MemoryStream retryStream = new MemoryStream(zipBytes, false))
+			{
+				SecureProductExtractor.Extract(retryStream, retryGuard, null);
+				retryGuard.Commit();
+			}
+			Assert(File.Exists(Path.Combine(writeFailureDestination, "TurboRama.exe")),
+				"same empty destination can be retried successfully after rollback");
+
+			string validationFailureDestination = Path.Combine(NewCaseFolder(testRoot, "rollback-validation"), "destination");
+			Directory.CreateDirectory(validationFailureDestination);
+			bool injectedValidationFailureObserved = false;
+			using (SecureExtractionGuard guard = SecureExtractionGuard.CreateForSecurityTest(validationFailureDestination))
+			{
+				try
+				{
+					using (MemoryStream stream = new MemoryStream(zipBytes, false))
+					{
+						SecureProductExtractor.Extract(stream, guard, null);
+					}
+					throw new InvalidDataException("injected post-extraction validation failure");
+				}
+				catch (InvalidDataException)
+				{
+					injectedValidationFailureObserved = true;
+					guard.RollbackCreatedEntries();
+				}
+			}
+			Assert(injectedValidationFailureObserved &&
+				!Directory.EnumerateFileSystemEntries(validationFailureDestination).Any(),
+				"post-extraction validation failure rolls back the complete created tree");
+
+			using (SecureExtractionGuard retryGuard = SecureExtractionGuard.CreateForSecurityTest(validationFailureDestination))
+			using (MemoryStream retryStream = new MemoryStream(zipBytes, false))
+			{
+				SecureProductExtractor.Extract(retryStream, retryGuard, null);
+				retryGuard.Commit();
+			}
+			Assert(File.Exists(Path.Combine(validationFailureDestination, "folder", "game.txt")),
+				"retry succeeds after a post-extraction validation rollback");
+
+			string sentinelDestination = Path.Combine(NewCaseFolder(testRoot, "rollback-sentinel"), "destination");
+			Directory.CreateDirectory(sentinelDestination);
+			string createdPath = Path.Combine(sentinelDestination, "transaction-created.bin");
+			string sentinelPath = Path.Combine(sentinelDestination, "not-created-by-transaction.txt");
+			using (SecureExtractionGuard guard = SecureExtractionGuard.CreateForSecurityTest(sentinelDestination))
+			{
+				using (FileStream created = guard.CreateNewFile(createdPath))
+				{
+					created.WriteByte(0x42);
+					created.Flush(true);
+				}
+				File.WriteAllText(sentinelPath, "preserve", Encoding.ASCII);
+				ExpectFailure(delegate
+				{
+					using (FileStream ignored = new FileStream(createdPath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
+					{
+					}
+				}, "created-file lease denies tampering until commit or rollback");
+				guard.RollbackCreatedEntries();
+			}
+			Assert(!File.Exists(createdPath), "rollback deletes the file registered as transaction-created");
+			Assert(File.Exists(sentinelPath) && File.ReadAllText(sentinelPath, Encoding.ASCII) == "preserve",
+				"rollback never deletes an unregistered file in the pre-existing destination");
 		}
 
 		private static PackageFixture CreatePackage(string folder, int partCount)

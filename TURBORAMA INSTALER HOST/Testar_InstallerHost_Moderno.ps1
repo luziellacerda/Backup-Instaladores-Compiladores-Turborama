@@ -31,7 +31,9 @@ $ExeHashPath = Join-Path $ReleaseDirectory "InstallerHost.exe.sha256"
 $ManifestHashPath = Join-Path $ReleaseDirectory "InstallerHost-build-manifest.json.sha256"
 $ProductPackageSecurityPath = Join-Path $ProjectDirectory "ProductPackageSecurity.cs"
 $SecureProductExtractionPath = Join-Path $ProjectDirectory "SecureProductExtraction.cs"
+$LimitedUserImpersonationPath = Join-Path $ProjectDirectory "LimitedUserImpersonation.cs"
 $ProductPackageSecurityTestsPath = Join-Path $ProjectDirectory "SecurityTests\ProductPackageSecurityTests.cs"
+$ExpectedProductSecurityTestCount = 31
 $script:Passed = 0
 
 function Add-Pass {
@@ -57,6 +59,18 @@ function Get-Sha256 {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToUpperInvariant()
+}
+
+function Get-BytesSha256 {
+    param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([System.BitConverter]::ToString($algorithm.ComputeHash($Bytes)) -replace "-", "").ToUpperInvariant()
+    }
+    finally {
+        $algorithm.Dispose()
+    }
 }
 
 function Get-StreamSha256 {
@@ -123,6 +137,7 @@ try {
         $ManifestHashPath,
         $ProductPackageSecurityPath,
         $SecureProductExtractionPath,
+        $LimitedUserImpersonationPath,
         $ProductPackageSecurityTestsPath
     )) {
         Assert-Test -Condition (Test-Path -LiteralPath $requiredPath -PathType Leaf) -Message ("arquivo existe: {0}" -f $requiredPath)
@@ -144,7 +159,8 @@ try {
             /langversion:7.3 /warn:4 /warnaserror+ "/out:$securityTestExe" `
             /reference:System.dll /reference:System.Core.dll `
             /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll `
-            $ProductPackageSecurityPath $SecureProductExtractionPath $ProductPackageSecurityTestsPath 2>&1)
+            $ProductPackageSecurityPath $SecureProductExtractionPath $LimitedUserImpersonationPath `
+            $ProductPackageSecurityTestsPath 2>&1)
         $compilerExitCode = $LASTEXITCODE
         foreach ($line in $compilerOutput) {
             Write-Host $line
@@ -156,7 +172,13 @@ try {
         foreach ($line in $securityOutput) {
             Write-Host $line
         }
-        Assert-Test -Condition ($securityExitCode -eq 0) -Message "22 testes do sidecar, multipart, TOCTOU, reparse e ZIP foram aprovados"
+        Assert-Test -Condition ($securityExitCode -eq 0) -Message "harness de seguranca terminou com codigo 0"
+        $expectedSecuritySummary = "PRODUCT PACKAGE SECURITY TESTS: {0} PASS" -f $ExpectedProductSecurityTestCount
+        $securitySummaryLines = @($securityOutput | Where-Object {
+            $_.ToString().Trim().Equals($expectedSecuritySummary, [System.StringComparison]::Ordinal)
+        })
+        Assert-Test -Condition ($securitySummaryLines.Count -eq 1) `
+            -Message ("{0} testes do sidecar, multipart, TOCTOU, rollback, reparse e ZIP foram aprovados" -f $ExpectedProductSecurityTestCount)
     }
     finally {
         if ($securityTestRoot.StartsWith([System.IO.Path]::GetTempPath(), [System.StringComparison]::OrdinalIgnoreCase) -and
@@ -197,6 +219,81 @@ try {
     Assert-Test -Condition (([string]$manifest.Lockfile.SHA256).Equals($lockHash, [System.StringComparison]::Ordinal)) -Message "manifesto registra o SHA256 atual do lockfile"
     Assert-Test -Condition ([int]$manifest.Lockfile.PayloadCount -eq $payloads.Count) -Message "manifesto registra a contagem exata do lockfile"
     Assert-Test -Condition ([int]$manifest.EmbeddedInputs.Count -eq $payloads.Count) -Message "manifesto registra todos os inputs incorporados"
+
+    $gitPreBuild = $manifest.Git.PreBuild
+    $gitPostBuild = $manifest.Git.PostBuild
+    Assert-Test -Condition ($null -ne $gitPreBuild -and $null -ne $gitPostBuild) `
+        -Message "manifesto registra snapshots Git pre-build e pos-build"
+    $expectedHeadStable = ([string]$gitPreBuild.Commit).Equals([string]$gitPostBuild.Commit, [System.StringComparison]::Ordinal)
+    Assert-Test -Condition ([bool]$manifest.Git.HeadStable -eq $expectedHeadStable) `
+        -Message "flag HeadStable coincide com os commits pre-build e pos-build"
+    Assert-Test -Condition (
+        [string]$manifest.Git.Commit -ceq [string]$gitPostBuild.Commit -and
+        [string]$manifest.Git.Branch -ceq [string]$gitPostBuild.Branch -and
+        [bool]$manifest.Git.Dirty -eq [bool]$gitPostBuild.Dirty) `
+        -Message "campos Git principais refletem o snapshot pos-build"
+    $topStatus = @($manifest.Git.Status | ForEach-Object { [string]$_ })
+    $postStatus = @($gitPostBuild.Status | ForEach-Object { [string]$_ })
+    $statusDifferences = @(Compare-Object -ReferenceObject $postStatus -DifferenceObject $topStatus -CaseSensitive)
+    Assert-Test -Condition ($statusDifferences.Count -eq 0) -Message "status Git principal coincide com o status pos-build"
+    if (-not [bool]$manifest.Git.AllowDirty) {
+        Assert-Test -Condition ($expectedHeadStable) -Message "build sem AllowDirty preservou o mesmo HEAD"
+        Assert-Test -Condition (-not [bool]$gitPreBuild.Dirty -and @($gitPreBuild.Status).Count -eq 0) `
+            -Message "snapshot Git pre-build esta limpo"
+        Assert-Test -Condition (-not [bool]$gitPostBuild.Dirty -and @($gitPostBuild.Status).Count -eq 0) `
+            -Message "snapshot Git pos-build esta limpo"
+    }
+
+    $repositoryRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $InstallerRoot)).TrimEnd("\", "/")
+    $repositoryPrefix = $repositoryRoot + [System.IO.Path]::DirectorySeparatorChar
+    $buildInputRecords = @($manifest.BuildInputs.Files | ForEach-Object { $_ })
+    Assert-Test -Condition (
+        [int]$manifest.BuildInputs.Count -eq $buildInputRecords.Count -and
+        $buildInputRecords.Count -gt 0) `
+        -Message "manifesto registra a lista nao vazia de inputs do build"
+    $seenBuildInputPaths = @{}
+    foreach ($record in $buildInputRecords) {
+        $relativePath = [string]$record.Path
+        if ([string]::IsNullOrWhiteSpace($relativePath) -or
+            [System.IO.Path]::IsPathRooted($relativePath) -or
+            $relativePath.Split('\') -contains ".." -or
+            $seenBuildInputPaths.ContainsKey($relativePath)) {
+            throw ("Caminho de input inseguro ou duplicado no manifesto: {0}" -f $relativePath)
+        }
+        $seenBuildInputPaths[$relativePath] = $true
+
+        $inputPath = [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot $relativePath))
+        if (-not $inputPath.StartsWith($repositoryPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+            -not (Test-Path -LiteralPath $inputPath -PathType Leaf)) {
+            throw ("Input registrado nao existe dentro do repositorio: {0}" -f $relativePath)
+        }
+        $inputItem = Get-Item -LiteralPath $inputPath -Force
+        if (($inputItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            $inputItem.Length -ne [long]$record.Length -or
+            (Get-Sha256 -Path $inputPath) -cne [string]$record.SHA256) {
+            throw ("Input registrado diverge do arquivo atual: {0}" -f $relativePath)
+        }
+    }
+    Add-Pass -Text ("tamanho e SHA256 dos {0} inputs rastreados coincidem com o manifesto" -f $buildInputRecords.Count)
+
+    $canonicalBuildInputs = @($buildInputRecords | Sort-Object -Property Path | ForEach-Object {
+        "{0}`0{1}`0{2}" -f $_.Path, $_.Length, $_.SHA256
+    }) -join "`n"
+    $actualBuildInputAggregate = Get-BytesSha256 -Bytes ([System.Text.Encoding]::UTF8.GetBytes($canonicalBuildInputs))
+    Assert-Test -Condition ($actualBuildInputAggregate -ceq [string]$manifest.BuildInputs.AggregateSHA256) `
+        -Message "SHA256 agregado dos inputs rastreados coincide com o manifesto"
+    foreach ($requiredInput in @(
+        "TURBORAMA INSTALER HOST\Compilar_InstallerHost_Moderno.ps1",
+        "TURBORAMA INSTALER HOST\InstallerHost\InstallerHost.csproj",
+        "TURBORAMA INSTALER HOST\InstallerHost\prerequisites.lock.json",
+        "TURBORAMA INSTALER HOST\InstallerHost\LimitedUserImpersonation.cs",
+        "TURBORAMA INSTALER HOST\InstallerHost\FinishControl.cs",
+        "TURBORAMA INSTALER HOST\InstallerHost\Logger.cs"
+    )) {
+        Assert-Test -Condition $seenBuildInputPaths.ContainsKey($requiredInput) `
+            -Message ("input critico registrado: {0}" -f $requiredInput)
+    }
+
     $manifestDirectXPayloads = @($manifest.EmbeddedInputs.Payloads | Where-Object {
         [string]$_.Name -ceq "directx_Jun2010_redist.exe"
     })
@@ -329,6 +426,36 @@ try {
     Assert-Test -Condition ([int]$manifest.Build.ErrorCount -eq 0) -Message "manifesto registra zero erros de build"
     if ([bool]$manifest.Git.AllowDirty) {
         Assert-Test -Condition ([bool]$manifest.Build.NonPublishable) -Message "build com -AllowDirty esta marcado NonPublishable=true"
+        Assert-Test -Condition (@($manifest.Build.Reasons) -contains "AllowDirtyOverride") `
+            -Message "build com -AllowDirty registra o motivo de nao publicabilidade"
+        Assert-Test -Condition ($null -ne $manifest.Git.PostBuild.PSObject.Properties["Status"]) `
+            -Message "build com -AllowDirty preserva o status Git pos-build"
+    }
+    else {
+        $gitCommand = Get-Command "git.exe" -CommandType Application -ErrorAction Stop | Select-Object -First 1
+        $previousOptionalLocks = [Environment]::GetEnvironmentVariable("GIT_OPTIONAL_LOCKS", "Process")
+        try {
+            $env:GIT_OPTIONAL_LOCKS = "0"
+            $currentHeadOutput = @(& $gitCommand.Source -C $repositoryRoot rev-parse --verify "HEAD^{commit}" 2>$null)
+            $headExitCode = $LASTEXITCODE
+            $currentStatus = @(& $gitCommand.Source -C $repositoryRoot status --porcelain=v1 --untracked-files=all 2>$null)
+            $statusExitCode = $LASTEXITCODE
+        }
+        finally {
+            if ($null -eq $previousOptionalLocks) {
+                Remove-Item Env:\GIT_OPTIONAL_LOCKS -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:GIT_OPTIONAL_LOCKS = $previousOptionalLocks
+            }
+        }
+        $currentHead = $currentHeadOutput | Select-Object -First 1
+        Assert-Test -Condition ($headExitCode -eq 0 -and $statusExitCode -eq 0) `
+            -Message "HEAD/status Git atuais puderam ser recapturados"
+        Assert-Test -Condition ([string]$currentHead -ceq [string]$manifest.Git.PostBuild.Commit) `
+            -Message "HEAD atual coincide com o HEAD pos-build do manifesto"
+        Assert-Test -Condition ($currentStatus.Count -eq 0) `
+            -Message "arvore Git atual continua limpa apos o build"
     }
 
     Write-Host ""

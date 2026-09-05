@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
@@ -10,6 +9,7 @@ namespace InstallerHost
 	{
 		private readonly GamingReadinessProfile profile;
 		private readonly ListView recommendationsList;
+		private readonly TabControl tabs;
 
 		public GamingReadinessDialog(GamingReadinessProfile readinessProfile)
 		{
@@ -72,7 +72,7 @@ namespace InstallerHost
 			};
 			header.Controls.Add(score);
 
-			TabControl tabs = new TabControl
+			tabs = new TabControl
 			{
 				Dock = DockStyle.Fill,
 				Padding = new Point(16, 6)
@@ -106,7 +106,7 @@ namespace InstallerHost
 			};
 			footer.Controls.Add(legal);
 
-			Button officialButton = CreateButton("ABRIR FONTE OFICIAL", 635, 12, 160);
+			Button officialButton = CreateButton("COPIAR LINK OFICIAL", 635, 12, 160);
 			officialButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 			officialButton.Click += OpenSelectedOfficialSource;
 			footer.Controls.Add(officialButton);
@@ -210,10 +210,11 @@ namespace InstallerHost
 
 		private void OpenSelectedOfficialSource(object sender, EventArgs e)
 		{
-			string url = recommendationsList.SelectedItems.Count > 0 ? recommendationsList.SelectedItems[0].Tag as string : null;
+			ListView selectedList = tabs.SelectedTab == null ? null : tabs.SelectedTab.Controls.OfType<ListView>().FirstOrDefault();
+			string url = selectedList != null && selectedList.SelectedItems.Count > 0 ? selectedList.SelectedItems[0].Tag as string : null;
 			if (string.IsNullOrWhiteSpace(url))
 			{
-				MessageBox.Show(this, "Selecione uma recomendação que possua fonte oficial.", "Fonte oficial", MessageBoxButtons.OK, MessageBoxIcon.Information);
+				MessageBox.Show(this, "Selecione um componente ou recomendação que possua fonte oficial.", "Fonte oficial", MessageBoxButtons.OK, MessageBoxIcon.Information);
 				return;
 			}
 			Uri parsed;
@@ -224,11 +225,12 @@ namespace InstallerHost
 			}
 			try
 			{
-				Process.Start(new ProcessStartInfo { FileName = parsed.AbsoluteUri, UseShellExecute = true });
+				Clipboard.SetText(parsed.AbsoluteUri);
+				MessageBox.Show(this, "Link copiado. Feche o instalador e cole o endereço no seu navegador.", "Fonte oficial", MessageBoxButtons.OK, MessageBoxIcon.Information);
 			}
 			catch (Exception ex)
 			{
-				MessageBox.Show(this, "Não foi possível abrir a fonte oficial: " + ex.Message, "Fonte oficial", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				MessageBox.Show(this, "Não foi possível copiar a fonte oficial: " + ex.Message, "Fonte oficial", MessageBoxButtons.OK, MessageBoxIcon.Warning);
 			}
 		}
 

@@ -53,9 +53,27 @@ abertos o setup, o sidecar e **todas** as partes sem compartilhamento de escrita
 ou exclusão até o fim da extração. Nomes antigos como `setup.pkg.001`, gaps,
 sobras, duplicatas, reparse points e o formato anexado sem sidecar são recusados.
 
-Escolha uma pasta local vazia. A extração elevada canonicaliza cada caminho,
-recusa junctions/symlinks em toda a cadeia relevante, cria arquivos somente com
-semântica `CreateNew` e nunca sobrescreve um arquivo ou hardlink preexistente.
+Escolha uma pasta local vazia e gravável pela conta padrão. Embora o host permaneça
+elevado para os instaladores de pré-requisitos, toda a abertura do pacote principal,
+extração, validação e reversão é executada com o token vinculado não elevado
+(integridade Medium ou inferior e sem o grupo Administradores habilitado). Se o
+Windows não fornecer esse contexto, o fluxo falha fechado. O destino padrão fica em
+`%LOCALAPPDATA%\TurboRama`.
+
+A extração canonicaliza cada caminho, recusa junctions/symlinks em toda a cadeia
+relevante, mantém handles sem compartilhamento de escrita/exclusão, cria arquivos
+somente com semântica `CreateNew` e nunca sobrescreve um arquivo ou hardlink
+preexistente. A transação registra apenas arquivos e diretórios que ela própria
+criou. Uma falha de escrita ou validação reverte esses objetos, por identidade e
+handle, na ordem inversa; uma pasta raiz vazia que já existia e qualquer objeto não
+registrado são preservados. O botão Cancelar, X e Alt+F4 ficam bloqueados enquanto a
+transação está ativa, para que uma falha tratável conclua a reversão antes de sair.
+
+Essa reversão cobre exceções tratadas durante a execução; ela **não** é crash-safe
+contra encerramento forçado do processo, queda de energia ou falha do sistema. Após
+um evento desse tipo, não apague dados automaticamente: inspecione o destino e tente
+novamente em outra pasta vazia. O host também não cria atalhos nem executa o produto
+extraído dentro do processo elevado; a tela final apenas apresenta o resultado.
 
 O sidecar simples protege a integridade de transporte e detecta corrupção, mas
 não autentica sozinho quem publicou um conjunto inteiramente substituído. Uma

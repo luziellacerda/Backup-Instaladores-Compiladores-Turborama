@@ -99,6 +99,7 @@
     <Compile Include="GamingReadinessModels.cs" />
     <Compile Include="GamingRuntimeManifest.cs" />
     <Compile Include="InstallerPackageSecurity.cs" />
+    <Compile Include="LimitedUserImpersonation.cs" />
     <Compile Include="ProductPackageSecurity.cs" />
     <Compile Include="PrerequisiteIntegrityCatalog.cs" />
     <Compile Include="PrerequisiteBundle.cs" />

@@ -246,7 +246,7 @@ namespace InstallerHost
 				chkNvidiaApp.Checked = false;
 			}
 			chkNvidiaApp.Text = hasNvidia
-				? "Abrir fonte oficial do driver NVIDIA"
+				? "Copiar link oficial do driver NVIDIA"
 				: "Driver NVIDIA (GPU NVIDIA não detectada)";
 		}
 
@@ -657,7 +657,7 @@ namespace InstallerHost
 				AddPremiumCheckRow(chkDirectX, contentLeft, 137, contentWidth,
 					"DirectX legado June 2010", "Somente bibliotecas antigas; DirectX 11/12 vem do Windows/driver", true);
 				AddPremiumCheckRow(chkNvidiaApp, contentLeft, 178, contentWidth,
-					"Abrir fonte oficial NVIDIA", "Abre nvidia.com; nenhum driver é baixado ou executado automaticamente", chkNvidiaApp.Enabled);
+					"Copiar link oficial NVIDIA", "Copia nvidia.com para abrir no navegador após fechar o instalador", chkNvidiaApp.Enabled);
 				AddPremiumCheckRow(chkDokany, contentLeft, 219, contentWidth,
 					"Dokany (não incluído)", "Opcional; obtenha manualmente na fonte oficial somente se necessário", false);
 				AddPremiumCheckRow(chkwinFSP, contentLeft, 260, contentWidth,
