@@ -42,11 +42,7 @@ internal static class Program
         {
             bridge.Deny();
             // Deliberately never display exception details, paths, or identifiers.
-            MessageBox.Show(
-                "Ative o TurboRama Suite neste computador e nesta conta do Windows. "
-                + "Depois abra o EmulationStation novamente. Se a Suite já está ativada, "
-                + "confira se esta versão possui a configuração de servidor válida.",
-                "TurboRama — acesso", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            LicenseForm.ShowUnavailable(AccessFailurePresentation.Describe(ex));
             return 21;
         }
         finally

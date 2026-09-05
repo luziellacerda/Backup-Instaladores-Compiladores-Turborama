@@ -13,5 +13,6 @@
     <Compile Include="../Upstream/*.cs" />
     <Compile Include="../BridgeConnection.cs" />
     <Compile Include="../LicenseCache.cs" />
+    <Compile Include="../AccessFailurePresentation.cs" />
   </ItemGroup>
 </Project>

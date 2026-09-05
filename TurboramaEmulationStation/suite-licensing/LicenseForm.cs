@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Security;
 using TurboBoxManager.Licensing;
 
@@ -9,12 +10,10 @@ internal sealed class LicenseForm : Form
     private readonly SuiteLicensingRuntime _runtime;
     private readonly BridgeConnection _bridge;
     private readonly CancellationTokenSource _lifetime;
-    private readonly TextBox _license = new() { MaxLength = 64, Width = 440 };
-    private readonly Label _status = new() { AutoSize = false, Width = 460, Height = 72 };
-    private readonly Button _open = new() { Text = "Abrir EmulationStation", AutoSize = true };
-    private readonly Button _cancel = new() { Text = "Cancelar", AutoSize = true };
+    private readonly LicenseAccessView _view = new();
     private readonly System.Windows.Forms.Timer _watch = new() { Interval = 250 };
     private bool _busy;
+    private bool _silentInitialAuthorization;
 
     internal LicenseForm(SuiteLicensingRuntime runtime, BridgeConnection bridge,
         CancellationTokenSource lifetime)
@@ -22,48 +21,30 @@ internal sealed class LicenseForm : Form
         _runtime = runtime;
         _bridge = bridge;
         _lifetime = lifetime;
-        Text = "TurboRama — EmulationStation Suite";
-        StartPosition = FormStartPosition.CenterScreen;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        ClientSize = new Size(500, 330);
-        AutoScaleMode = AutoScaleMode.Dpi;
-        Font = new Font("Segoe UI", 10);
-        var layout = new FlowLayoutPanel
+        ConfigureShell(this, _view);
+        AcceptButton = _view.OpenButton;
+        CancelButton = _view.CancelAccessButton;
+
+        // Read the same DPAPI convenience cache before creating the native
+        // window. A cached identifier is still checked online; opacity zero
+        // prevents a login-dialog flash while that existing check is pending.
+        var cached = LicenseCache.TryRead();
+        if (cached is not null)
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
-            WrapContents = false, Padding = new Padding(20), AutoSize = false
-        };
-        layout.Controls.Add(new Label
-        {
-            Text = "Use a mesma licença já ativada no TurboRama Suite.\n"
-                + "Informações básicas de rede ajudam no diagnóstico. Trocar de rede não bloqueia o acesso.",
-            AutoSize = false, Width = 460, Height = 72
-        });
-        layout.Controls.Add(_license);
-        layout.Controls.Add(_status);
-        var buttons = new FlowLayoutPanel { AutoSize = true, Width = 460 };
-        buttons.Controls.Add(_open);
-        buttons.Controls.Add(_cancel);
-        layout.Controls.Add(buttons);
-        Controls.Add(layout);
-        AcceptButton = _open;
-        CancelButton = _cancel;
-        _status.Text = "Informe o identificador da licença usado na Suite. "
-            + "Este computador precisa estar ativado na mesma conta do Windows.";
-        _open.Click += async (_, _) => await AuthorizeAsync();
-        _cancel.Click += (_, _) => Close();
+            _view.LicenseInput.Text = cached;
+            _silentInitialAuthorization = true;
+            Opacity = 0;
+            ShowInTaskbar = false;
+        }
+
+        _view.OpenButton.Click += async (_, _) => await AuthorizeAsync();
+        _view.CancelAccessButton.Click += (_, _) => Close();
         Shown += async (_, _) =>
         {
             _watch.Start();
             if (_lifetime.IsCancellationRequested) { Close(); return; }
-            var cached = LicenseCache.TryRead();
-            if (cached is not null)
-            {
-                _license.Text = cached;
-                await AuthorizeAsync();
-            }
+            if (_silentInitialAuthorization) await AuthorizeAsync();
+            else _view.LicenseInput.Focus();
         };
         _watch.Tick += (_, _) =>
         {
@@ -75,17 +56,30 @@ internal sealed class LicenseForm : Form
         FormClosing += (_, _) => _lifetime.Cancel();
     }
 
+    // Used only by the preflight failure path. This dialog has no runtime,
+    // activation, license/cache lookup or network behavior.
+    internal static void ShowUnavailable(string message)
+    {
+        using var dialog = new Form();
+        var view = new LicenseAccessView();
+        ConfigureShell(dialog, view);
+        view.PresentUnavailable(message);
+        dialog.AcceptButton = view.CancelAccessButton;
+        dialog.CancelButton = view.CancelAccessButton;
+        view.CancelAccessButton.Click += (_, _) => dialog.Close();
+        dialog.ShowDialog();
+    }
+
     private async Task AuthorizeAsync()
     {
         if (_busy || _lifetime.IsCancellationRequested) return;
         _busy = true;
-        _open.Enabled = false;
-        _license.Enabled = false;
-        _status.Text = "Conferindo a ativação existente no servidor...";
+        _view.SetBusy(true);
+        _view.SetStatus("Conferindo a ativação existente no servidor…");
         try
         {
             var licenseId = SuiteOnlineLicenseProtocol.RequireIdentifier(
-                _license.Text.Trim(), "LicenseId", 6, 64);
+                _view.LicenseInput.Text.Trim(), "LicenseId", 6, 64);
             var context = await _runtime.OpenAsync(licenseId, _lifetime.Token);
             if (_lifetime.IsCancellationRequested) return;
             context.ThrowIfUnauthorized();
@@ -97,7 +91,7 @@ internal sealed class LicenseForm : Form
                 Close();
                 return;
             }
-            _license.Clear();
+            _view.LicenseInput.Clear();
             ShowInTaskbar = false;
             Hide();
         }
@@ -107,34 +101,58 @@ internal sealed class LicenseForm : Form
             or HttpRequestException or TaskCanceledException or ArgumentException)
         {
             if (!_lifetime.IsCancellationRequested)
-                _status.Text = ex switch
-                {
-                    SuiteApiException { Code: "ES_SESSION_CONFLICT" } =>
-                        "Já existe uma sessão EmulationStation neste computador. "
-                        + "Solicite ao administrador o encerramento da sessão anterior no painel e tente novamente.",
-                    SuiteApiException { Code: "INVALID_RESPONSE" } =>
-                        "Não foi possível validar a resposta do servidor para esta versão. "
-                        + "Confira a atualização do servidor e tente novamente.",
-                    SuiteApiException { StatusCode: 404 or 503 } =>
-                        "O servidor ainda não disponibilizou o acesso do EmulationStation. "
-                        + "Tente novamente após a atualização do servidor.",
-                    HttpRequestException or TaskCanceledException =>
-                        "Não foi possível confirmar a licença. Confira a internet e tente novamente.",
-                    _ => "A licença não foi confirmada para este computador. "
-                        + "Confira a licença, a ativação da Suite e a conta do Windows."
-                };
+                _view.SetStatus(AccessFailurePresentation.Describe(ex), isError: true);
         }
         finally
         {
             _busy = false;
             if (!IsDisposed && !_lifetime.IsCancellationRequested && !_bridge.WasReady)
             {
-                _open.Enabled = true;
-                _license.Enabled = true;
-                _license.Focus();
+                _view.SetBusy(false);
+                if (_silentInitialAuthorization)
+                {
+                    // A denied/offline cached attempt becomes the same editable
+                    // one-field login. No automatic activation/rebinding occurs.
+                    _silentInitialAuthorization = false;
+                    Opacity = 1;
+                    ShowInTaskbar = true;
+                    Show();
+                    Activate();
+                }
+                _view.LicenseInput.Focus();
             }
         }
     }
+
+    private static void ConfigureShell(Form form, LicenseAccessView view)
+    {
+        form.AutoScaleDimensions = new SizeF(96, 96);
+        form.AutoScaleMode = AutoScaleMode.Dpi;
+        form.Text = "TurboRama Suite";
+        form.StartPosition = FormStartPosition.CenterScreen;
+        form.FormBorderStyle = FormBorderStyle.FixedDialog;
+        form.MaximizeBox = false;
+        form.MinimizeBox = false;
+        form.ShowIcon = false;
+        form.ClientSize = new Size(540, 340);
+        form.BackColor = LicenseAccessView.Canvas;
+        form.ForeColor = LicenseAccessView.PrimaryText;
+        form.Font = new Font("Segoe UI", 10F);
+        view.Dock = DockStyle.Fill;
+        form.Controls.Add(view);
+        form.HandleCreated += (_, _) =>
+        {
+            // Windows 10/11 native dark title bar. Unsupported versions simply
+            // keep the normal system caption; authentication never depends on it.
+            var dark = 1;
+            if (DwmSetWindowAttribute(form.Handle, 20, ref dark, sizeof(int)) != 0)
+                _ = DwmSetWindowAttribute(form.Handle, 19, ref dark, sizeof(int));
+        };
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr window, int attribute,
+        ref int value, int size);
 
     protected override void Dispose(bool disposing)
     {

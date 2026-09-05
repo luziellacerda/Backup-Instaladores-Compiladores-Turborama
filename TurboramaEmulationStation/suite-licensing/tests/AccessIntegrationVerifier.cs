@@ -22,11 +22,38 @@ internal static class AccessIntegrationVerifier
 
     internal static async Task RunAsync()
     {
+        VerifyFailurePresentation();
         VerifyCacheEnvelope();
         await VerifyPipeChecksAndDenialAsync();
         await VerifyMalformedCommandAsync();
         await VerifyParentEofAsync(pending: false);
         await VerifyParentEofAsync(pending: true);
+    }
+
+    private static void VerifyFailurePresentation()
+    {
+        const string sensitiveFixture = "DO-NOT-DISPLAY-SYNTHETIC-IDENTIFIER";
+        var unavailable = new TurboBoxManager.Licensing.SuiteApiException(
+            404, "ONLINE_DENIED", sensitiveFixture);
+        var notFound = new TurboBoxManager.Licensing.SuiteApiException(
+            404, "LICENSE_NOT_FOUND", sensitiveFixture);
+        var invalidResponse = new TurboBoxManager.Licensing.SuiteApiException(
+            502, "INVALID_RESPONSE", sensitiveFixture);
+        var sessionConflict = new TurboBoxManager.Licensing.SuiteApiException(
+            409, "ES_SESSION_CONFLICT", sensitiveFixture);
+        Require(AccessFailurePresentation.Describe(unavailable)
+            == AccessFailurePresentation.ServerUnavailable, "missing route is not license denial");
+        Require(AccessFailurePresentation.Describe(notFound)
+            == AccessFailurePresentation.AccessDenied, "explicit server license denial");
+        Require(AccessFailurePresentation.Describe(invalidResponse)
+            == AccessFailurePresentation.ServerUnconfirmed, "invalid response is not activation request");
+        Require(AccessFailurePresentation.Describe(sessionConflict)
+            == AccessFailurePresentation.SessionConflict, "shared ES session conflict is preserved");
+        foreach (var exception in new Exception[] { unavailable, notFound, invalidResponse, sessionConflict,
+            new ArgumentException(sensitiveFixture), new SecurityException(sensitiveFixture),
+            new HttpRequestException(sensitiveFixture), new Exception(sensitiveFixture) })
+            Require(!AccessFailurePresentation.Describe(exception).Contains(sensitiveFixture,
+                StringComparison.Ordinal), "presentation must not expose exception data");
     }
 
     private static void VerifyCacheEnvelope()
