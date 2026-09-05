@@ -36,7 +36,12 @@ namespace InstallerHost
 				else
 				{
 					RunPackageTests(testRoot);
-					RunExtractionTests(testRoot);
+					// Hosted Windows runners execute elevated. Keep the complete extraction
+					// suite under the same validated limited token used by production.
+					LimitedUserImpersonation.Run(delegate
+					{
+						RunExtractionTests(testRoot);
+					});
 				}
 				Console.WriteLine("PRODUCT PACKAGE SECURITY TESTS: " + _passed + " PASS");
 				return 0;
