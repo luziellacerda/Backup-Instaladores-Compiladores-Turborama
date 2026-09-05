@@ -8,7 +8,10 @@
     <!-- A payload-free validation build is a DLL, never a distributable installer. -->
     <OutputType Condition="'$(IncludePrerequisitePayloads)' != 'true'">Library</OutputType>
     <RootNamespace>InstallerHost</RootNamespace><AssemblyName>InstallerHost</AssemblyName>
-    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion><PlatformTarget>AnyCPU</PlatformTarget>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion><PlatformTarget>x64</PlatformTarget>
+    <!-- The offline bundle exceeds the address-space budget of a 32-bit CLR.
+         Host x64 still installs both x86 and x64 game dependencies. -->
+    <Prefer32Bit>false</Prefer32Bit>
     <OutputPath>bin\$(Configuration)\</OutputPath><WarningLevel>4</WarningLevel><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
     <ApplicationManifest Condition="'$(IncludePrerequisitePayloads)' == 'true'">app.manifest</ApplicationManifest>

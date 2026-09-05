@@ -89,8 +89,10 @@ try {
         [System.IO.FileShare]::Read)) | Out-Null
     & .\Verify-ConsumerBuild.ps1
     if ($LASTEXITCODE -ne 0) { throw 'Verificação do executável falhou.' }
-    foreach ($artifactArch in @('x86','x64')) {
-        if ($artifactArch -eq 'x64' -and -not [Environment]::Is64BitOperatingSystem) { continue }
+    # The distributable is deliberately x64 because of the full offline bundle.
+    # Source-level detector probes above still execute separately in x86 and x64.
+    foreach ($artifactArch in @('x64')) {
+        if (-not [Environment]::Is64BitOperatingSystem) { throw 'O instalador offline exige Windows x64.' }
         $framework = if ($artifactArch -eq 'x64') { 'Framework64' } else { 'Framework' }
         $probeBits = if ($artifactArch -eq 'x64') { 64 } else { 32 }
         $probeCompiler = Join-Path $env:WINDIR ('Microsoft.NET\' + $framework + '\v4.0.30319\csc.exe')
@@ -118,6 +120,7 @@ try {
         file = $exe.Name; length = $exe.Length; sha256 = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash
         catalogSha256 = $sourceHashes['prerequisites.lock.json']; sourceHashes = $sourceHashes
         authenticodeStatus = [string](Get-AuthenticodeSignature -LiteralPath $exe.FullName).Status
+        executableArchitecture = 'x64'; requiredOperatingSystemArchitecture = 'x64'
         internalTestsPassed = $true; realWindowQaPassed = $false; cleanWindowsInstallPassed = $false
         productPackageIncluded = $false; productionApproved = $false
         containsPrereleaseComponents = $true; prereleaseComponents = @('WinFsp 2026 Beta4 (2.2.26215), optional and unchecked')

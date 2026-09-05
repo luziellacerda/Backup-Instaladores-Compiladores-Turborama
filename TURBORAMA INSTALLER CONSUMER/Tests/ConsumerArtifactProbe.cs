@@ -13,6 +13,11 @@ internal static class ConsumerArtifactProbe
             // Loading an assembly never calls the installer entry point. These
             // explicitly invoked methods only inspect runtime state/resources.
             Assembly product = Assembly.LoadFrom(args[0]);
+            PortableExecutableKinds peKind;
+            ImageFileMachine machine;
+            product.ManifestModule.GetPEKind(out peKind, out machine);
+            if (machine != ImageFileMachine.AMD64 || (peKind & PortableExecutableKinds.PE32Plus) == 0)
+                throw new InvalidOperationException("The full offline artifact must be x64 to avoid 32-bit address-space exhaustion.");
             Type detector = product.GetType("InstallerHost.PrerequisiteDetector", true);
             Type manifest = product.GetType("InstallerHost.GamingRuntimeManifest", true);
             object profile = Activator.CreateInstance(product.GetType("InstallerHost.GamingReadinessProfile", true));
