@@ -97,18 +97,7 @@ namespace InstallerHost
             }
             if (banner)
             {
-                float dpi = g.DpiX / 96f;
-                int left = (int)(2 * dpi);
-                using (Font title = new Font("Segoe UI", 25, FontStyle.Bold | FontStyle.Italic))
-                using (Font subtitle = new Font("Segoe UI Semibold", 8.5f))
-                {
-                    TextRenderer.DrawText(g, "TURBORAMA", title, new Rectangle(left, 2, Width - left, Height - 25),
-                        SystemInformation.HighContrast ? SystemColors.ControlText : Palette.Text,
-                        TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.PreserveGraphicsClipping);
-                    TextRenderer.DrawText(g, "LZ GAMES  /  ARCADE & PC", subtitle, new Rectangle(left + 3, Height - 28, Width - left - 3, 22),
-                        SystemInformation.HighContrast ? SystemColors.ControlText : Palette.Accent,
-                        TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.PreserveGraphicsClipping);
-                }
+                DrawBrand(g);
                 int glow = 135 + (int)(30 * Math.Sin(phase));
                 using (LinearGradientBrush rail = new LinearGradientBrush(new Rectangle(0, Height - 7, Width, 7),
                     SystemInformation.HighContrast ? SystemColors.ControlText : Color.FromArgb(glow, Palette.Accent),
@@ -118,6 +107,74 @@ namespace InstallerHost
                 }
             }
             base.OnPaint(e);
+        }
+        private void DrawBrand(Graphics graphics)
+        {
+            float dpi = graphics.DpiX / 96f;
+            if (SystemInformation.HighContrast)
+            {
+                using (Font title = new Font("Segoe UI", 25, FontStyle.Bold))
+                using (Font subtitle = new Font("Segoe UI Semibold", 8.5f))
+                {
+                    TextRenderer.DrawText(graphics, "TURBORAMA", title, new Rectangle(0, 2, Width, Height - 25),
+                        SystemColors.ControlText, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.PreserveGraphicsClipping);
+                    TextRenderer.DrawText(graphics, "LZ GAMES  //  PERFORMANCE INSTALL SYSTEM", subtitle, new Rectangle(3, Height - 28, Width - 3, 22),
+                        SystemColors.ControlText, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.PreserveGraphicsClipping);
+                }
+                return;
+            }
+            GraphicsState state = graphics.Save();
+            try
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                int markWidth = (int)(22 * dpi);
+                int markTop = (int)(10 * dpi);
+                using (Pen violet = new Pen(Color.FromArgb(210, Palette.Violet), Math.Max(1.5f, 2f * dpi)))
+                using (Pen cyan = new Pen(Color.FromArgb(190, 132, 224, 255), Math.Max(1f, 1.4f * dpi)))
+                {
+                    violet.StartCap = violet.EndCap = LineCap.Round;
+                    cyan.StartCap = cyan.EndCap = LineCap.Round;
+                    graphics.DrawLine(violet, 0, markTop + (int)(17 * dpi), markWidth, markTop);
+                    graphics.DrawLine(violet, (int)(7 * dpi), markTop + (int)(24 * dpi), markWidth + (int)(7 * dpi), markTop + (int)(7 * dpi));
+                    graphics.DrawLine(cyan, 0, markTop + (int)(25 * dpi), (int)(12 * dpi), markTop + (int)(25 * dpi));
+                }
+                float logoX = 31 * dpi;
+                using (FontFamily family = BrandFamily())
+                using (GraphicsPath logo = new GraphicsPath())
+                using (StringFormat format = (StringFormat)StringFormat.GenericTypographic.Clone())
+                {
+                    format.FormatFlags |= StringFormatFlags.NoWrap;
+                    logo.AddString("TURBORAMA", family, (int)(FontStyle.Bold | FontStyle.Italic), 29 * dpi,
+                        new PointF(logoX, -1 * dpi), format);
+                    RectangleF bounds = logo.GetBounds();
+                    using (Pen aura = new Pen(Color.FromArgb(34, Palette.Violet), Math.Max(3f, 6f * dpi)))
+                    using (Pen edge = new Pen(Color.FromArgb(185, 220, 232, 255), Math.Max(1f, 1.15f * dpi)))
+                    using (LinearGradientBrush fill = new LinearGradientBrush(bounds, Palette.Text,
+                        Color.FromArgb(196, 178, 255), 0f))
+                    {
+                        graphics.DrawPath(aura, logo);
+                        graphics.FillPath(fill, logo);
+                        graphics.DrawPath(edge, logo);
+                    }
+                }
+                int subtitleY = Height - (int)(26 * dpi);
+                using (Font subtitle = new Font("Segoe UI Semibold", 8.25f, FontStyle.Bold))
+                {
+                    TextRenderer.DrawText(graphics, "LZ GAMES", subtitle,
+                        new Rectangle((int)logoX + 2, subtitleY, (int)(73 * dpi), (int)(20 * dpi)), Palette.Accent,
+                        TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.PreserveGraphicsClipping);
+                    TextRenderer.DrawText(graphics, "//  PERFORMANCE INSTALL SYSTEM", subtitle,
+                        new Rectangle((int)logoX + (int)(76 * dpi), subtitleY, Width - (int)logoX - (int)(76 * dpi), (int)(20 * dpi)), Palette.Muted,
+                        TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.PreserveGraphicsClipping);
+                }
+            }
+            finally { graphics.Restore(state); }
+        }
+        private static FontFamily BrandFamily()
+        {
+            try { return new FontFamily("Bahnschrift"); }
+            catch (ArgumentException) { return new FontFamily("Segoe UI"); }
         }
         private Bitmap CreateSurface()
         {
@@ -159,9 +216,9 @@ namespace InstallerHost
             float w = size.Width, h = size.Height;
             if (bannerMode)
             {
-                SoftLight(graphics, new RectangleF(w * .002f, h * .015f, w * .64f, h * .87f), Palette.Violet, 72);
-                SoftLight(graphics, new RectangleF(w * .006f, h * .04f, w * .37f, h * .72f), Color.FromArgb(158, 218, 255), 40);
-                SoftLight(graphics, new RectangleF(w * .02f, h * .72f, w * .55f, h * .24f), Palette.Accent, 36);
+                float logoWidth = Math.Min(w * .43f, 430f);
+                SoftLight(graphics, new RectangleF(2, h * .08f, logoWidth, h * .72f), Palette.Violet, 48);
+                SoftLight(graphics, new RectangleF(12, h * .20f, logoWidth * .72f, h * .48f), Color.FromArgb(158, 218, 255), 26);
             }
             else
             {

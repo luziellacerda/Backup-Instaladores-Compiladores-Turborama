@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-[assembly: AssemblyVersion("10.1.2.0")]
+[assembly: AssemblyVersion("10.1.3.0")]
 [assembly: AssemblyTitle("TurboRama Installer")]
 [assembly: AssemblyDescription("Instalador TurboRama com fluxo original e interface renovada")]
 [assembly: AssemblyConfiguration("")]
@@ -15,4 +15,4 @@ using System.Runtime.Versioning;
 [assembly: AssemblyTrademark("")]
 [assembly: ComVisible(false)]
 [assembly: Guid("d537d8d2-d4e7-4c88-a69e-c2743fa1a076")]
-[assembly: AssemblyFileVersion("10.1.2.0")]
+[assembly: AssemblyFileVersion("10.1.3.0")]

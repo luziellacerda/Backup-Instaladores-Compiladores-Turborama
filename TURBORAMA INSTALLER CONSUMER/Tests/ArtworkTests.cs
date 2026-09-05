@@ -95,6 +95,22 @@ namespace InstallerHost
                     if (!hasLight) throw new Exception("Ambient lighting is not visible.");
                     count += 4;
                 }
+                if (banner && size.Width > 1)
+                {
+                    Color background = TurboRama.Next.Palette.Background;
+                    int logoPixels = 0, distantPixels = 0, distantArea = 0;
+                    for (int y = 0; y < Math.Max(1, size.Height - 8); y++)
+                    for (int x = 0; x < size.Width; x++)
+                    {
+                        Color pixel = clean.GetPixel(x, y);
+                        int difference = Math.Abs(pixel.R - background.R) + Math.Abs(pixel.G - background.G) + Math.Abs(pixel.B - background.B);
+                        if (x < Math.Min(size.Width, 360) && difference > 80) logoPixels++;
+                        if (x >= size.Width * 3 / 5) { distantArea++; if (difference > 18) distantPixels++; }
+                    }
+                    if (logoPixels < 250) throw new Exception("TurboRama brand mark is too weak or missing.");
+                    if (distantPixels > distantArea / 100) throw new Exception("Brand lighting reads as a full-width rectangular box.");
+                    count += 2;
+                }
                 control.Visible = false;
                 if (control.IsGlowRunning) throw new Exception("Hidden artwork kept an animation timer running.");
                 count++;
