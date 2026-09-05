@@ -100,6 +100,17 @@ namespace InstallerHost
 					"Diagnostic repair applies only supported runtime groups and rejects optional drivers and external sources");
 				verify(!page.installationComplete && page.progressTitleText == "Reparo de compatibilidade selecionado",
 					"Diagnostic repair invalidates prior completion and explains the preflight validation");
+				page.SetButtonsInstallingState(true);
+				page.UpdateProgressVisualsSafe();
+				verify(page.progressBar.Style == ProgressBarStyle.Marquee && page.progressBar.MarqueeAnimationSpeed > 0 &&
+					page.btnNext.Text == "Reparando…" && page.progressPercentLabel.Text == "Em andamento",
+					"Repair shows animated loading and a repair label before any worker completes a component");
+				page.chkVCpp.Checked = false;
+				verify(page.restrictedRepairComponentIds != null && page.chkVCpp.Checked,
+					"Rejected busy selection changes preserve the exact repair restriction");
+				page.SetButtonsInstallingState(false);
+				verify(page.progressBar.Style == ProgressBarStyle.Continuous && page.progressBar.MarqueeAnimationSpeed == 0,
+					"Completion or failure stops the loading animation");
 				page.chkVCpp.Checked = false;
 				verify(page.restrictedRepairComponentIds == null,
 					"A later manual checkbox change leaves repair mode and restores normal explicit group selection");

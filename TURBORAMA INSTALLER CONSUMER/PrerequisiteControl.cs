@@ -163,7 +163,8 @@ namespace InstallerHost
 			progressBar.Maximum = Math.Max(1, totalSteps);
 			progressBar.Value = 0;
 			SetButtonsInstallingState(true);
-			SetProgressHeaderSafe("Instalando componentes", "Validando o catálogo incorporado antes de cada etapa...");
+			SetProgressHeaderSafe(restrictedRepairComponentIds != null ? "Reparando componentes…" : "Instalando componentes…",
+				"Analisando o PC e validando os pacotes. Aguarde o término desta etapa.");
 			UpdateProgressVisualsSafe();
 
 			installerWorker = new BackgroundWorker();
@@ -193,7 +194,12 @@ namespace InstallerHost
 			{
 				GamingReadinessProfile profile = RuntimeInstallerHelper.InstallCompleteGamingRuntimeStack(
 					selection.RuntimeSelection,
-					SetProgressHeaderSafe,
+					delegate(string title, string detail)
+					{
+						SetProgressHeaderSafe(selection.RuntimeSelection.AllowedComponentIds != null
+							? "Reparando componentes…" : title,
+							selection.RuntimeSelection.AllowedComponentIds != null ? title + " — " + detail : detail);
+					},
 					delegate(int plannedCount)
 					{
 						SetProgressMaximumSafe(plannedCount + (selection.OpenNvidiaOfficialSource ? 1 : 0));
@@ -678,6 +684,11 @@ namespace InstallerHost
 		private void SetButtonsInstallingState(bool installing)
 		{
 			SetSelectionLocked(installing);
+			progressBar.Style = installing ? ProgressBarStyle.Marquee : ProgressBarStyle.Continuous;
+			progressBar.MarqueeAnimationSpeed = installing ? 30 : 0;
+			progressBar.AccessibleName = installing
+				? (restrictedRepairComponentIds != null ? "Reparo em andamento" : "Instalação em andamento")
+				: "Progresso dos componentes";
 			btnBack.Visible = true;
 			btnNext.Visible = true;
 			btnCancel.Visible = true;
@@ -685,7 +696,9 @@ namespace InstallerHost
 			btnCancel.Enabled = !installing;
 			btnNext.Enabled = !installing;
 			if (readinessButton != null) readinessButton.Enabled = !installing && gamingReadinessProfile != null;
-			btnNext.Text = installing ? "Instalando..." : ConsumerText.GetString("Next >", Array.Empty<object>());
+			btnNext.Text = installing
+				? (restrictedRepairComponentIds != null ? "Reparando…" : "Instalando…")
+				: ConsumerText.GetString("Next >", Array.Empty<object>());
 			if (installing && contentStack != null && progressSection != null)
 			{
 				contentStack.ScrollControlIntoView(progressSection);
@@ -745,7 +758,7 @@ namespace InstallerHost
 			}
 			if (progressPercentLabel != null)
 			{
-				progressPercentLabel.Text = percent + "%";
+				progressPercentLabel.Text = IsInstallationRunning() ? "Em andamento" : percent + "%";
 			}
 			if (progressHintLabel != null)
 			{
