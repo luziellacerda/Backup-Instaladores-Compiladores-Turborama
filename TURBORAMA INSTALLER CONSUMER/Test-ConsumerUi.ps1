@@ -51,11 +51,26 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar testes de segurança.' }
     & .\TestResults\executables\ProductPackageSecurityTests.exe (Join-Path $PSScriptRoot 'TestResults\security')
     if ($LASTEXITCODE -ne 0) { throw 'Regressão de segurança do pacote.' }
+
+	$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+	try { $elevated = ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) }
+	finally { $identity.Dispose() }
+	$securityTestPath = Join-Path $PSScriptRoot 'TestResults\executables\ProductPackageSecurityTests.exe'
+	$securityTestRoot = Join-Path $PSScriptRoot 'TestResults\security'
+	if ($elevated) {
+		& $securityTestPath $securityTestRoot --elevated-token-only
+		$tokenRegressionExit = $LASTEXITCODE
+	} else {
+		if ($env:GITHUB_ACTIONS -eq 'true') { throw 'O teste do token elevado requer runner Windows elevado.' }
+		$tokenRegressionArguments = '"' + $securityTestRoot + '" --elevated-token-only'
+		$tokenRegressionProcess = Start-Process -FilePath $securityTestPath -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList $tokenRegressionArguments
+		$tokenRegressionExit = $tokenRegressionProcess.ExitCode
+	}
+	if ($tokenRegressionExit -ne 0) { throw 'Regressão no caminho Executar como administrador/token 1346.' }
+	Write-Output 'ELEVATED TOKEN REGRESSION PASS: identification-only thread token replaced by validated limited context.'
+
     & $consumerCompiler /nologo /target:exe /warnaserror+ /out:TestResults\executables\SecureInstallerStagingTests.exe /r:System.dll /r:System.Core.dll SecureInstallerStaging.cs Logger.cs Tests\SecureInstallerStagingTests.cs
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar teste do staging.' }
-    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    try { $elevated = ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) }
-    finally { $identity.Dispose() }
     if ($elevated) {
         & .\TestResults\executables\SecureInstallerStagingTests.exe
         $stagingExit = $LASTEXITCODE

@@ -17,6 +17,8 @@ Desde 10.1.12, a etapa Instalação permite concluir somente a preparação de d
 
 Uma instalação nova sugere a primeira pasta vazia entre `TurboRama`, `TurboRama-2` até `TurboRama-100`, sem criar ou alterar diretórios nessa consulta. O destino escolhido pelo usuário não é trocado ao voltar. A instalação verifica novamente o destino e nunca atualiza uma pasta ocupada por sobrescrita.
 
+Desde 10.1.13, a extração também trata o token de identificação insuficiente que algumas execuções elevadas herdam no Windows. Quando o token UAC vinculado não pode representar o usuário, o instalador cria um token LUA do mesmo usuário, remove privilégios administrativos, reduz a integridade para Medium e confirma essas condições antes de gravar. Isso corrige o erro Win32 1346 ao usar **Executar como administrador** sem permitir que a extração do produto rode elevada. O teste automatizado reproduz esse cenário em uma pasta temporária protegida.
+
 ## Verificação e compilação
 
 1. Windows 10/11, Visual Studio 2022 com MSBuild e targeting pack .NET Framework 4.7.2.

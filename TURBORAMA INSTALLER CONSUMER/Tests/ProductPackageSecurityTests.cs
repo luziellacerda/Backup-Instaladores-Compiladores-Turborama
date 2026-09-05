@@ -15,9 +15,10 @@ namespace InstallerHost
 
 		private static int Main(string[] args)
 		{
-			if (args.Length != 1)
+			if (args.Length < 1 || args.Length > 2 ||
+				(args.Length == 2 && !args[1].Equals("--elevated-token-only", StringComparison.Ordinal)))
 			{
-				Console.Error.WriteLine("Usage: ProductPackageSecurityTests.exe <safe-work-root>");
+				Console.Error.WriteLine("Usage: ProductPackageSecurityTests.exe <safe-work-root> [--elevated-token-only]");
 				return 2;
 			}
 
@@ -28,8 +29,15 @@ namespace InstallerHost
 
 			try
 			{
-				RunPackageTests(testRoot);
-				RunExtractionTests(testRoot);
+				if (args.Length == 2)
+				{
+					RunElevatedTokenRegressionTest(testRoot);
+				}
+				else
+				{
+					RunPackageTests(testRoot);
+					RunExtractionTests(testRoot);
+				}
 				Console.WriteLine("PRODUCT PACKAGE SECURITY TESTS: " + _passed + " PASS");
 				return 0;
 			}
@@ -200,6 +208,36 @@ namespace InstallerHost
 				"destination reparse point rejected");
 
 			RunRollbackTests(testRoot, zipBytes);
+		}
+
+		private static void RunElevatedTokenRegressionTest(string testRoot)
+		{
+			using (System.Security.Principal.WindowsIdentity identity = System.Security.Principal.WindowsIdentity.GetCurrent())
+			{
+				System.Security.Principal.WindowsPrincipal principal = new System.Security.Principal.WindowsPrincipal(identity);
+				Assert(principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator),
+					"token regression harness is running elevated like Run as administrator");
+			}
+			bool actionRan = false;
+			string destination = Path.Combine(testRoot, "elevated-token-destination");
+			LimitedUserImpersonation.RunWithIdentificationThreadTokenForSecurityTest(delegate
+			{
+				LimitedUserImpersonation.EnsureCurrentTokenIsLimited();
+				using (SecureExtractionGuard guard = SecureExtractionGuard.CreateForSecurityTest(destination))
+				{
+					using (FileStream output = guard.CreateNewFile(Path.Combine(destination, "token-probe.txt")))
+					{
+						byte[] content = Encoding.UTF8.GetBytes("limited-token-write");
+						output.Write(content, 0, content.Length);
+					}
+					guard.Commit();
+				}
+				actionRan = true;
+			});
+			Assert(actionRan,
+				"elevated launch ignores an inherited identification-only thread token and enters a validated limited context");
+			Assert(File.ReadAllText(Path.Combine(destination, "token-probe.txt"), Encoding.UTF8) == "limited-token-write",
+				"validated limited context creates and writes only inside the protected temporary destination");
 		}
 
 		private static void RunRollbackTests(string testRoot, byte[] zipBytes)
