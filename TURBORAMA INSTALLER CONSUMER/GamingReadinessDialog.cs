@@ -10,6 +10,8 @@ namespace InstallerHost
 	{
 		private readonly GamingReadinessProfile profile;
 		private readonly GamingReadinessRepairPlan repairPlan;
+		private readonly Label repairStatus;
+		internal bool RepairRequested { get; private set; }
 		private readonly ListView recommendationsList;
 		private readonly TabControl tabs;
 		protected override void OnHandleCreated(EventArgs e)
@@ -98,6 +100,10 @@ namespace InstallerHost
 			legal.Name = "DiagnosticLegal";
 			legal.ForeColor = Palette.Muted;
 			Ui.AddRow(footer, legal);
+			repairStatus = ConsumerLayout.Label("O reparo instala ou atualiza as dependências indicadas após sua confirmação.");
+			repairStatus.Name = "RepairStatus";
+			repairStatus.ForeColor = Palette.Muted;
+			Ui.AddRow(footer, repairStatus);
 			FlowLayoutPanel actions = new FlowLayoutPanel
 			{
 				Name = "DiagnosticActions", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -138,6 +144,7 @@ namespace InstallerHost
 		private void ConfirmRepair(object sender, EventArgs e)
 		{
 			if (!repairPlan.CanRepair) return;
+			if (!CheckRepairPrerequisites()) return;
 
 			string manualNotice = repairPlan.ManualActionCount > 0
 				? Environment.NewLine + Environment.NewLine + repairPlan.ManualActionCount +
@@ -153,8 +160,19 @@ namespace InstallerHost
 				"Reparar problemas de compatibilidade", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 			if (confirmation != DialogResult.Yes) return;
 
+			RepairRequested = true;
 			DialogResult = DialogResult.Retry;
 			Close();
+		}
+
+		internal bool CheckRepairPrerequisites()
+		{
+			string block = RuntimeInstallerHelper.GetInstallationPreflightBlockReason(profile, repairPlan.CanRepair);
+			if (block == null) return true;
+			repairStatus.Text = "Reparo não iniciado: " + block;
+			repairStatus.ForeColor = Palette.Warning;
+			Logger.Log(repairStatus.Text);
+			return false;
 		}
 
 		private TabPage BuildHardwarePage()

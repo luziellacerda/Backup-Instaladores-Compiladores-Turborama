@@ -605,6 +605,7 @@ namespace InstallerHost
 
 		private void ShowGamingReadinessDialog(object sender, EventArgs e)
 		{
+			if (IsInstallationRunning()) return;
 			if (gamingReadinessProfile == null)
 			{
 				BeginGamingReadinessScan(true);
@@ -614,8 +615,8 @@ namespace InstallerHost
 			}
 			using (GamingReadinessDialog dialog = new GamingReadinessDialog(gamingReadinessProfile))
 			{
-				DialogResult result = dialog.ShowDialog(FindForm());
-				if (result != DialogResult.Retry) return;
+				dialog.ShowDialog(FindForm());
+				if (!dialog.RepairRequested) return;
 				ApplyDiagnosticRepairSelection(dialog.RepairSelection);
 			}
 			BtnNext_Click(btnNext, EventArgs.Empty);
@@ -644,7 +645,7 @@ namespace InstallerHost
 
 		private void PrerequisiteOptionChanged()
 		{
-			if (!applyingDiagnosticRepairSelection) restrictedRepairComponentIds = null;
+			if (!applyingDiagnosticRepairSelection && !IsInstallationRunning()) restrictedRepairComponentIds = null;
 			UpdateProgressMaximumFromSelection();
 		}
 
@@ -683,6 +684,7 @@ namespace InstallerHost
 			btnBack.Enabled = !installing;
 			btnCancel.Enabled = !installing;
 			btnNext.Enabled = !installing;
+			if (readinessButton != null) readinessButton.Enabled = !installing && gamingReadinessProfile != null;
 			btnNext.Text = installing ? "Instalando..." : ConsumerText.GetString("Next >", Array.Empty<object>());
 			if (installing && contentStack != null && progressSection != null)
 			{
@@ -714,6 +716,12 @@ namespace InstallerHost
 			{
 				statusLabel.Text = progressDetailText;
 			}
+			if (Visible && contentStack != null && progressSection != null)
+			{
+				contentStack.PerformLayout();
+				contentStack.ScrollControlIntoView(progressSection);
+			}
+			Logger.Log(progressTitleText + ": " + progressDetailText);
 		}
 
 		private void UpdateProgressVisualsSafe()

@@ -126,6 +126,28 @@ namespace InstallerHost
                 verify(components.Items[0].Tag as string == profile.RuntimeStatuses[0].Component.OfficialUrl,
                     "Official-source URL is unchanged without copying or opening it");
                 verify(!string.IsNullOrWhiteSpace(components.Items[0].ToolTipText), "Long rows retain their complete content in a tooltip");
+				profile.PendingRestart = true;
+				repair.PerformClick();
+				Application.DoEvents();
+				Label repairStatus = Find<Label>(dialog, "RepairStatus");
+				verify(dialog.Visible && !dialog.RepairRequested && repairStatus.Text.Contains("reinicialização pendente"),
+					"Actual repair click with restart pending keeps dialog open and explains why nothing started");
+				profile.PendingRestart = false;
+				repair.PerformClick();
+				Application.DoEvents();
+				verify(dialog.Visible && !dialog.RepairRequested && repairStatus.Text.Contains("2 GB"),
+					"Actual repair click with low storage explains the required space without installing");
+				verify(ScreenBounds(repairStatus).Bottom <= ScreenBounds(repair).Top &&
+					ScreenBounds(close).Bottom <= dialog.RectangleToScreen(dialog.ClientRectangle).Bottom,
+					"Blocking explanation and close action remain visible at the minimum window size");
+				using (Bitmap blocked = new Bitmap(dialog.Width, dialog.Height))
+				{
+					dialog.DrawToBitmap(blocked, new Rectangle(Point.Empty, dialog.Size));
+					blocked.Save(Path.Combine(outputDirectory, "repair-blocked-760.png"), System.Drawing.Imaging.ImageFormat.Png);
+				}
+				profile.SystemDriveFreeBytes = RuntimeInstallerHelper.MinimumSystemDriveFreeBytes;
+				verify(dialog.CheckRepairPrerequisites() && !dialog.RepairRequested,
+					"Cleared blockers allow confirmation but never authorize installation by themselves");
                 dialog.Close();
             }
             return passed;
