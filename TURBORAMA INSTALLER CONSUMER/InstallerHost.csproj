@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+    <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
+    <IncludePrerequisitePayloads Condition="'$(IncludePrerequisitePayloads)' == ''">true</IncludePrerequisitePayloads>
+    <OutputType>WinExe</OutputType>
+    <!-- A payload-free validation build is a DLL, never a distributable installer. -->
+    <OutputType Condition="'$(IncludePrerequisitePayloads)' != 'true'">Library</OutputType>
+    <RootNamespace>InstallerHost</RootNamespace><AssemblyName>InstallerHost</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion><PlatformTarget>AnyCPU</PlatformTarget>
+    <OutputPath>bin\$(Configuration)\</OutputPath><WarningLevel>4</WarningLevel><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
+    <ApplicationManifest Condition="'$(IncludePrerequisitePayloads)' == 'true'">app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="'$(IncludePrerequisitePayloads)' == 'true'">resources\Builder.ico</ApplicationIcon>
+    <StartupObject Condition="'$(IncludePrerequisitePayloads)' == 'true'">InstallerHost.Program</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Management" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="BaseForm.cs" />
+    <Compile Include="BaseForm.Designer.cs" />
+    <Compile Include="FinishControl.cs" />
+    <Compile Include="FinishControl.Designer.cs" />
+    <Compile Include="InstallControl.cs" />
+    <Compile Include="InstallControl.Designer.cs" />
+    <Compile Include="InstallerInfo.cs" />
+    <Compile Include="LicenseControl.cs" />
+    <Compile Include="LicenseControl.Designer.cs" />
+    <Compile Include="Logger.cs" />
+    <Compile Include="MainForm.cs" />
+    <Compile Include="PrerequisiteControl.cs" />
+    <Compile Include="PrerequisiteControl.Designer.cs" />
+    <Compile Include="DownloadDisplayMask.cs" />
+    <Compile Include="GamingReadinessDialog.cs" />
+    <Compile Include="GamingReadinessModels.cs" />
+    <Compile Include="GamingRuntimeManifest.cs" />
+    <Compile Include="InstallerPackageSecurity.cs" />
+    <Compile Include="LimitedUserImpersonation.cs" />
+    <Compile Include="ProductPackageSecurity.cs" />
+    <Compile Include="PrerequisiteIntegrityCatalog.cs" />
+    <Compile Include="PrerequisiteBundle.cs" />
+    <Compile Include="PrerequisiteDetector.cs" />
+    <Compile Include="PrerequisiteDetector.Gaming.cs" />
+	<Compile Include="RuntimeVersionPolicy.cs" />
+    <Compile Include="RuntimeInstallerHelper.cs" />
+    <Compile Include="SecureProductExtraction.cs" />
+    <Compile Include="SecureInstallerStaging.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="NvidiaAppInstallerHelper.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="GpuDriverHelper.cs" />
+    <Compile Include="Texts.cs" />
+    <Compile Include="WelcomeControl.cs" />
+    <Compile Include="WelcomeControl.Designer.cs" />
+    <Compile Include="ConsumerLayout.cs" />
+    <Compile Include="UiKit.cs" />
+    <Compile Include="ActionButton.cs" />
+    <Compile Include="VectorIcon.cs" />
+    <EmbeddedResource Include="prerequisites.lock.json"><LogicalName>InstallerHost.prerequisites.lock.json</LogicalName></EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup Condition="'$(IncludePrerequisitePayloads)' == 'true'">
+    <EmbeddedResource Include="resources\prerequisites\vc_redist.x64.exe"><LogicalName>InstallerHost.resources.prerequisites.vc_redist.x64.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\vc_redist.x86.exe"><LogicalName>InstallerHost.resources.prerequisites.vc_redist.x86.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\NDP48-x86-x64-AllOS-ENU.exe"><LogicalName>InstallerHost.resources.prerequisites.NDP48-x86-x64-AllOS-ENU.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\directx_Jun2010_redist.exe"><LogicalName>InstallerHost.resources.prerequisites.directx_Jun2010_redist.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\windowsdesktop-runtime-8.0-win-x64.exe"><LogicalName>InstallerHost.resources.prerequisites.windowsdesktop-runtime-8.0-win-x64.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\windowsdesktop-runtime-8.0-win-x86.exe"><LogicalName>InstallerHost.resources.prerequisites.windowsdesktop-runtime-8.0-win-x86.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\windowsdesktop-runtime-10.0-win-x64.exe"><LogicalName>InstallerHost.resources.prerequisites.windowsdesktop-runtime-10.0-win-x64.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\windowsdesktop-runtime-10.0-win-x86.exe"><LogicalName>InstallerHost.resources.prerequisites.windowsdesktop-runtime-10.0-win-x86.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"><LogicalName>InstallerHost.resources.prerequisites.MicrosoftEdgeWebView2RuntimeInstallerX64.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\vcredist2005_x64.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2005_x64.zip</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\vcredist2005_x86.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2005_x86.zip</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\vcredist2008_x64.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2008_x64.zip</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\vcredist2008_x86.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2008_x86.zip</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\vcredist2010_x64.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2010_x64.zip</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\vcredist2010_x86.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2010_x86.zip</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\vcredist2012_x64.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2012_x64.zip</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\vcredist2012_x86.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2012_x86.zip</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\vcredist2013_x64.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2013_x64.zip</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\vcredist2013_x86.zip"><LogicalName>InstallerHost.resources.prerequisites.vcredist2013_x86.zip</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="resources\prerequisites\xnafx40_redist.msi"><LogicalName>InstallerHost.resources.prerequisites.xnafx40_redist.msi</LogicalName></EmbeddedResource>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

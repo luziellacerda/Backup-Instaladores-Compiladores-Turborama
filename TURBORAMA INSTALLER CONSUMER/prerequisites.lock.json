@@ -1,0 +1,359 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "turborama-installerhost-consumer-v10",
+  "releaseTag": "installerhost-consumer-v10.0.0-rc.1",
+  "policy": "Every embedded payload is immutable. Update this file only after an explicit source, signature and hash review.",
+  "payloads": [
+    {
+      "name": "vc_redist.x64.exe",
+      "length": 18731856,
+      "sha256": "843068991DAAA1F73AD9F6239BCE4D0F6A07A51F18C37EA2A867E9BECA71295C",
+      "fileType": "Exe",
+      "installTier": "Required",
+      "productVersion": "14.51.36247.0",
+      "signerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "signerThumbprint": "1D77A9B9E8FE2075D9AD15123257FB90DB0DA4A1",
+      "certificatePublicKeySha256": "008D8CF7E529750B650BC5C67D987682EEF1E799813B901A08CC67F87706E234",
+      "sourceUrls": [
+        "https://aka.ms/vc14/vc_redist.x64.exe"
+      ]
+    },
+    {
+      "name": "vc_redist.x86.exe",
+      "length": 6941536,
+      "sha256": "F0BAB33A302B3CDB2E11113760D016F54FD3D2632C65BA7834FAC4F0ABD7F1A3",
+      "fileType": "Exe",
+      "installTier": "Required",
+      "productVersion": "14.51.36247.0",
+      "signerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "signerThumbprint": "1D77A9B9E8FE2075D9AD15123257FB90DB0DA4A1",
+      "certificatePublicKeySha256": "008D8CF7E529750B650BC5C67D987682EEF1E799813B901A08CC67F87706E234",
+      "sourceUrls": [
+        "https://aka.ms/vc14/vc_redist.x86.exe"
+      ]
+    },
+    {
+      "name": "NDP48-x86-x64-AllOS-ENU.exe",
+      "length": 121346568,
+      "sha256": "0A3A390C47E639D0F7FC65B21195FEE6B7F65B066F80F70C60FAB191D14B7E40",
+      "fileType": "Exe",
+      "installTier": "Required",
+      "productVersion": "4.8.04115.00",
+      "signerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "signerThumbprint": "C2048FB509F1C37A8C3E9EC6648118458AA01780",
+      "certificatePublicKeySha256": "0D0E35A95E218C16F6AD0D0111607B270EB9394BBFAC392E6B50B3CAEA2B518B",
+      "sourceUrls": [
+        "https://go.microsoft.com/fwlink/?linkid=2088631",
+        "https://download.microsoft.com/download/f/3/a/f3a6af84-da23-40a5-8d1c-49cc10c8e76f/NDP48-x86-x64-AllOS-ENU.exe"
+      ]
+    },
+    {
+      "name": "directx_Jun2010_redist.exe",
+      "length": 100275120,
+      "sha256": "053F76DCBB28802E23341B6A787E3B0791C0FA5C8D4D011B1044172DBF89C73B",
+      "fileType": "Exe",
+      "installTier": "Recommended",
+      "productVersion": "9.00.8112.16421",
+      "signerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "signerThumbprint": "2485A7AFA98E178CB8F30C9838346B514AEA4769",
+      "certificatePublicKeySha256": "1E518B5AAAD3C4C8C5F09D32DE52ED22C6CFF339A0CEA9551170E4FBF72FBCAC",
+      "sourceUrls": [
+        "https://download.microsoft.com/download/1/7/1/1718CCC4-6315-4D8E-9543-8E28A4E18C4C/directx_Jun2010_redist.exe"
+      ],
+      "archiveEntries": [
+        {
+          "name": "DXSETUP.exe",
+          "length": 517976,
+          "sha256": "8F47D7121EF6532AD9AD9901E44E237F5C30448B752028C58A9D19521414E40D",
+          "signerSubject": "CN=Microsoft Corporation, OU=MOPR, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "signerThumbprint": "93859EBF98AFDEB488CCFA263899640E81BC49F1",
+          "certificatePublicKeySha256": "5A038A6A79D6BD5BD5A0C2382D422D0205FEEAE5323828EAE0F5C9D82B74BC1C"
+        }
+      ]
+    },
+    {
+      "name": "windowsdesktop-runtime-8.0-win-x64.exe",
+      "length": 58510672,
+      "sha256": "8BD710AFA5DE396C9EB2A3B68D00279B7B9ACA372A2443E9ACD4F48FFDEF3F2D",
+      "fileType": "Exe",
+      "installTier": "Recommended",
+      "productVersion": "8.0.30.36323",
+      "signerSubject": "CN=.NET, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "signerThumbprint": "BB793DB742624269BB5F4515BBE9A3DF418F588D",
+      "certificatePublicKeySha256": "A37B9192FF824765B5B8082EC4FB8EFB93B20C43C97BE6006940310738357D4C",
+      "sourceUrls": [
+        "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.30/windowsdesktop-runtime-8.0.30-win-x64.exe"
+      ]
+    },
+    {
+      "name": "windowsdesktop-runtime-8.0-win-x86.exe",
+      "length": 53581064,
+      "sha256": "1142A5BB7395D624CFB5B728BF5A34BAF1990C622B7671336F97FB4023516334",
+      "fileType": "Exe",
+      "installTier": "Recommended",
+      "productVersion": "8.0.30.36323",
+      "signerSubject": "CN=.NET, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "signerThumbprint": "BB793DB742624269BB5F4515BBE9A3DF418F588D",
+      "certificatePublicKeySha256": "A37B9192FF824765B5B8082EC4FB8EFB93B20C43C97BE6006940310738357D4C",
+      "sourceUrls": [
+        "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.30/windowsdesktop-runtime-8.0.30-win-x86.exe"
+      ]
+    },
+    {
+      "name": "windowsdesktop-runtime-10.0-win-x64.exe",
+      "length": 60001888,
+      "sha256": "61D2E1447B185D6F99C0D5799896240B48246F5440648BC031EBDB159A3BF3D1",
+      "fileType": "Exe",
+      "installTier": "Recommended",
+      "productVersion": "10.0.11.50000",
+      "signerSubject": "CN=.NET, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "signerThumbprint": "BB793DB742624269BB5F4515BBE9A3DF418F588D",
+      "certificatePublicKeySha256": "A37B9192FF824765B5B8082EC4FB8EFB93B20C43C97BE6006940310738357D4C",
+      "sourceUrls": [
+        "https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe"
+      ]
+    },
+    {
+      "name": "windowsdesktop-runtime-10.0-win-x86.exe",
+      "length": 55543544,
+      "sha256": "28DF04D05F7735ABD201373EFFCE57B439796BB102A659F09652BA53F4A7584A",
+      "fileType": "Exe",
+      "installTier": "Optional",
+      "productVersion": "10.0.11.50000",
+      "signerSubject": "CN=.NET, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "signerThumbprint": "BB793DB742624269BB5F4515BBE9A3DF418F588D",
+      "certificatePublicKeySha256": "A37B9192FF824765B5B8082EC4FB8EFB93B20C43C97BE6006940310738357D4C",
+      "sourceUrls": [
+        "https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x86.exe"
+      ]
+    },
+    {
+      "name": "MicrosoftEdgeWebView2RuntimeInstallerX64.exe",
+      "length": 258614480,
+      "sha256": "E7FA35755196AD9223596EF021A1CE6799509142EAA40BA35F634026BE50B831",
+      "fileType": "Exe",
+      "installTier": "Recommended",
+      "productVersion": "1.3.265.7",
+      "signerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "signerThumbprint": "4028CAD637509D4744B17EC5B42AED8D7A31E6AF",
+      "certificatePublicKeySha256": "D04A7912B8102AC48B902DC62210A634311E86E6A9B57498D97EE02938135AF8",
+      "sourceUrls": [
+        "https://go.microsoft.com/fwlink/?linkid=2124701"
+      ]
+    },
+    {
+      "name": "vcredist2005_x64.zip",
+      "length": 3134024,
+      "sha256": "28C4F6EA9333859A418857D60ED41FC38BD96CF5C85A697A1256EB82DA2F3692",
+      "fileType": "Zip",
+      "installTier": "Recommended",
+      "sourceUrls": [
+        "https://github.com/luziellacerda/Backup-Instaladores-Compiladores-Turborama/releases/download/installerhost-neon-freshpc-v9.0.0-prerelease/vcredist2005_x64.zip"
+      ],
+      "archiveEntries": [
+        {
+          "name": "vcredist2005_x64.exe",
+          "length": 3175832,
+          "sha256": "0551A61C85B718E1FA015B0C3E3F4C4EEA0637055536C00E7969286B4FA663E0",
+          "signerSubject": "CN=Microsoft Corporation, OU=MOPR, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "signerThumbprint": "93859EBF98AFDEB488CCFA263899640E81BC49F1",
+          "certificatePublicKeySha256": "5A038A6A79D6BD5BD5A0C2382D422D0205FEEAE5323828EAE0F5C9D82B74BC1C"
+        }
+      ]
+    },
+    {
+      "name": "vcredist2005_x86.zip",
+      "length": 2665992,
+      "sha256": "6288C3BFCF3A5F2BE3E824E1D32D9E0FDF015569FD7E0FF102468491B3D12BEB",
+      "fileType": "Zip",
+      "installTier": "Recommended",
+      "sourceUrls": [
+        "https://github.com/luziellacerda/Backup-Instaladores-Compiladores-Turborama/releases/download/installerhost-neon-freshpc-v9.0.0-prerelease/vcredist2005_x86.zip"
+      ],
+      "archiveEntries": [
+        {
+          "name": "vcredist2005_x86.exe",
+          "length": 2707352,
+          "sha256": "4EE4DA0FE62D5FA1B5E80C6E6D88A4A2F8B3B140C35DA51053D0D7B72A381D29",
+          "signerSubject": "CN=Microsoft Corporation, OU=MOPR, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "signerThumbprint": "93859EBF98AFDEB488CCFA263899640E81BC49F1",
+          "certificatePublicKeySha256": "5A038A6A79D6BD5BD5A0C2382D422D0205FEEAE5323828EAE0F5C9D82B74BC1C"
+        }
+      ]
+    },
+    {
+      "name": "vcredist2008_x64.zip",
+      "length": 5187173,
+      "sha256": "5AAB42093A3D29A7584BE09D25D0FC25FC2D515893FAAEE72147FADA51D0642E",
+      "fileType": "Zip",
+      "installTier": "Recommended",
+      "sourceUrls": [
+        "https://github.com/luziellacerda/Backup-Instaladores-Compiladores-Turborama/releases/download/installerhost-neon-freshpc-v9.0.0-prerelease/vcredist2008_x64.zip"
+      ],
+      "archiveEntries": [
+        {
+          "name": "vcredist2008_x64.exe",
+          "length": 5207896,
+          "sha256": "B811F2C047A3E828517C234BD4AA4883E1EC591D88FAD21289AE68A6915A6665",
+          "signerSubject": "CN=Microsoft Corporation, OU=MOPR, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "signerThumbprint": "93859EBF98AFDEB488CCFA263899640E81BC49F1",
+          "certificatePublicKeySha256": "5A038A6A79D6BD5BD5A0C2382D422D0205FEEAE5323828EAE0F5C9D82B74BC1C"
+        }
+      ]
+    },
+    {
+      "name": "vcredist2008_x86.zip",
+      "length": 4461135,
+      "sha256": "2E7D174A18F381A3AB9536627854B33E38D939C78F4CD505662A087973C98DC1",
+      "fileType": "Zip",
+      "installTier": "Recommended",
+      "sourceUrls": [
+        "https://github.com/luziellacerda/Backup-Instaladores-Compiladores-Turborama/releases/download/installerhost-neon-freshpc-v9.0.0-prerelease/vcredist2008_x86.zip"
+      ],
+      "archiveEntries": [
+        {
+          "name": "vcredist2008_x86.exe",
+          "length": 4479832,
+          "sha256": "6B3E4C51C6C0E5F68C8A72B497445AF3DBF976394CBB62AA23569065C28DEEB6",
+          "signerSubject": "CN=Microsoft Corporation, OU=MOPR, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "signerThumbprint": "93859EBF98AFDEB488CCFA263899640E81BC49F1",
+          "certificatePublicKeySha256": "5A038A6A79D6BD5BD5A0C2382D422D0205FEEAE5323828EAE0F5C9D82B74BC1C"
+        }
+      ]
+    },
+    {
+      "name": "vcredist2010_x64.zip",
+      "length": 10248967,
+      "sha256": "25E5AA397D5325CD61199152C83F58107A3D746853923D9D930B53808082EA02",
+      "fileType": "Zip",
+      "installTier": "Recommended",
+      "sourceUrls": [
+        "https://github.com/luziellacerda/Backup-Instaladores-Compiladores-Turborama/releases/download/installerhost-neon-freshpc-v9.0.0-prerelease/vcredist2010_x64.zip"
+      ],
+      "archiveEntries": [
+        {
+          "name": "vcredist2010_x64.exe",
+          "length": 10274136,
+          "sha256": "CC7EC044218C72A9A15FCA2363BAED8FC51095EE3B2A7593476771F9EBA3D223",
+          "signerSubject": "CN=Microsoft Corporation, OU=MOPR, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "signerThumbprint": "93859EBF98AFDEB488CCFA263899640E81BC49F1",
+          "certificatePublicKeySha256": "5A038A6A79D6BD5BD5A0C2382D422D0205FEEAE5323828EAE0F5C9D82B74BC1C"
+        }
+      ]
+    },
+    {
+      "name": "vcredist2010_x86.zip",
+      "length": 8964938,
+      "sha256": "85A5E31B60ED1BB499F5F4AC79C7BDB957C88455EF3AFCBDB773415EEB5A7A49",
+      "fileType": "Zip",
+      "installTier": "Recommended",
+      "sourceUrls": [
+        "https://github.com/luziellacerda/Backup-Instaladores-Compiladores-Turborama/releases/download/installerhost-neon-freshpc-v9.0.0-prerelease/vcredist2010_x86.zip"
+      ],
+      "archiveEntries": [
+        {
+          "name": "vcredist2010_x86.exe",
+          "length": 8990552,
+          "sha256": "67313B3D1BC86E83091E8DE22981F14968F1A7FB12EB7AD467754C40CD94CC3D",
+          "signerSubject": "CN=Microsoft Corporation, OU=MOPR, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "signerThumbprint": "93859EBF98AFDEB488CCFA263899640E81BC49F1",
+          "certificatePublicKeySha256": "5A038A6A79D6BD5BD5A0C2382D422D0205FEEAE5323828EAE0F5C9D82B74BC1C"
+        }
+      ]
+    },
+    {
+      "name": "vcredist2012_x64.zip",
+      "length": 6984984,
+      "sha256": "0F1A197937FF7D71926BBB94C8655836DD1F9962D348EED8D86E202C068540C3",
+      "fileType": "Zip",
+      "installTier": "Recommended",
+      "sourceUrls": [
+        "https://github.com/luziellacerda/Backup-Instaladores-Compiladores-Turborama/releases/download/installerhost-neon-freshpc-v9.0.0-prerelease/vcredist2012_x64.zip"
+      ],
+      "archiveEntries": [
+        {
+          "name": "vcredist2012_x64.exe",
+          "length": 7186992,
+          "sha256": "681BE3E5BA9FD3DA02C09D7E565ADFA078640ED66A0D58583EFAD2C1E3CC4064",
+          "signerSubject": "CN=Microsoft Corporation, OU=MOPR, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "signerThumbprint": "108E2BA23632620C427C570B6D9DB51AC31387FE",
+          "certificatePublicKeySha256": "B706B86526E1E355A76004BFFF409B0A080AF71C63ADFD92FB170089F944F6B5"
+        }
+      ]
+    },
+    {
+      "name": "vcredist2012_x86.zip",
+      "length": 6352351,
+      "sha256": "A489D8B94EFE09AA02437967757E875B09021E21BCF338234DE7B78A8CD32B45",
+      "fileType": "Zip",
+      "installTier": "Recommended",
+      "sourceUrls": [
+        "https://github.com/luziellacerda/Backup-Instaladores-Compiladores-Turborama/releases/download/installerhost-neon-freshpc-v9.0.0-prerelease/vcredist2012_x86.zip"
+      ],
+      "archiveEntries": [
+        {
+          "name": "vcredist2012_x86.exe",
+          "length": 6554576,
+          "sha256": "B924AD8062EAF4E70437C8BE50FA612162795FF0839479546CE907FFA8D6E386",
+          "signerSubject": "CN=Microsoft Corporation, OU=MOPR, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "signerThumbprint": "108E2BA23632620C427C570B6D9DB51AC31387FE",
+          "certificatePublicKeySha256": "B706B86526E1E355A76004BFFF409B0A080AF71C63ADFD92FB170089F944F6B5"
+        }
+      ]
+    },
+    {
+      "name": "vcredist2013_x64.zip",
+      "length": 6981901,
+      "sha256": "2FBCBE7BC5AC2829FB38B1772299620C65228CC9262FB1EC38EDA59D3630D8B0",
+      "fileType": "Zip",
+      "installTier": "Recommended",
+      "sourceUrls": [
+        "https://github.com/luziellacerda/Backup-Instaladores-Compiladores-Turborama/releases/download/installerhost-neon-freshpc-v9.0.0-prerelease/vcredist2013_x64.zip"
+      ],
+      "archiveEntries": [
+        {
+          "name": "vcredist2013_x64.exe",
+          "length": 7200744,
+          "sha256": "A4BBA7701E355AE29C403431F871A537897C363E215CAFE706615E270984F17C",
+          "signerSubject": "CN=Microsoft Corporation, OU=MOPR, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "signerThumbprint": "98ED99A67886D020C564923B7DF25E9AC019DF26",
+          "certificatePublicKeySha256": "EBF85C3F1DAF764369C993129BB282BDA7258E1784729B43693EBEB2A9EFB996"
+        }
+      ]
+    },
+    {
+      "name": "vcredist2013_x86.zip",
+      "length": 6290973,
+      "sha256": "B4166D6AFD646B9174A7E93C9FAB6A3D49F6103A5847C1BF02BBDA694A3B12D4",
+      "fileType": "Zip",
+      "installTier": "Recommended",
+      "sourceUrls": [
+        "https://github.com/luziellacerda/Backup-Instaladores-Compiladores-Turborama/releases/download/installerhost-neon-freshpc-v9.0.0-prerelease/vcredist2013_x86.zip"
+      ],
+      "archiveEntries": [
+        {
+          "name": "vcredist2013_x86.exe",
+          "length": 6510136,
+          "sha256": "53B605D1100AB0A88B867447BBF9274B5938125024BA01F5105A9E178A3DCDBD",
+          "signerSubject": "CN=Microsoft Corporation, OU=MOPR, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+          "signerThumbprint": "98ED99A67886D020C564923B7DF25E9AC019DF26",
+          "certificatePublicKeySha256": "EBF85C3F1DAF764369C993129BB282BDA7258E1784729B43693EBEB2A9EFB996"
+        }
+      ]
+    },
+    {
+      "name": "xnafx40_redist.msi",
+      "length": 7059456,
+      "sha256": "2B03C130C4BB5F106B9619BEA8150201F7E982709CFE9A0CC8BDE75FF0A83B27",
+      "fileType": "Msi",
+      "installTier": "Optional",
+      "productVersion": "4.0 Refresh",
+      "signerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+      "signerThumbprint": "ABDCA79AF9DD48A0EA702AD45260B3C03093FB4B",
+      "certificatePublicKeySha256": "26CD6D758B5D6A0E814295E0A5FF0827BB40579D49F257E9331A3E7AC3402180",
+      "sourceUrls": [
+        "https://download.microsoft.com/download/5/3/A/53A804C8-EC78-43CD-A0F0-2FB4D45603D3/xnafx40_redist.msi"
+      ]
+    }
+  ]
+}
