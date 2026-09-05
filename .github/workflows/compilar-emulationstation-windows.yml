@@ -314,6 +314,17 @@ jobs:
           # the existing trust check rejects this absent agent (exit 32).
           Invoke-SmokeTest '--pix-agent-trust-self-test' 32
 
+          # Publish this exact tested executable separately for existing PIX
+          # installations; its DLLs/resources still come from the full package.
+          $standaloneExe = Join-Path $stage 'emulationstation.exe'
+          $exeHash = (Get-FileHash -LiteralPath $standaloneExe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $exeHashFile = Join-Path $env:RUNNER_TEMP 'emulationstation.exe.sha256'
+          "$exeHash *emulationstation.exe" |
+            Set-Content -LiteralPath $exeHashFile -Encoding ascii
+          "EXE_PATH=$standaloneExe" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          "EXE_HASH_PATH=$exeHashFile" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          "EXE_SHA256=$exeHash" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+
           $manifest = Join-Path $stage 'SHA256SUMS.txt'
           Get-ChildItem -LiteralPath $stage -Recurse -File |
             Sort-Object FullName |
@@ -345,7 +356,7 @@ jobs:
           "Binarios x64 verificados: $($portableBinaries.Count)"
           "Plugins VLC: $pluginCount"
 
-      - name: Publicar ZIP em um release separado
+      - name: Publicar EXE e ZIP no release PIX separado
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -358,6 +369,7 @@ jobs:
           - Commit de win32-libs: $env:WIN32_LIBS_COMMIT
           - Arquivos no pacote: $env:PACKAGE_FILE_COUNT
           - SHA-256 do ZIP: $env:ZIP_SHA256
+          - SHA-256 do EXE avulso: $env:EXE_SHA256
           - Runner: Windows Server 2022 / Visual Studio 2022
           - Audio: espera limitada pela liberacao VLC antes do jogo
           - RetroArch: reparador com backup incluido; veja AUDIO-LEIA-ME.txt
@@ -365,6 +377,11 @@ jobs:
 
           O executavel nao possui assinatura digital. Use `TESTAR-ISOLADO.cmd`
           para testar sem alterar o perfil normal do EmulationStation.
+
+          Para atualizar uma instalacao PIX existente, baixe somente
+          emulationstation.exe. Feche o programa, guarde uma copia do EXE antigo
+          e substitua-o na mesma pasta, mantendo as DLLs, plugins, recursos e
+          configuracoes. O EXE avulso nao e um instalador nem um pacote autonomo.
           "@ | Set-Content -LiteralPath $notes -Encoding utf8NoBOM
 
           & gh release view $env:RELEASE_TAG `
@@ -373,7 +390,7 @@ jobs:
 
           if ($releaseExists) {
             & gh release upload $env:RELEASE_TAG `
-              $env:ZIP_PATH $env:ZIP_HASH_PATH `
+              $env:ZIP_PATH $env:ZIP_HASH_PATH $env:EXE_PATH $env:EXE_HASH_PATH `
               --repo $env:GITHUB_REPOSITORY --clobber
             if ($LASTEXITCODE -ne 0) {
               throw 'Falha ao atualizar os arquivos do release.'
@@ -393,7 +410,7 @@ jobs:
           }
           else {
             & gh release create $env:RELEASE_TAG `
-              $env:ZIP_PATH $env:ZIP_HASH_PATH `
+              $env:ZIP_PATH $env:ZIP_HASH_PATH $env:EXE_PATH $env:EXE_HASH_PATH `
               --repo $env:GITHUB_REPOSITORY `
               --target $env:GITHUB_SHA `
               --title "PIX-SERVIDOR-CONTADOR - Windows x64" `
@@ -410,5 +427,6 @@ jobs:
             ''
             "- Release: [$env:RELEASE_TAG]($releaseUrl)"
             "- SHA-256: ``$env:ZIP_SHA256``"
+            "- EXE avulso SHA-256: ``$env:EXE_SHA256``"
             "- Arquivos no pacote: $env:PACKAGE_FILE_COUNT"
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
