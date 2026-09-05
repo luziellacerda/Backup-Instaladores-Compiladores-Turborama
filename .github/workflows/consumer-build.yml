@@ -1,0 +1,70 @@
+name: Compilar TurboRama Consumer
+
+on:
+  push:
+    branches: [feature/consumer-original-flow]
+    paths:
+      - 'TURBORAMA INSTALLER CONSUMER/**'
+      - '.github/workflows/consumer-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: consumer-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: TURBORAMA INSTALLER CONSUMER
+    steps:
+      - name: Obter fontes do commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            TURBORAMA INSTALLER CONSUMER
+            .github
+
+      - name: Restaurar os pacotes exatos do catalogo
+        run: ./Restore-ConsumerPayloads.ps1
+
+      - name: Testar, compilar e verificar o EXE
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $msbuild = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+          if (-not $msbuild) { throw 'MSBuild nao encontrado.' }
+          New-Item -ItemType Directory -Path TestResults -Force | Out-Null
+          & ./Build-Consumer.ps1 -MSBuildPath $msbuild 2>&1 | Tee-Object -FilePath TestResults/github-build.log
+          if ($LASTEXITCODE -ne 0) { throw 'Compilacao ou testes falharam.' }
+
+      - name: Disponibilizar instalador e comprovantes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: TurboRama-Consumer-${{ github.sha }}
+          path: |
+            TURBORAMA INSTALLER CONSUMER/bin/Release/InstallerHost.exe
+            TURBORAMA INSTALLER CONSUMER/bin/Release/InstallerHost.exe.sha256
+            TURBORAMA INSTALLER CONSUMER/bin/Release/InstallerHost-build-manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Disponibilizar registro dos testes
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: TurboRama-testes-${{ github.sha }}
+          path: |
+            TURBORAMA INSTALLER CONSUMER/TestResults/github-build.log
+            TURBORAMA INSTALLER CONSUMER/TestResults/consumer/*.png
+            TURBORAMA INSTALLER CONSUMER/TestResults/diagnostic/*.png
+          if-no-files-found: warn
+          retention-days: 14
