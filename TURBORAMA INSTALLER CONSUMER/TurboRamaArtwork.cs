@@ -19,6 +19,16 @@ namespace InstallerHost
         private readonly bool banner;
         internal bool IsGlowRunning { get { return glowTimer.Enabled; } }
         internal static Size ArtworkSize { get { return Artwork.Value.Size; } }
+        // Fit the WHOLE image, right-aligned. Never crop a part of the aircraft
+        // to fill a short/wide wizard body.
+        internal static Rectangle FitArtwork(Size viewport)
+        {
+            Size source = ArtworkSize;
+            float scale = Math.Min(viewport.Width / (float)source.Width, viewport.Height / (float)source.Height);
+            int width = Math.Max(1, (int)(source.Width * scale));
+            int height = Math.Max(1, (int)(source.Height * scale));
+            return new Rectangle(viewport.Width - width, (viewport.Height - height) / 2, width, height);
+        }
 
         internal TurboRamaArtwork(bool bannerMode)
         {
@@ -77,29 +87,29 @@ namespace InstallerHost
             if (!SystemInformation.HighContrast)
             {
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                Image art = Artwork.Value;
-                if (banner)
+                // The brand strip stays quiet; the full photograph belongs in
+                // the welcome body, not repeated as a cropped header thumbnail.
+                if (!banner)
                 {
-                    // Wide cinematic crop: keep both turbines in the header.
-                    int artWidth = Math.Min(Width, (int)(Height * 5.6f));
-                    Rectangle target = new Rectangle(Width - artWidth, 0, artWidth, Height);
-                    g.DrawImage(art, target, new Rectangle(560, 310, 1112, 230), GraphicsUnit.Pixel);
-                    using (LinearGradientBrush fade = new LinearGradientBrush(target, BackColor, Color.FromArgb(36, BackColor), 0f))
-                        g.FillRectangle(fade, target);
+                    Rectangle target = FitArtwork(ClientSize);
+                    using (System.Drawing.Imaging.ImageAttributes attributes = new System.Drawing.Imaging.ImageAttributes())
+                    {
+                        attributes.SetWrapMode(WrapMode.TileFlipXY);
+                        g.DrawImage(Artwork.Value, target, 0, 0, ArtworkSize.Width, ArtworkSize.Height,
+                            GraphicsUnit.Pixel, attributes);
+                    }
+                    // Feather all image edges into the page; the copy is transparent
+                    // over this continuous gradient, never on an opaque rectangle.
+                    Fade(g, new Rectangle(target.Left, target.Top, Math.Max(2, (int)(target.Width * .36f)), target.Height), 0f);
+                    Fade(g, new Rectangle(target.Left, target.Top, target.Width, Math.Max(2, (int)(target.Height * .18f))), 90f);
+                    Fade(g, new Rectangle(target.Left, target.Bottom - Math.Max(2, (int)(target.Height * .20f)), target.Width, Math.Max(2, (int)(target.Height * .20f))), 270f);
+                    Fade(g, new Rectangle(target.Right - Math.Max(2, (int)(target.Width * .06f)), target.Top, Math.Max(2, (int)(target.Width * .06f)), target.Height), 180f);
                 }
-                else
-                {
-                    float scale = Math.Max(Width / (float)art.Width, Height / (float)art.Height);
-                    int w = (int)Math.Ceiling(art.Width * scale), h = (int)Math.Ceiling(art.Height * scale);
-                    g.DrawImage(art, new Rectangle(Width - w, (Height - h) / 2, w, h));
-                }
-                using (Pen edge = new Pen(Color.FromArgb(70, Palette.Violet)))
-                    g.DrawRectangle(edge, 0, 0, Width - 1, Height - 1);
             }
             if (banner)
             {
                 float dpi = g.DpiX / 96f;
-                int left = (int)(12 * dpi);
+                int left = (int)(2 * dpi);
                 using (Font title = new Font("Segoe UI", 25, FontStyle.Bold | FontStyle.Italic))
                 using (Font subtitle = new Font("Segoe UI Semibold", 8.5f))
                 {
@@ -111,14 +121,27 @@ namespace InstallerHost
                         TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.PreserveGraphicsClipping);
                 }
                 int glow = 135 + (int)(30 * Math.Sin(phase));
-                using (Pen halo = new Pen(Color.FromArgb(24, Palette.Accent), 7))
-                using (Pen rail = new Pen(SystemInformation.HighContrast ? SystemColors.ControlText : Color.FromArgb(glow, Palette.Accent), 2))
+                using (LinearGradientBrush rail = new LinearGradientBrush(new Rectangle(0, Height - 7, Width, 7),
+                    SystemInformation.HighContrast ? SystemColors.ControlText : Color.FromArgb(glow, Palette.Accent),
+                    Color.FromArgb(0, Palette.Accent), 0f))
                 {
-                    g.DrawLine(halo, 0, Height - 2, Width * .35f, Height - 2);
-                    g.DrawLine(rail, 0, Height - 2, Width * .35f, Height - 2);
+                    g.FillRectangle(rail, 0, Height - 2, Width, 2);
                 }
             }
             base.OnPaint(e);
+        }
+        private void Fade(Graphics graphics, Rectangle bounds, float angle)
+        {
+            using (LinearGradientBrush brush = new LinearGradientBrush(bounds, BackColor, Color.FromArgb(0, BackColor), angle))
+            {
+                brush.WrapMode = WrapMode.TileFlipXY;
+                brush.Blend = new Blend
+                {
+                    Positions = new[] { 0f, .2f, .4f, .6f, .8f, 1f },
+                    Factors = new[] { 0f, .104f, .352f, .648f, .896f, 1f }
+                };
+                graphics.FillRectangle(brush, bounds);
+            }
         }
         protected override void Dispose(bool disposing)
         { if (disposing) glowTimer.Dispose(); base.Dispose(disposing); }

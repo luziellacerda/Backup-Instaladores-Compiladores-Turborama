@@ -95,6 +95,30 @@ namespace InstallerHost
                                 Control description = Find<Control>(form.TestPage, "WelcomeDescription");
                                 Check(description.Parent.Width <= hero.Width / 2 && description.Parent.Height <= hero.Height,
                                     "Welcome copy stays in its own column and leaves the F-15 visible");
+                                Check(body.ClientRectangle.Contains(hero.Bounds), "Welcome artwork fits available height, with no vertical overflow");
+                                Control copy = Find<Control>(form.TestPage, "WelcomeCopy");
+                                Label headline = Find<Label>(form.TestPage, "WelcomeHeadline");
+                                Check(hero.ClientRectangle.Contains(copy.Bounds), "Welcome copy is fully inside the artwork viewport");
+                                Check(copy.BackColor == Color.Transparent, "Welcome has no opaque text rectangle cutting through the image");
+                                Check(copy.ClientRectangle.Contains(description.Bounds) && copy.ClientRectangle.Contains(headline.Bounds) && headline.Bottom <= description.Top,
+                                    "Welcome headline and description do not overlap or clip");
+                                Check(headline.Height <= headline.Font.Height * 2 + 4, "Welcome headline occupies at most two lines");
+                                Check(description.Height >= description.GetPreferredSize(new Size(description.Width, 0)).Height,
+                                    "Full welcome description fits at the current width");
+                                Check(!((ScrollableControl)hero).VerticalScroll.Visible && !((ScrollableControl)body).VerticalScroll.Visible,
+                                    "Welcome has no vertical scrollbar");
+                            }
+                            if (step == 1)
+                            {
+                                TextBox license = Find<TextBox>(form.TestPage, "licenseTextBox");
+                                Control card = Find<Control>(form.TestPage, "LicenseCard");
+                                Check(license.Text == Texts.GetString("LicenseText"), "Original license content is unchanged");
+                                Check(license.Left >= 20 && license.Top >= 20 && card.Width - license.Right >= 20 && card.Height - license.Bottom >= 20,
+                                    "License text is inset from every card edge");
+                                Check(license.Height >= 140 && body.ClientRectangle.Contains(card.Parent.Bounds), "License has useful reading height without page overflow");
+                                Check(license.Height % license.Font.Height == 0, "License reading area ends on a complete text line");
+                                Check(Find<CheckBox>(form.TestPage, "chkAgree").Bottom <= card.Parent.ClientSize.Height,
+                                    "License agreement stays visible below the reading area");
                             }
                             ValidateLayout(form.TestPage);
                             using (Bitmap bitmap = new Bitmap(form.Width, form.Height))

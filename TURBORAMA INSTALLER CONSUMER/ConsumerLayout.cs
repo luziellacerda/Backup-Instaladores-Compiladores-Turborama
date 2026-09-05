@@ -70,7 +70,7 @@ namespace InstallerHost
                 case "CancelButtonTitle": return "Cancelar instalação";
                 case "Finish": return "Concluir";
                 case "Welcome": return "Bem-vindo ao TurboRama.";
-                case "WelcomeText": return "Prepare os componentes e instale o TurboRama no seu PC.\r\n\r\nFeche os outros programas e clique em Avançar para começar.";
+                case "WelcomeText": return "Prepare seu PC e instale o TurboRama.\r\n\r\nFeche outros programas e clique em Avançar.";
                 case "LicenseIntro": return "Termos de licença";
                 case "AgreeText": return "Li e aceito os termos da licença.";
                 case "PrerequisiteIntro": return "Prepare seu computador.";
