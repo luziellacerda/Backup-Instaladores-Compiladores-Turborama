@@ -5,6 +5,9 @@ if(WIN32)
 	option(INJECT_VERSION "Inject Version" OFF)
 
 	if(INJECT_VERSION)
+		if(TURBORAMA_REQUIRE_SUITE_LICENSE)
+			message(FATAL_ERROR "Suite edition version metadata must not be overwritten by INJECT_VERSION")
+		endif()
 	
 		# Main version number
 		set(VERSION_MAJOR 42)
@@ -272,6 +275,11 @@ endif()
 
 #-------------------------------------------------------------------------------
 # define OS specific sources and headers
+if(TURBORAMA_REQUIRE_SUITE_LICENSE)
+	list(APPEND ES_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteAccessGate.h)
+	list(APPEND ES_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteAccessGate.cpp)
+endif()
+
 if(MSVC)
     LIST(APPEND ES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/EmulationStation.rc
@@ -348,6 +356,12 @@ include_directories(${COMMON_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_executable(emulationstation ${ES_SOURCES} ${ES_HEADERS})
 if(NOT TURBORAMA_ENABLE_COMMERCIAL_SERVICES)
 	target_compile_definitions(emulationstation PRIVATE TURBORAMA_NO_COMMERCIAL_SERVICES=1)
+endif()
+if(TURBORAMA_REQUIRE_SUITE_LICENSE)
+	target_compile_definitions(emulationstation PRIVATE
+		TURBORAMA_REQUIRE_SUITE_LICENSE=1
+		TURBORAMA_SUITE_HELPER_SHA256="${TURBORAMA_SUITE_HELPER_SHA256}")
+	target_link_libraries(emulationstation bcrypt advapi32 shell32 ole32)
 endif()
 target_link_libraries(emulationstation ${COMMON_LIBRARIES} es-core)
 if(MSVC)

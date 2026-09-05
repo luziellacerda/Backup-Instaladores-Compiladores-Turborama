@@ -34,6 +34,9 @@
 #include "Paths.h"
 #include "resources/TextureData.h"
 #include "views/gamelist/GameNameFormatter.h"
+#ifdef TURBORAMA_REQUIRE_SUITE_LICENSE
+#include "SuiteAccessGate.h"
+#endif
 #ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 #include "CreditManager.h"
 #include "CreditWarningOverlay.h"
@@ -1207,6 +1210,18 @@ std::string FileData::getMessageFromExitCode(int exitCode)
 bool FileData::launchGame(Window* window, LaunchGameOptions options)
 {
 	LOG(LogInfo) << "Attempting to launch game...";
+
+#ifdef TURBORAMA_REQUIRE_SUITE_LICENSE
+	// Check before audio/window teardown. Existing emulator lifecycle, metadata,
+	// save-state handling and playback restoration remain owned by this method.
+	if (!SuiteAccessGate::instance().authorized())
+	{
+		window->pushGui(new GuiMsgBox(window,
+			_("O acesso do TurboRama Suite terminou. Verifique a ativacao e a conexao."),
+			_("OK"), nullptr));
+		return false;
+	}
+#endif
 
 	FileData* gameToUpdate = getSourceFileData();
 	if (gameToUpdate == nullptr)

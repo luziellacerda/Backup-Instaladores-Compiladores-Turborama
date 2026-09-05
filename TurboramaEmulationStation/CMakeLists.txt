@@ -22,6 +22,27 @@ option(USE_SYSTEM_PUGIXML "Set to ON to use system-wide pugixml library" OFF)
 option(TURBORAMA_ENABLE_COMMERCIAL_SERVICES
 	"Enable TurboRama PIX, credit, accounting and rental-time services" OFF)
 
+option(TURBORAMA_REQUIRE_SUITE_LICENSE
+	"Require the existing TurboRama Suite activation for this Windows client edition" ON)
+set(TURBORAMA_SUITE_HELPER_SHA256 "" CACHE STRING
+	"Build-time SHA-256 of the self-contained TurboRama.Suite.Access.exe shipped with this edition")
+if(TURBORAMA_REQUIRE_SUITE_LICENSE)
+	if(NOT WIN32)
+		message(FATAL_ERROR "The Suite-activated client edition requires Windows")
+	endif()
+	if(TURBORAMA_ENABLE_COMMERCIAL_SERVICES)
+		message(FATAL_ERROR "The Suite-activated client edition cannot enable PIX/rental services")
+	endif()
+	string(LENGTH "${TURBORAMA_SUITE_HELPER_SHA256}" TURBORAMA_SUITE_DIGEST_LENGTH)
+	if(NOT TURBORAMA_SUITE_DIGEST_LENGTH EQUAL 64 OR
+		NOT TURBORAMA_SUITE_HELPER_SHA256 MATCHES "^[0-9A-Fa-f]+$")
+		message(FATAL_ERROR "Build the Suite access helper first and supply its exact SHA-256 via TURBORAMA_SUITE_HELPER_SHA256")
+	endif()
+	message(STATUS "TurboRama edition: SUITE ATIVADO 1.0.0 (EmulationStation 42)")
+elseif(NOT "${TURBORAMA_SUITE_HELPER_SHA256}" STREQUAL "")
+	message(FATAL_ERROR "A Suite helper pin cannot be supplied with Suite licensing disabled")
+endif()
+
 if(NOT TURBORAMA_ENABLE_COMMERCIAL_SERVICES)
 	message(STATUS "TurboRama profile: CLIENTE SEM SERVICOS COMERCIAIS")
 else()

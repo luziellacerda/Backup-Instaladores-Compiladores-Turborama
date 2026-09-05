@@ -49,6 +49,9 @@
 #include "utils/ThreadPool.h"
 #include "resources/ProtectedDecorations.h"
 #include "resources/ResourceManager.h"
+#ifdef TURBORAMA_REQUIRE_SUITE_LICENSE
+#include "SuiteAccessGate.h"
+#endif
 #ifdef TURBORAMA_NO_COMMERCIAL_SERVICES
 #include "MainMenuAuth.h"
 #endif
@@ -431,6 +434,9 @@ void playVideo()
 
 	while (!exitLoop)
 	{
+#ifdef TURBORAMA_REQUIRE_SUITE_LICENSE
+		if (!SuiteAccessGate::instance().authorized()) break;
+#endif
 		SDL_Event event;
 
 		if (SDL_PollEvent(&event))
@@ -490,6 +496,20 @@ int main(int argc, char* argv[])
 	// Inicialize esse caminho antes de qualquer retorno antecipado; antes ele
 	// dependia por engano do diretorio atual usado para iniciar o teste.
 	Paths::setExePath(argv[0]);
+#ifdef TURBORAMA_REQUIRE_SUITE_LICENSE
+	if (argc == 2 && strcmp(argv[1], "--suite-access-self-test") == 0)
+	{
+		const bool passed = SuiteAccessGate::runSelfTest();
+		fprintf(passed ? stdout : stderr, "SUITE_ACCESS_TEST=%s\n", passed ? "OK" : "FAILED");
+		return passed ? 0 : 44;
+	}
+	if (argc == 2 && strcmp(argv[1], "--suite-access-integrity-self-test") == 0)
+	{
+		const bool passed = SuiteAccessGate::verifyHelperIntegrity();
+		fprintf(passed ? stdout : stderr, "SUITE_ACCESS_INTEGRITY=%s\n", passed ? "OK" : "FAILED");
+		return passed ? 0 : 44;
+	}
+#endif
 #ifndef TURBORAMA_NO_COMMERCIAL_SERVICES
 #ifdef WIN32
 	if (PixBinaryTrust::required())
@@ -690,6 +710,19 @@ int main(int argc, char* argv[])
 		// it'll flash open, but we hide it nearly immediately
 		if(GetConsoleWindow()) // should only pass in "CONSOLE" mode
 			ShowWindow(GetConsoleWindow(), SW_HIDE);
+	}
+#endif
+
+#ifdef TURBORAMA_REQUIRE_SUITE_LICENSE
+	// Validate before any media playback, emulator startup or frontend loading.
+	// The companion owns the same Suite identity/session and runs independently
+	// while the existing game launch loop is blocked waiting for an emulator.
+	std::string suiteAccessError;
+	if (!SuiteAccessGate::instance().start(suiteAccessError))
+	{
+		MessageBoxA(nullptr, suiteAccessError.c_str(), "TurboRama Suite - acesso",
+			MB_OK | MB_ICONERROR | MB_TOPMOST);
+		return 44;
 	}
 #endif
 
@@ -907,6 +940,16 @@ int main(int argc, char* argv[])
 
 	while(running)
 	{
+#ifdef TURBORAMA_REQUIRE_SUITE_LICENSE
+		if (!SuiteAccessGate::instance().authorized())
+		{
+			LOG(LogWarning) << "[Suite] A autorizacao terminou; encerrando o frontend com salvamento normal.";
+			MessageBoxA(nullptr,
+				"O acesso do TurboRama Suite terminou. Abra o Suite e verifique a ativacao e a conexao.",
+				"TurboRama Suite - acesso", MB_OK | MB_ICONWARNING | MB_TOPMOST);
+			break;
+		}
+#endif
 		SDL_Event event;
 
 		bool ps_standby = PowerSaver::getState() && (int) SDL_GetTicks() - ps_time > PowerSaver::getMode();
@@ -1102,6 +1145,9 @@ int main(int argc, char* argv[])
 		Renderer::swapBuffers();		
 	}
 
+#ifdef TURBORAMA_REQUIRE_SUITE_LICENSE
+	SuiteAccessGate::instance().stop();
+#endif
 	if (Utils::Platform::isFastShutdown())
 		Settings::getInstance()->setBool("IgnoreGamelist", true);
 

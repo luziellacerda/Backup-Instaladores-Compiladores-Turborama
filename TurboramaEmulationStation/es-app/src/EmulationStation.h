@@ -4,14 +4,23 @@
 
 // These numbers and strings need to be manually updated for a new version.
 // Do this version number update as the very last commit for the new release version.
+#define PROGRAM_UPSTREAM_VERSION_STRING "42"
+#ifdef TURBORAMA_REQUIRE_SUITE_LICENSE
+#define PROGRAM_VERSION_MAJOR        1
+#define PROGRAM_VERSION_MINOR        0
+#define PROGRAM_VERSION_MAINTENANCE   0
+#define PROGRAM_VERSION_STRING "TurboRama Suite 1.0.0 (EmulationStation 42)"
+#define RESOURCE_VERSION_STRING "1,0,0\0"
+#else
 #define PROGRAM_VERSION_MAJOR        42
 #define PROGRAM_VERSION_MINOR        0
 #define PROGRAM_VERSION_MAINTENANCE  0
 #define PROGRAM_VERSION_STRING		"42"
+#define RESOURCE_VERSION_STRING "42,0,0\0"
+#endif
 
 #define PROGRAM_BUILT_STRING __DATE__ " - " __TIME__
 
-#define RESOURCE_VERSION_STRING "42,0,0\0"
 #define RESOURCE_VERSION PROGRAM_VERSION_MAJOR,PROGRAM_VERSION_MINOR,PROGRAM_VERSION_MAINTENANCE
 
 #ifndef SCREENSCRAPER_SOFTNAME
