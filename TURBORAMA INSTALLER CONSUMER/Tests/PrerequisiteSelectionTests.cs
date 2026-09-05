@@ -142,6 +142,7 @@ namespace InstallerHost
                     "All regression assertions finish without any scanner or installer execution");
 
                 verify(!page.SkipIfAllInstalled(), "Unknown fixture does not skip the Prerequisites page");
+                page.gamingReadinessCapturedAtUtc = DateTime.UtcNow;
                 page.chkVCpp.Checked = true;
                 page.BtnNext_Click(page, EventArgs.Empty);
                 verify(page.installerWorker == null && !page.IsInstallationRunning() &&
