@@ -69,6 +69,14 @@ namespace InstallerHost
 				"Dokany driver and user library must agree on all four fields");
 			verify(!RuntimeVersionPolicy.HaveSameVersionFields("2.3.1.1000", "2.3.1.999", 4),
 				"Dokany mixed binary versions cannot be treated as current");
+			verify(PrerequisiteDetector.IsDokanDeleteFlagValue(1) &&
+				PrerequisiteDetector.IsDokanDeleteFlagValue(1L) &&
+				PrerequisiteDetector.IsDokanDeleteFlagValue("1"),
+				"Dokany DeleteFlag value one is treated as a pending restart");
+			verify(!PrerequisiteDetector.IsDokanDeleteFlagValue(null) &&
+				!PrerequisiteDetector.IsDokanDeleteFlagValue(0) &&
+				!PrerequisiteDetector.IsDokanDeleteFlagValue("invalid"),
+				"Absent or malformed Dokany DeleteFlag is not invented as pending");
 
 			verify(Evaluate("webview2", "124.0.2478.80", "1.3.265.7") == RuntimeVersionComparison.NotManaged,
 				"WebView2 runtime is not compared with its bootstrapper product version");

@@ -4,6 +4,8 @@ param([string]$MSBuildPath = 'C:\Program Files\Microsoft Visual Studio\2022\Comm
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $heldInputStreams = New-Object System.Collections.Generic.List[System.IO.FileStream]
+$previousCompilerTemp = $env:TEMP
+$previousCompilerTmp = $env:TMP
 Push-Location $PSScriptRoot
 try {
     $repository = (& git -c "safe.directory=$((Get-Item $PSScriptRoot).Parent.FullName)" rev-parse --show-toplevel)
@@ -13,6 +15,13 @@ try {
     $commit = ([string]$commitOutput[0]).Trim()
     $dirty = @(& git -c "safe.directory=$repository" status --porcelain -- .)
     if ($LASTEXITCODE -ne 0 -or $dirty.Count -ne 0) { throw 'O projeto deve estar commitado antes da compilação de entrega.' }
+    # Keep compiler scratch space on the project drive. A nearly-full Windows
+    # drive can otherwise produce a misleading CS1583 invalid-resource error.
+    $compilerTemp = Join-Path $PSScriptRoot 'TestResults\compiler-temp'
+    New-Item -ItemType Directory -Path $compilerTemp -Force | Out-Null
+    if ((Get-Item -LiteralPath $compilerTemp).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw 'Pasta temporária em reparse point recusada.' }
+    $env:TEMP = $compilerTemp
+    $env:TMP = $compilerTemp
     [xml]$project = Get-Content -LiteralPath 'InstallerHost.csproj' -Raw
     $compileInputs = @($project.SelectNodes('//*[local-name()="Compile"]') | ForEach-Object { $_.GetAttribute('Include') })
     $testInputs = @(Get-ChildItem -LiteralPath 'Tests' -Filter '*.cs' -File | ForEach-Object { 'Tests\' + $_.Name })
@@ -99,5 +108,7 @@ try {
     for ($streamIndex = $heldInputStreams.Count - 1; $streamIndex -ge 0; $streamIndex--) {
         $heldInputStreams[$streamIndex].Dispose()
     }
+    $env:TEMP = $previousCompilerTemp
+    $env:TMP = $previousCompilerTmp
     Pop-Location
 }

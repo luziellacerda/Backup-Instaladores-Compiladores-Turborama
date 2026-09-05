@@ -635,6 +635,12 @@ namespace InstallerHost
 			{
 				return;
 			}
+			if (exitCode == 1618)
+			{
+				throw new InvalidOperationException(
+					label + " não pôde iniciar porque o Windows Installer está ocupado (1618). " +
+					"Aguarde o Windows Update ou a outra instalação terminar e tente novamente.");
+			}
 
 			throw new InvalidOperationException(label + " falhou com código de saída " + exitCode + ".");
 		}

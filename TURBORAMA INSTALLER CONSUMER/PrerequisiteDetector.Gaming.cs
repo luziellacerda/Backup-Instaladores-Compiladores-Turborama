@@ -839,7 +839,8 @@ namespace InstallerHost
 			foreach (RegistryView view in GetRegistryViews())
 			{
 				if (RegistryKeyExists(view, @"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending") ||
-					RegistryKeyExists(view, @"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"))
+					RegistryKeyExists(view, @"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired") ||
+					IsDokanyDeletePending(view))
 				{
 					return true;
 				}

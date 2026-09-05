@@ -449,12 +449,14 @@ namespace InstallerHost
 			version = string.Empty;
 			bool dokan1ServicePresent = false;
 			bool dokan2ServicePresent = false;
+			bool dokan2DeletePending = false;
 			foreach (RegistryView view in GetRegistryViews())
 			{
 				dokan1ServicePresent = dokan1ServicePresent ||
 					RegistryKeyExists(view, @"SYSTEM\CurrentControlSet\Services\dokan1");
 				dokan2ServicePresent = dokan2ServicePresent ||
 					RegistryKeyExists(view, @"SYSTEM\CurrentControlSet\Services\dokan2");
+				dokan2DeletePending = dokan2DeletePending || IsDokanyDeletePending(view);
 			}
 
 			string systemDirectory = GetNativeSystemDirectoryForRead();
@@ -464,7 +466,7 @@ namespace InstallerHost
 			string libraryVersion;
 			bool driverVersionKnown = TryGetRegularFileVersion(driverPath, out driverVersion);
 			bool libraryVersionKnown = TryGetRegularFileVersion(libraryPath, out libraryVersion);
-			if (dokan2ServicePresent && driverVersionKnown && libraryVersionKnown &&
+			if (dokan2ServicePresent && !dokan2DeletePending && driverVersionKnown && libraryVersionKnown &&
 				RuntimeVersionPolicy.HaveSameVersionFields(driverVersion, libraryVersion, 4))
 			{
 				version = driverVersion;
@@ -474,6 +476,44 @@ namespace InstallerHost
 			// órfãos indicam presença parcial/legada. O chamador os classifica Unknown.
 			return dokan1ServicePresent || dokan2ServicePresent ||
 				File.Exists(driverPath) || File.Exists(libraryPath);
+		}
+
+		private static bool IsDokanyDeletePending(RegistryView view)
+		{
+			string[] servicePaths =
+			{
+				@"SYSTEM\CurrentControlSet\Services\dokan2",
+				@"SYSTEM\ControlSet001\Services\dokan2"
+			};
+			foreach (string servicePath in servicePaths)
+			{
+				try
+				{
+					using (RegistryKey key = OpenLocalMachineSubKey(view, servicePath))
+					{
+						if (key != null && IsDokanDeleteFlagValue(key.GetValue("DeleteFlag")))
+						{
+							return true;
+						}
+					}
+				}
+				catch
+				{
+				}
+			}
+			return false;
+		}
+
+		internal static bool IsDokanDeleteFlagValue(object value)
+		{
+			try
+			{
+				return value != null && Convert.ToInt32(value) == 1;
+			}
+			catch
+			{
+				return false;
+			}
 		}
 
 		public static bool IsWinFspInstalled()
