@@ -17,7 +17,7 @@ namespace InstallerHost
 			this.mainForm = main;
 			this.InitializeComponent();
 
-this.wizardHeader.Text = ConsumerText.GetString("InstallTitle", Array.Empty<object>());
+			this.wizardHeader.Text = ConsumerText.GetString("InstallTitle", Array.Empty<object>());
 			this.txtInfo.Text = ConsumerText.GetString("InstallInfo", Array.Empty<object>());
 			this.lblSelectFolder.Text = ConsumerText.GetString("SelectFolder", Array.Empty<object>());
 			this.btnBrowse.Text = ConsumerText.GetString("Browse...", Array.Empty<object>());
@@ -25,6 +25,14 @@ this.wizardHeader.Text = ConsumerText.GetString("InstallTitle", Array.Empty<obje
 			this.btnCancel.Text = ConsumerText.GetString("Cancel", Array.Empty<object>());
 			this.btnInstall.Text = ConsumerText.GetString("Install", Array.Empty<object>());
 			this.btnBack.Text = ConsumerText.GetString("< Back", Array.Empty<object>());
+			try { this.chkInstallProduct.Checked = InstallationFlowPolicy.HasProductPackageArtifacts(Application.ExecutablePath); }
+			catch (Exception error)
+			{
+				// An unreadable package location is not evidence of an absent package.
+				Logger.Log("[WARNING] Não foi possível consultar o pacote: " + error.Message);
+				this.chkInstallProduct.Checked = true;
+			}
+			UpdateInstallationMode();
 		}
 
 		// Token: 0x0600001A RID: 26 RVA: 0x000036AC File Offset: 0x000018AC
@@ -38,10 +46,36 @@ this.wizardHeader.Text = ConsumerText.GetString("InstallTitle", Array.Empty<obje
 		protected override void OnLoad(EventArgs e)
 		{
 			base.OnLoad(e);
-			if (string.IsNullOrWhiteSpace(this.txtFolder.Text)) this.txtFolder.Text = Path.Combine(
-				Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-				"TurboRama");
+			if (this.chkInstallProduct.Checked) SuggestInitialDestination();
 			base.ActiveControl = this.btnInstall;
+		}
+
+		private void SuggestInitialDestination()
+		{
+			if (!string.IsNullOrWhiteSpace(this.txtFolder.Text)) return;
+			try
+			{
+				this.txtFolder.Text = InstallationFlowPolicy.SuggestEmptyDestination(Path.Combine(
+					Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TurboRama"));
+			}
+			catch (Exception error)
+			{
+				Logger.Log("[WARNING] Destination suggestion unavailable: " + error.Message);
+				this.lblFolderHint.Text = "Use Procurar para escolher uma pasta local vazia. Seus arquivos existentes serão preservados.";
+			}
+		}
+
+		private void UpdateInstallationMode()
+		{
+			bool installProduct = this.chkInstallProduct.Checked;
+			this.destinationCard.Visible = installProduct;
+			this.wizardHeader.Text = installProduct ? "Onde vamos instalar?" : "Finalize a preparação do PC.";
+			this.txtInfo.Text = installProduct
+				? "Nova instalação do TurboRama: requer o pacote .pkg e seu manifesto junto do EXE. Nenhum arquivo existente será substituído."
+				: "As dependências são processadas na etapa Pré-requisitos. Você pode encerrar esta sessão sem instalar os arquivos do TurboRama e sem escolher uma pasta.";
+			this.lblFolderHint.Text = "Use uma pasta vazia. Esta opção não atualiza nem repara uma instalação existente do TurboRama.";
+			this.btnInstall.Text = installProduct ? "Instalar" : "Avançar";
+			if (installProduct) SuggestInitialDestination();
 		}
 
 		// Token: 0x0600001C RID: 28 RVA: 0x000036E0 File Offset: 0x000018E0
@@ -61,6 +95,12 @@ this.wizardHeader.Text = ConsumerText.GetString("InstallTitle", Array.Empty<obje
 		private void BtnInstall_Click(object sender, EventArgs e)
 		{
 			if (IsExtractionInProgress) return;
+			if (!this.chkInstallProduct.Checked)
+			{
+				Logger.Log("Dependencies-only session finished; no product folder or package was accessed for extraction.");
+				this.mainForm.ShowDependencyFinish();
+				return;
+			}
 			if (string.IsNullOrWhiteSpace(this.txtFolder.Text))
 			{
 				Logger.Log("[WARNING] No installation folder selected.");
@@ -83,10 +123,12 @@ this.wizardHeader.Text = ConsumerText.GetString("InstallTitle", Array.Empty<obje
 				return;
 			}
 			this.txtInfo.Visible = false;
+			this.progressBar.Value = 0;
 			this.progressBar.Visible = true;
 			this.btnBack.Enabled = false;
 			this.btnInstall.Enabled = false;
 			this.btnBrowse.Enabled = false;
+			this.chkInstallProduct.Enabled = false;
 			this.txtFolder.ReadOnly = true;
 			this.btnCancel.Enabled = false;
 			this.worker = new BackgroundWorker
@@ -179,6 +221,7 @@ this.wizardHeader.Text = ConsumerText.GetString("InstallTitle", Array.Empty<obje
 				this.worker = null;
 				this.btnInstall.Enabled = true;
 				this.btnBrowse.Enabled = true;
+				this.chkInstallProduct.Enabled = true;
 				this.txtFolder.ReadOnly = false;
 				this.btnBack.Enabled = true;
 				this.btnCancel.Enabled = true;

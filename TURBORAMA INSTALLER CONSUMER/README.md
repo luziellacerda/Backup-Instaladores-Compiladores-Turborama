@@ -13,10 +13,14 @@ Boas-vindas → Licença → Pré-requisitos → Instalação → Conclusão.
 - A preparação não começa se o diagnóstico indicar menos de 2 GB livres no disco do Windows; isso é uma reserva inicial, não uma garantia do espaço necessário ao produto.
 - A pasta selecionada é preservada ao voltar. Extração mantém a transação segura, não sobrescreve conteúdo existente e roda com token limitado.
 
+Desde 10.1.12, a etapa Instalação permite concluir somente a preparação de dependências, sem pasta de destino nem pacote do produto. Para instalar também os arquivos do TurboRama, marque a opção explícita nessa mesma etapa. Quando existem partes `.pkg` ou o sidecar `.exe.sha256.txt` junto do EXE, inclusive incompletos, essa opção inicia marcada e a validação completa permanece obrigatória. O checksum de entrega `.exe.sha256` não é um pacote. A conclusão de dependências não afirma que o produto foi instalado nem que todo o PC foi reparado.
+
+Uma instalação nova sugere a primeira pasta vazia entre `TurboRama`, `TurboRama-2` até `TurboRama-100`, sem criar ou alterar diretórios nessa consulta. O destino escolhido pelo usuário não é trocado ao voltar. A instalação verifica novamente o destino e nunca atualiza uma pasta ocupada por sobrescrita.
+
 ## Verificação e compilação
 
 1. Windows 10/11, Visual Studio 2022 com MSBuild e targeting pack .NET Framework 4.7.2.
-2. Colocar os 22 payloads exatos de prerequisites.lock.json em resources/prerequisites. Os URLs são fontes, não autorização para aceitar hashes diferentes. URLs de atualização contínua podem mudar: nesse caso é necessária nova auditoria.
+2. Colocar os 26 payloads exatos de prerequisites.lock.json em resources/prerequisites e as quatro fontes correspondentes do Java em resources/third-party-sources, conforme third-party-sources.lock.json. Os URLs são fontes, não autorização para aceitar hashes diferentes. URLs de atualização contínua podem mudar: nesse caso é necessária nova auditoria.
 3. Executar Test-ConsumerUi.ps1 para testar fontes, fluxo, gráficos e extração sintética, sem instalar componentes.
 4. Commitar os fontes numa branch própria e executar Build-Consumer.ps1. O build confere payloads, roda os testes, compila e verifica os recursos incorporados por hash. Seu manifesto liga EXE, catálogo e fontes ao commit.
 

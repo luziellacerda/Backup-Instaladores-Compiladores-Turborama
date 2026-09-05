@@ -126,6 +126,12 @@ namespace InstallerHost
 			this.ShowControl(new FinishControl(this, installPath));
 		}
 
+		internal void ShowDependencyFinish()
+		{
+			Logger.Log("Showing dependencies-only conclusion; product not installed.");
+			this.ShowControl(new FinishControl(this, null, true));
+		}
+
 		// Token: 0x0400002D RID: 45
 		private UserControl currentControl;
 

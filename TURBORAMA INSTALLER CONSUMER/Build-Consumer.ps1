@@ -122,10 +122,10 @@ try {
         authenticodeStatus = [string](Get-AuthenticodeSignature -LiteralPath $exe.FullName).Status
         executableArchitecture = 'x64'; requiredOperatingSystemArchitecture = 'x64'
         internalTestsPassed = $true; realWindowQaPassed = $false; cleanWindowsInstallPassed = $false
-        productPackageIncluded = $false; productionApproved = $false
+        productPackageIncluded = $false; supportsDependenciesOnlyCompletion = $true; productionApproved = $false
         containsPrereleaseComponents = $true; prereleaseComponents = @('WinFsp 2026 Beta4 (2.2.26215), optional and unchecked')
         correspondingSourcesVerified = $true; correspondingSources = $sourceCatalog.sources
-        warning = 'Candidato interno para testes, com WinFsp Beta opcional; confirmar inclusão antes da entrega. Componentes reais incorporados; requer partes do produto e sidecar para instalar TurboRama. Não aprovado para produção.'
+        warning = 'Candidato interno para testes, com WinFsp Beta opcional. Dependências podem ser concluídas sem pacote do produto; instalar os arquivos do TurboRama requer partes .pkg e sidecar. Não aprovado para produção.'
     }
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath 'bin\Release\InstallerHost-build-manifest.json' -Encoding UTF8
     ($manifest.sha256 + ' *InstallerHost.exe') | Set-Content -LiteralPath 'bin\Release\InstallerHost.exe.sha256' -Encoding ASCII

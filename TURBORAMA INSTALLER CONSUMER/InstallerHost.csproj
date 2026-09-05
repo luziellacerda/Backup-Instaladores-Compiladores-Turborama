@@ -35,6 +35,7 @@
     <Compile Include="FinishControl.Designer.cs" />
     <Compile Include="InstallControl.cs" />
     <Compile Include="InstallControl.Designer.cs" />
+    <Compile Include="InstallationFlowPolicy.cs" />
     <Compile Include="InstallerInfo.cs" />
     <Compile Include="LicenseControl.cs" />
     <Compile Include="LicenseControl.Designer.cs" />

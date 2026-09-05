@@ -38,6 +38,7 @@ namespace InstallerHost
                 assertions += PrerequisiteControl.RunSelectionRegressionTests();
                 assertions += ArtworkTests.Run();
                 string directory = args.Length == 0 ? "TestResults\\consumer" : args[0]; Directory.CreateDirectory(directory);
+                assertions += InstallationFlowPolicyTests.Run(directory);
                 using (MainForm form = new MainForm())
                 {
                     form.PrepareSyntheticPrerequisites(); form.ShowInTaskbar = false; form.Opacity = 0; form.Show(); Pump();
@@ -54,7 +55,25 @@ namespace InstallerHost
                         "Synthetic fixture contains no requested installations");
                     Find<Button>(form, "btnNext").PerformClick(); Pump();
                     Check(form.TestPage is InstallControl, "Empty prerequisite selection follows original route to installation");
+                    Check(!Find<CheckBox>(form, "chkInstallProduct").Checked && !Find<Control>(form, "DestinationCard").Visible,
+                        "Standalone EXE defaults to dependencies-only without requesting a product folder");
+                    Find<CheckBox>(form, "chkInstallProduct").Checked = true; Pump();
+                    Check(Find<Control>(form, "DestinationCard").Visible && Find<Button>(form, "btnInstall").Text == "Instalar",
+                        "Explicit product selection restores the protected new-install flow");
                     Find<TextBox>(form, "txtFolder").Text = "D:\\Destino-escolhido-para-teste";
+                    Find<CheckBox>(form, "chkInstallProduct").Checked = false; Pump();
+                    Check(Find<Button>(form, "btnInstall").Text == "Avançar",
+                        "Dependencies-only action does not claim to install the product");
+                    InstallControl dependencyPage = (InstallControl)form.TestPage;
+                    Find<Button>(form, "btnInstall").PerformClick(); Pump();
+                    Check(form.TestPage is FinishControl && !dependencyPage.IsExtractionInProgress,
+                        "Standalone completion reaches original fifth step without package extraction or installers");
+                    Check(!Find<Label>(form, "InstalledPath").Visible && !Find<Label>(form, "InstalledPathTitle").Visible &&
+                        Find<Label>(form, "CompletionDescription").Text.Contains("se nenhuma foi selecionada, nada foi instalado"),
+                        "No-action conclusion reports no product folder and never claims a fully repaired PC");
+                    form.ShowInstall(); Pump();
+                    Check(!Find<CheckBox>(form, "chkInstallProduct").Checked && Find<TextBox>(form, "txtFolder").Text == "D:\\Destino-escolhido-para-teste",
+                        "Mode toggling and revisiting preserve the explicit user destination");
                     Find<Button>(form, "btnBack").PerformClick(); Pump();
                     Check(form.TestPage is PrerequisiteControl, "Installation Back returns to prerequisites");
                     form.ShowInstall(); Pump();
@@ -82,6 +101,7 @@ namespace InstallerHost
                             else if (step == 2) form.ShowPrerequisites(true); else if (step == 3) form.ShowInstall();
                             else form.ShowFinish("D:\\Exemplo-visual-nao-instalado");
                             Pump();
+                            if (step == 3) { Find<CheckBox>(form, "chkInstallProduct").Checked = true; Pump(); }
                             if (step == 2) { Find<FlowLayoutPanel>(form, "prerequisiteContent").AutoScrollPosition = Point.Empty; Pump(); }
                             Check(form.TestPage.Controls.Find("ConsumerLayout", true).Length == 1, "Exactly one page layout tree");
                             Check(form.TestPage.Controls.Find("OriginalSequence", true).Length == 1, "Original five-step indicator exists");
@@ -132,6 +152,28 @@ namespace InstallerHost
                             using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
                             { form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(directory, "Step" + step + "-" + size.Width + ".png")); }
                             using (StreamWriter log = new StreamWriter(Path.Combine(directory, "Step" + step + "-" + size.Width + ".layout.txt"))) Dump(form.TestPage, log, 0);
+                            if (step == 3)
+                            {
+                                Check(Find<Control>(form, "DestinationCard").Bottom <= Find<Control>(form, "DestinationCard").Parent.ClientSize.Height,
+                                    "Product destination is contained within its card");
+                                Check(body.ClientRectangle.Contains(body.Controls[0].Bounds), "Installation form fits its viewport");
+                                Find<CheckBox>(form, "chkInstallProduct").Checked = false; Pump();
+                                ValidateLayout(form.TestPage);
+                                using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
+                                { form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(directory, "DependenciesOnly-" + size.Width + ".png")); }
+                            }
+                            if (step == 4)
+                            {
+                                form.ShowDependencyFinish(); Pump();
+                                Check(((WizardSequenceBar)Find<Control>(form, "OriginalSequence")).CurrentStep == 4,
+                                    "Dependencies-only finish retains original conclusion step");
+                                ValidateLayout(form.TestPage);
+                                Label description = Find<Label>(form, "CompletionDescription");
+                                Check(description.Height >= description.GetPreferredSize(new Size(description.Width, 0)).Height,
+                                    "Dependencies-only conclusion description is not clipped");
+                                using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
+                                { form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(directory, "DependenciesFinish-" + size.Width + ".png")); }
+                            }
                             if (step == 2)
                             {
                                 FlowLayoutPanel content = Find<FlowLayoutPanel>(form, "prerequisiteContent");

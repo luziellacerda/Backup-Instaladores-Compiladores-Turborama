@@ -30,7 +30,7 @@ try {
         & (Join-Path $PSScriptRoot $runtimeProbeExe) @runtimeProbeArguments
         if ($LASTEXITCODE -ne 0) { throw ('Regressão na detecção real do .NET Desktop pelo processo ' + $runtimeProbeArch) }
     }
-    & $consumerCompiler /nologo /target:exe /warnaserror+ /define:CONSUMER_UI_TESTS /main:InstallerHost.ConsumerUiTests /out:TestResults\executables\ConsumerUiTests.exe /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:Accessibility.dll $interfaceResources $consumerSources Tests\RuntimeVersionPolicyTests.cs Tests\JavaRuntimeDetectorTests.cs Tests\PrerequisiteSelectionTests.cs Tests\ArtworkTests.cs Tests\PublisherPolicyTests.cs Tests\ConsumerUiTests.cs
+    & $consumerCompiler /nologo /target:exe /warnaserror+ /define:CONSUMER_UI_TESTS /main:InstallerHost.ConsumerUiTests /out:TestResults\executables\ConsumerUiTests.exe /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:Accessibility.dll $interfaceResources $consumerSources Tests\RuntimeVersionPolicyTests.cs Tests\JavaRuntimeDetectorTests.cs Tests\PrerequisiteSelectionTests.cs Tests\ArtworkTests.cs Tests\PublisherPolicyTests.cs Tests\InstallationFlowPolicyTests.cs Tests\ConsumerUiTests.cs
     if ($LASTEXITCODE -ne 0) { throw 'Falha na compilação dos testes de interface.' }
     & .\TestResults\executables\ConsumerUiTests.exe (Join-Path $PSScriptRoot 'TestResults\consumer')
     if ($LASTEXITCODE -ne 0) { throw 'Falha nos testes de interface.' }
