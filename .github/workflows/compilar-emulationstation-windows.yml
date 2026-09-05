@@ -290,7 +290,7 @@ jobs:
           '@ | Set-Content -LiteralPath (Join-Path $stage 'TESTAR-ISOLADO.cmd') `
             -Encoding ascii
 
-          function Invoke-SmokeTest([string]$argument) {
+          function Invoke-SmokeTest([string]$argument, [int]$expectedExitCode = 0) {
             $process = Start-Process `
               -FilePath (Join-Path $stage 'emulationstation.exe') `
               -WorkingDirectory $stage `
@@ -301,7 +301,7 @@ jobs:
               Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
               throw "Teste $argument excedeu 30 segundos."
             }
-            if ($process.ExitCode -ne 0) {
+            if ($process.ExitCode -ne $expectedExitCode) {
               throw "Teste $argument falhou com codigo $($process.ExitCode)."
             }
           }
@@ -310,7 +310,9 @@ jobs:
           Invoke-SmokeTest '--protected-decorations-self-test'
           Invoke-SmokeTest '--credit-warning-overlay-self-test'
           Invoke-SmokeTest '--pix-agent-manager-self-test'
-          Invoke-SmokeTest '--pix-agent-trust-self-test'
+          # The frontend package does not install the server/agent. Verify that
+          # the existing trust check rejects this absent agent (exit 32).
+          Invoke-SmokeTest '--pix-agent-trust-self-test' 32
 
           $manifest = Join-Path $stage 'SHA256SUMS.txt'
           Get-ChildItem -LiteralPath $stage -Recurse -File |
