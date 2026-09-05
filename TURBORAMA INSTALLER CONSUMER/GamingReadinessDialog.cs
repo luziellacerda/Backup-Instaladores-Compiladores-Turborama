@@ -11,6 +11,11 @@ namespace InstallerHost
 		private readonly GamingReadinessProfile profile;
 		private readonly ListView recommendationsList;
 		private readonly TabControl tabs;
+		protected override void OnHandleCreated(EventArgs e)
+		{
+			base.OnHandleCreated(e);
+			NativeWindowTheme.Apply(Handle);
+		}
 
 		public GamingReadinessDialog(GamingReadinessProfile readinessProfile)
 		{

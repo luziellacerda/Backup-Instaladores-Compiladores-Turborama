@@ -30,6 +30,8 @@ namespace InstallerHost
             try
             {
                 Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+				Check(NativeWindowTheme.ColorRef(Color.FromArgb(16, 18, 23)) == 0x171210,
+					"Native title color uses Windows COLORREF channel order");
 				assertions += RuntimeVersionPolicyTests.Run();
 				assertions += PublisherPolicyTests.Run();
                 assertions += PrerequisiteControl.RunSelectionRegressionTests();
